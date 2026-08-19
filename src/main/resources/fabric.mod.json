@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "betterloka",
+  "version": "${version}",
+  "name": "BetterLoka",
+  "description": "Client-side companion mod for the Loka Minecraft server (play.lokamc.com). Adds an in-game GUI with Player Finder, Translator, Fight Manager and Loka Helper modules, powered by the public Loka API.",
+  "authors": [
+    "BetterLoka contributors"
+  ],
+  "contact": {
+    "homepage": "https://lokamc.com",
+    "sources": "https://github.com/haapi123/bomba"
+  },
+  "license": "MIT",
+  "icon": "assets/betterloka/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.betterloka.BetterLokaClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
