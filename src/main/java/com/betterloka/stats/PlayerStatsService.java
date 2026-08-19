@@ -1,15 +1,18 @@
 package com.betterloka.stats;
 
+import com.betterloka.BetterLoka;
+import com.betterloka.api.ApiException;
+import com.betterloka.api.EldritchApi;
 import com.betterloka.api.LokaApi;
-import com.betterloka.api.LokaApiException;
 import com.betterloka.api.model.BattleParticipant;
 import com.betterloka.api.model.BattleZone;
+import com.betterloka.api.model.EldritchStats;
+import com.betterloka.api.model.FightDetail;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
-import com.betterloka.data.BattleIndex;
-import com.betterloka.data.BattleSyncService;
 import com.betterloka.data.TownCache;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -18,148 +21,172 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 
 /**
- * Turns a player name into a {@link PlayerProfile} by joining the API's identity data to the local
- * battle index.
+ * Builds a {@link PlayerProfile} from EldritchBot's career totals plus Loka's identity and town data.
  *
- * <p>The lookup runs in two stages. Identity and town come back in a couple of requests and are
- * handed over straight away; the combat numbers need the whole battle history, which on a first run
- * takes about a minute to download, so they follow once the sync lands.
+ * <p>The whole profile takes a handful of requests: one to EldritchBot for every career number, one
+ * to Loka for rank and account age, one for the town roster, and one per recent fight for its
+ * breakdown. The headline card is handed over as soon as the first two land, and the fight rows fill
+ * in behind it.
  */
 public final class PlayerStatsService {
     /** How many recent fights the Player Finder lists. */
     public static final int RECENT_FIGHT_COUNT = 5;
 
-    private final LokaApi api;
-    private final BattleSyncService sync;
+    private final LokaApi loka;
+    private final EldritchApi eldritch;
     private final TownCache towns;
 
-    public PlayerStatsService(LokaApi api, BattleSyncService sync, TownCache towns) {
-        this.api = api;
-        this.sync = sync;
+    public PlayerStatsService(LokaApi loka, EldritchApi eldritch, TownCache towns) {
+        this.loka = loka;
+        this.eldritch = eldritch;
         this.towns = towns;
-    }
-
-    public TownCache towns() {
-        return towns;
     }
 
     /**
      * Runs the lookup off the render thread.
      *
-     * @param onIdentity called with an identity-only profile as soon as the player resolves, so the
-     *                   GUI has something to show while the battle history syncs. Never called if
-     *                   the player does not exist.
-     * @return the completed profile; fails with {@link LokaApiException} if the player cannot be
-     * resolved at all.
+     * @param onHeadline called with the profile as soon as the career totals resolve, before the
+     *                   per-fight breakdown is fetched. Not called if the player does not exist.
+     * @return the completed profile, fights included. Fails with {@link ApiException} when neither
+     * EldritchBot nor Loka knows the name.
      */
-    public CompletableFuture<PlayerProfile> lookup(String name, Consumer<PlayerProfile> onIdentity) {
-        CompletableFuture<PlayerProfile> identity = CompletableFuture.supplyAsync(() -> {
+    public CompletableFuture<PlayerProfile> lookup(String name, Consumer<PlayerProfile> onHeadline) {
+        CompletableFuture<PlayerProfile> headline = CompletableFuture.supplyAsync(() -> {
             try {
-                return buildIdentity(name);
-            } catch (LokaApiException e) {
+                return buildHeadline(name);
+            } catch (ApiException e) {
                 throw new CompletionException(e);
             }
-        }, api.executor());
+        }, eldritch.executor());
 
-        identity.thenAccept(onIdentity);
+        headline.thenAccept(onHeadline);
 
-        // A sync failure is not a lookup failure: the identity half is still worth showing, so the
-        // index is allowed to arrive as null here rather than sinking the whole future.
-        CompletableFuture<BattleIndex> synced = sync.ensureSynced().handle((index, error) -> index);
-
-        return identity.thenCombineAsync(synced, this::withCombatRecord, api.executor());
+        return headline.thenApplyAsync(this::withFightDetail, eldritch.executor());
     }
 
-    private PlayerProfile buildIdentity(String name) throws LokaApiException {
-        LokaPlayer player = api.findPlayerByName(name);
-        towns.ensureLoaded();
-        return PlayerProfile.identityOnly(player, api.findTownByMember(player.identityId()));
-    }
-
-    private PlayerProfile withCombatRecord(PlayerProfile identity, BattleIndex index) {
-        if (index == null) {
-            return identity.withStatsState(PlayerProfile.StatsState.UNAVAILABLE);
-        }
-
-        UUID uuid = identity.player().uuid();
-        List<BattleIndex.Entry> entries = uuid == null ? List.of() : index.entriesFor(uuid);
-
-        int kills = 0;
-        int deaths = 0;
-        int battlesFought = 0;
-        for (BattleIndex.Entry entry : entries) {
-            kills += entry.participant().kills();
-            deaths += entry.participant().deaths();
-            if (entry.participant().participated()) {
-                battlesFought++;
+    private PlayerProfile buildHeadline(String name) throws ApiException {
+        // Loka's record (rank, account age) is fetched alongside EldritchBot's rather than after it:
+        // the two services are independent, and the headline is only as fast as the slower one.
+        CompletableFuture<LokaPlayer> lokaLookup = CompletableFuture.supplyAsync(() -> {
+            try {
+                return loka.findPlayerByName(name);
+            } catch (ApiException e) {
+                // Optional: a player EldritchBot knows but Loka's API has dropped still gets a profile.
+                BetterLoka.LOGGER.debug("Loka has no player record for {}", name, e);
+                return null;
             }
-        }
+        }, eldritch.bulkExecutor());
 
-        // Battles still in progress are not in the index — they would be cached half-finished — so
-        // they are folded in here, newest first, straight from the live endpoint.
-        List<FightSummary> recent = new ArrayList<>();
-        for (BattleZone battle : sync.activeBattles()) {
-            BattleParticipant participant = participantIn(battle, uuid);
-            if (participant == null) {
-                continue;
-            }
-            kills += participant.kills();
-            deaths += participant.deaths();
-            if (participant.participated()) {
-                battlesFought++;
-            }
-            recent.add(summarise(battle, participant, true));
-        }
+        EldritchStats stats = eldritch.fetchStats(name);
+        LokaPlayer lokaPlayer = lokaLookup.join();
 
-        String fightingFor = recent.isEmpty() ? null : recent.get(0).foughtForTown();
+        UUID uuid = lokaPlayer != null ? lokaPlayer.uuid() : null;
+        Instant firstSeen = lokaPlayer != null ? lokaPlayer.firstSeen() : null;
+        String rank = lokaPlayer != null ? lokaPlayer.rank() : null;
 
-        for (BattleIndex.Entry entry : entries) {
-            if (recent.size() >= RECENT_FIGHT_COUNT) {
+        List<FightSummary> pending = new ArrayList<>();
+        for (EldritchStats.RecentFight ref : stats.recentFights()) {
+            if (pending.size() >= RECENT_FIGHT_COUNT) {
                 break;
             }
-            if (!entry.participant().participated()) {
-                continue;
-            }
-            if (fightingFor == null) {
-                fightingFor = towns.nameOf(entry.participant().townId());
-            }
-            recent.add(summarise(entry.battle(), entry.participant(), false));
+            pending.add(FightSummary.pending(ref));
         }
 
-        return new PlayerProfile(identity.player(), identity.town(), fightingFor, identity.firstSeen(),
-                kills, deaths, battlesFought, List.copyOf(recent), PlayerProfile.StatsState.READY);
+        // The newest row already names the side they fought on, so "fighting for" is right from the
+        // first frame rather than waiting on the fight pages.
+        String fightingFor = pending.isEmpty() ? stats.town() : pending.get(0).ownTown();
+        if (fightingFor == null) {
+            fightingFor = stats.town();
+        }
+
+        // Town details and the live-battle check are deliberately absent here: they are several more
+        // requests for decoration, and the headline should not wait on them.
+        return new PlayerProfile(stats.name(), rank, uuid, firstSeen, null, stats.town(), stats,
+                fightingFor, false, List.copyOf(pending),
+                pending.isEmpty() ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.LOADING);
     }
 
-    private static BattleParticipant participantIn(BattleZone battle, UUID uuid) {
+    /** The town roster and the in-fight flag, both off the headline's critical path. */
+    private LokaTown resolveTown(PlayerProfile profile) {
+        try {
+            if (profile.uuid() != null) {
+                LokaPlayer player = loka.findPlayerByUuid(profile.uuid());
+                LokaTown byMember = loka.findTownByMember(player.identityId());
+                if (byMember != null) {
+                    return byMember;
+                }
+            }
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not resolve town for {}", profile.name(), e);
+        }
+        return profile.townName() == null ? null : towns.byName(profile.townName());
+    }
+
+    /** Fetches each listed fight's page in parallel and folds the player's line into the summary. */
+    private PlayerProfile withFightDetail(PlayerProfile profile) {
+        if (profile.recentFights().isEmpty()) {
+            return profile;
+        }
+
+        CompletableFuture<LokaTown> townLookup =
+                CompletableFuture.supplyAsync(() -> resolveTown(profile), eldritch.bulkExecutor());
+        CompletableFuture<Boolean> fighting = CompletableFuture.supplyAsync(
+                () -> isInFightNow(profile.name(), profile.uuid()), eldritch.bulkExecutor());
+
+        List<FightSummary> rows = profile.recentFights();
+        List<CompletableFuture<FightSummary>> tasks = new ArrayList<>(rows.size());
+        for (FightSummary row : rows) {
+            tasks.add(CompletableFuture.supplyAsync(() -> {
+                try {
+                    FightDetail detail = eldritch.fetchFight(row.ref().id(), profile.name());
+                    return detail == null ? row : new FightSummary(row.ref(), detail);
+                } catch (ApiException e) {
+                    BetterLoka.LOGGER.debug("Could not load fight {}", row.ref().id(), e);
+                    return row;
+                }
+            }, eldritch.bulkExecutor()));
+        }
+
+        List<FightSummary> resolved = new ArrayList<>(rows.size());
+        boolean anyDetail = false;
+        for (CompletableFuture<FightSummary> task : tasks) {
+            FightSummary summary = task.join();
+            anyDetail |= summary.hasDetail();
+            resolved.add(summary);
+        }
+
+        // The town on the newest fight is who they are actually fighting for, which is not always
+        // the town they are a member of.
+        String fightingFor = profile.fightingFor();
+        for (FightSummary summary : resolved) {
+            if (summary.ownTown() != null) {
+                fightingFor = summary.ownTown();
+                break;
+            }
+        }
+
+        return new PlayerProfile(profile.name(), profile.rank(), profile.uuid(), profile.firstSeen(),
+                townLookup.join(), profile.townName(), profile.stats(), fightingFor, fighting.join(),
+                List.copyOf(resolved),
+                anyDetail ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.UNAVAILABLE);
+    }
+
+    /** EldritchBot only publishes finished fights, so a battle in progress has to come from Loka. */
+    private boolean isInFightNow(String name, UUID uuid) {
         if (uuid == null) {
-            return null;
+            return false;
         }
-        for (BattleParticipant participant : battle.participants()) {
-            if (uuid.equals(participant.uuid())) {
-                return participant;
+        try {
+            for (BattleZone battle : loka.fetchActiveBattles()) {
+                for (BattleParticipant participant : battle.participants()) {
+                    if (uuid.equals(participant.uuid())) {
+                        return true;
+                    }
+                }
             }
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not check active battles for {}", name, e);
         }
-        return null;
-    }
-
-    private FightSummary summarise(BattleZone battle, BattleParticipant participant, boolean live) {
-        return new FightSummary(
-                battle.territory(),
-                battle.timeEnded(),
-                townName(battle.attackerTownId(), battle.attackerName()),
-                townName(battle.defenderTownId(), battle.defenderName()),
-                battle.attackerCount(),
-                battle.defenderCount(),
-                participant.attacker(),
-                towns.nameOf(participant.townId()),
-                participant.kills(),
-                participant.deaths(),
-                live);
-    }
-
-    /** Older battles carry the town name inline; newer ones only carry the ID. */
-    private String townName(String townId, String inlineName) {
-        String resolved = towns.nameOf(townId);
-        return resolved != null ? resolved : inlineName;
+        return false;
     }
 }

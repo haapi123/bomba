@@ -19,6 +19,9 @@
       "com.betterloka.BetterLokaClient"
     ]
   },
+  "mixins": [
+    "betterloka.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19.0",
     "fabric-api": "*",

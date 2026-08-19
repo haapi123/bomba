@@ -1,54 +1,53 @@
 package com.betterloka.stats;
 
-import com.betterloka.api.model.LokaPlayer;
+import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /** Everything the Player Finder shows about one player. */
 public record PlayerProfile(
-        LokaPlayer player,
-        /** The town they are a member of, or {@code null} if townless. */
-        LokaTown town,
-        /**
-         * The town they most recently fought for. Loka lets players reinforce other towns, so this
-         * is not always {@link #town()}.
-         */
-        String fightingFor,
+        String name,
+        /** Loka rank, e.g. {@code sentry}. Null when Loka has no record of the account. */
+        String rank,
+        UUID uuid,
+        /** When this person first appeared on Loka, from their identity ObjectID. */
         Instant firstSeen,
-        int kills,
-        int deaths,
-        int battlesFought,
-        List<FightSummary> recentFights,
-        StatsState statsState) {
 
-    /** Where the combat half of the profile stands. Identity and town resolve in one request; the
-     * battle history behind the kill counts can still be downloading. */
-    public enum StatsState {
-        /** The battle history is still syncing — the combat numbers are not meaningful yet. */
-        PENDING,
+        /** Full town record from Loka's API, or {@code null} if they are townless. */
+        LokaTown town,
+        /** Town name as EldritchBot has it — a fallback for when Loka's roster lookup comes back empty. */
+        String townName,
+
+        /** Career totals. Never null: a player with no fights gets a zeroed record. */
+        EldritchStats stats,
+        /** The town they most recently fought for; Loka lets players reinforce towns not their own. */
+        String fightingFor,
+        boolean inFightNow,
+
+        List<FightSummary> recentFights,
+        FightsState fightsState) {
+
+    /** Where the per-fight breakdown stands; the career totals above are always present. */
+    public enum FightsState {
+        /** Fight pages are still downloading — rows show without their kill counts. */
+        LOADING,
         READY,
-        /** The battle history could not be fetched and nothing was cached from a previous run. */
+        /** The fight pages could not be fetched. */
         UNAVAILABLE
     }
 
-    /** An identity-only profile, shown while the battle history is still downloading. */
-    public static PlayerProfile identityOnly(LokaPlayer player, LokaTown town) {
-        return new PlayerProfile(player, town, null, player.firstSeen(), 0, 0, 0, List.of(), StatsState.PENDING);
+    /** @return the town name to display, preferring Loka's record over EldritchBot's. */
+    public String displayTown() {
+        if (town != null && town.name() != null) {
+            return town.name();
+        }
+        return townName;
     }
 
-    public PlayerProfile withStatsState(StatsState state) {
-        return new PlayerProfile(player, town, fightingFor, firstSeen, kills, deaths, battlesFought,
-                recentFights, state);
-    }
-
-    /** Kills per death; with no deaths on record this is simply the kill count, as in-game. */
-    public double killDeathRatio() {
-        return deaths == 0 ? kills : (double) kills / deaths;
-    }
-
-    public boolean statsReady() {
-        return statsState == StatsState.READY;
+    public boolean hasFights() {
+        return stats.totalFights() > 0 || stats.kills() > 0 || stats.deaths() > 0;
     }
 }

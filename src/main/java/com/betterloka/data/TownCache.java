@@ -2,7 +2,7 @@ package com.betterloka.data;
 
 import com.betterloka.BetterLoka;
 import com.betterloka.api.LokaApi;
-import com.betterloka.api.LokaApiException;
+import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaTown;
 
 import java.util.Map;
@@ -41,7 +41,7 @@ public final class TownCache {
             }
             lastBulkLoad = System.currentTimeMillis();
             unknown.clear();
-        } catch (LokaApiException e) {
+        } catch (ApiException e) {
             BetterLoka.LOGGER.debug("Could not refresh the town list", e);
         }
     }
@@ -72,12 +72,35 @@ public final class TownCache {
                 byId.put(town.id(), town);
                 return town;
             }
-        } catch (LokaApiException e) {
+        } catch (ApiException e) {
             BetterLoka.LOGGER.debug("Could not resolve town {}", townId, e);
         }
         // Remember the miss so a battle list full of dead towns does not re-request each one.
         unknown.add(townId);
         return null;
+    }
+
+    /** @return the town with this name, or {@code null} if there is no living town by that name. */
+    public LokaTown byName(String townName) {
+        if (townName == null || townName.isEmpty()) {
+            return null;
+        }
+        ensureLoaded();
+        for (LokaTown town : byId.values()) {
+            if (townName.equalsIgnoreCase(town.name())) {
+                return town;
+            }
+        }
+        try {
+            LokaTown town = api.findTownByName(townName);
+            if (town != null && town.id() != null) {
+                byId.put(town.id(), town);
+            }
+            return town;
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not resolve town {}", townName, e);
+            return null;
+        }
     }
 
     /** @return the town's name, or {@code null} when it cannot be resolved. */

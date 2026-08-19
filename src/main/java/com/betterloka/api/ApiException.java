@@ -1,15 +1,15 @@
 package com.betterloka.api;
 
-/** Raised for any failure talking to the Loka API, including "player not found". */
-public class LokaApiException extends Exception {
+/** Raised for any failure talking to a remote service, including "no such player". */
+public class ApiException extends Exception {
     private final boolean notFound;
 
-    public LokaApiException(String message, boolean notFound) {
+    public ApiException(String message, boolean notFound) {
         super(message);
         this.notFound = notFound;
     }
 
-    public LokaApiException(String message, Throwable cause) {
+    public ApiException(String message, Throwable cause) {
         super(message, cause);
         this.notFound = false;
     }

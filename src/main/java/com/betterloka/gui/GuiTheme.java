@@ -48,11 +48,22 @@ public final class GuiTheme {
         }
     }
 
-    /** Colours a K/D the way players read it: above 1 is good, below 1 is not. */
-    public static int ratioColor(double ratio) {
-        if (ratio >= 1.5) {
-            return GOOD;
+    /**
+     * K/D colour, matching how Loka players already read the number: below 1.0 is red, 1.0 and above
+     * is yellow, and 3.0 and above is gold.
+     *
+     * <p>Returned without an alpha channel, which is what {@code Text.withColor} takes. Screen
+     * drawing wants ARGB — use {@link #ratioColor(double)} there, or the text renders invisible.
+     */
+    public static int nameplateRatioColor(double ratio) {
+        if (ratio >= 3.0) {
+            return 0xFFD700;
         }
-        return ratio >= 1.0 ? TEXT : BAD;
+        return ratio >= 1.0 ? 0xFFFF55 : 0xFF5555;
+    }
+
+    /** The same K/D colour as {@link #nameplateRatioColor}, opaque, for drawing into a screen. */
+    public static int ratioColor(double ratio) {
+        return 0xFF000000 | nameplateRatioColor(ratio);
     }
 }

@@ -1,13 +1,19 @@
 package com.betterloka;
 
+import com.betterloka.api.EldritchApi;
+import com.betterloka.api.HttpTransport;
 import com.betterloka.api.LokaApi;
-import com.betterloka.data.BattleSyncService;
+import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.gui.BetterLokaMenuScreen;
+import com.betterloka.stats.NameplateKdService;
 import com.betterloka.stats.PlayerStatsService;
+import com.betterloka.translate.ChatLog;
+import com.betterloka.translate.TranslationService;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.util.Identifier;
@@ -16,11 +22,11 @@ import org.lwjgl.glfw.GLFW;
 import java.nio.file.Path;
 
 /**
- * Client entry point. Wires up the API client, the battle history cache and the keybind that opens
- * the BetterLoka menu.
+ * Client entry point. Wires up the HTTP layer, the two data sources, the chat capture and the
+ * keybind that opens the BetterLoka menu.
  *
  * <p>Everything here is client side — the mod sends nothing to the game server and only ever reads
- * from Loka's public HTTP API.
+ * from public HTTP endpoints.
  */
 public class BetterLokaClient implements ClientModInitializer {
     /**
@@ -31,17 +37,38 @@ public class BetterLokaClient implements ClientModInitializer {
             KeyBinding.Category.create(Identifier.of(BetterLoka.MOD_ID, "main"));
 
     private static KeyBinding openMenuKey;
-    private static LokaApi api;
+    private static HttpTransport transport;
+    private static LokaApi loka;
+    private static EldritchApi eldritch;
     private static TownCache towns;
-    private static BattleSyncService sync;
     private static PlayerStatsService stats;
+    private static NameplateKdService nameplateKd;
+    private static TranslationService translations;
+    private static ChatLog chatLog;
+    private static BetterLokaConfig config;
 
     @Override
     public void onInitializeClient() {
-        api = new LokaApi();
-        towns = new TownCache(api);
-        sync = new BattleSyncService(api, cacheFile());
-        stats = new PlayerStatsService(api, sync, towns);
+        config = BetterLokaConfig.load(configDir().resolve("config.json"));
+
+        transport = new HttpTransport();
+        loka = new LokaApi(transport);
+        eldritch = new EldritchApi(transport);
+        towns = new TownCache(loka);
+        stats = new PlayerStatsService(loka, eldritch, towns);
+        nameplateKd = new NameplateKdService(eldritch);
+        translations = new TranslationService(transport);
+        chatLog = new ChatLog(translations, config);
+
+        // Loka sends its chat as system messages; signed player chat is captured too so the
+        // Translator also works on servers that use it.
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (!overlay) {
+                chatLog.record(message.getString());
+            }
+        });
+        ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
+                chatLog.record(message.getString()));
 
         openMenuKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.betterloka.open_menu", GLFW.GLFW_KEY_L, KEY_CATEGORY));
@@ -57,15 +84,32 @@ public class BetterLokaClient implements ClientModInitializer {
         BetterLoka.LOGGER.info("BetterLoka {} ready — press the BetterLoka key to open the menu", BetterLoka.VERSION);
     }
 
-    private static Path cacheFile() {
-        return FabricLoader.getInstance().getConfigDir().resolve(BetterLoka.MOD_ID).resolve("battles.bin");
+    private static Path configDir() {
+        return FabricLoader.getInstance().getConfigDir().resolve(BetterLoka.MOD_ID);
     }
 
-    public static BattleSyncService sync() {
-        return sync;
+    /** Guards the nameplate mixin, which runs for every player every frame. */
+    public static boolean isNameplateKdEnabled() {
+        return config != null && config.showNameplateKd() && nameplateKd != null;
+    }
+
+    public static BetterLokaConfig config() {
+        return config;
     }
 
     public static PlayerStatsService stats() {
         return stats;
+    }
+
+    public static NameplateKdService nameplateKd() {
+        return nameplateKd;
+    }
+
+    public static TranslationService translations() {
+        return translations;
+    }
+
+    public static ChatLog chatLog() {
+        return chatLog;
     }
 }

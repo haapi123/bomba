@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.betterloka.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "PlayerNameplateKdMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

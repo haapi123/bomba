@@ -1,35 +1,79 @@
 package com.betterloka.stats;
 
-/**
- * One line of a player's recent fight history.
- *
- * <p>Head counts are the number of players who actually fought, not the number who signed up —
- * Loka's battle records keep both, and the sign-up figure routinely overstates a fight by a third.
- */
-public record FightSummary(
-        String territory,
-        long timeEnded,
-        String attackerTown,
-        String defenderTown,
-        int attackerCount,
-        int defenderCount,
-        boolean playerAttacked,
-        String foughtForTown,
-        int kills,
-        int deaths,
-        boolean live) {
+import com.betterloka.api.model.EldritchStats;
+import com.betterloka.api.model.FightDetail;
 
-    /** The player's own side's head count. */
-    public int ownSideCount() {
-        return playerAttacked ? attackerCount : defenderCount;
+/**
+ * One row of a player's recent fight history.
+ *
+ * <p>A player's EldritchBot page lists which fights they were in and how each ended, but the
+ * per-player numbers live on the individual fight pages. The row therefore renders as soon as the
+ * profile loads and gains its kills and deaths a moment later, when {@link #detail()} arrives.
+ */
+public record FightSummary(EldritchStats.RecentFight ref, FightDetail detail) {
+
+    public static FightSummary pending(EldritchStats.RecentFight ref) {
+        return new FightSummary(ref, null);
     }
 
-    /** The opposing side's head count. */
-    public int enemySideCount() {
-        return playerAttacked ? defenderCount : attackerCount;
+    public boolean hasDetail() {
+        return detail != null;
+    }
+
+    public String date() {
+        return ref.date();
+    }
+
+    public boolean victory() {
+        return ref.victory();
+    }
+
+    /** Territory name once the detail lands, falling back to the two towns before that. */
+    public String location() {
+        return detail != null && detail.location() != null ? detail.location() : null;
+    }
+
+    /**
+     * The town the player fought for. Known from the player page's own row, so it is available
+     * before the fight page loads; the detail confirms it.
+     */
+    public String ownTown() {
+        if (detail != null && detail.playerTown() != null) {
+            return detail.playerTown();
+        }
+        return ref.ownTown();
     }
 
     public String enemyTown() {
-        return playerAttacked ? defenderTown : attackerTown;
+        String own = ownTown();
+        return own != null ? ref.opponentOf(own) : ref.opponent();
+    }
+
+    public int ownSideCount() {
+        return detail == null ? 0 : detail.ownSideCount();
+    }
+
+    public int enemySideCount() {
+        return detail == null ? 0 : detail.enemySideCount();
+    }
+
+    public int kills() {
+        return detail == null ? 0 : detail.kills();
+    }
+
+    public int deaths() {
+        return detail == null ? 0 : detail.deaths();
+    }
+
+    public int assists() {
+        return detail == null ? 0 : detail.assists();
+    }
+
+    public int golemKills() {
+        return detail == null ? 0 : detail.golemKills();
+    }
+
+    public int lamps() {
+        return detail == null ? 0 : detail.lamps();
     }
 }

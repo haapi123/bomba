@@ -3,41 +3,69 @@
 A client-side Fabric mod for **[Loka](https://lokamc.com)** (`play.lokamc.com`), Minecraft **1.21.11**.
 
 BetterLoka adds an in-game menu, opened with a key you bind yourself, that pulls live data from
-Loka's public API. It is entirely client-side: it never talks to the game server, sends nothing
-about you anywhere, and works whether or not you are connected to Loka.
+Loka's public API and from [EldritchBot](https://eldritchbot.com). It is entirely client-side: it
+never talks to the game server and sends nothing about you anywhere.
 
 ## Modules
 
 | Module | Status |
 | --- | --- |
 | **Player Finder** | Working |
-| Translator | Planned |
+| **Translator** | Working |
 | Fight Manager | Planned |
 | Loka Helper | Planned |
+| Loka Market | Planned |
 
-The three planned modules are listed in the menu but open a placeholder screen for now.
+The planned modules are listed in the menu but open a placeholder screen for now.
 
 ## Player Finder
 
 ![Player Finder](docs/player-finder.png)
 
-Type a Loka player's name, hit Search, and you get:
+Type a Loka player's name, hit Search, and their whole Conquest record comes back in about a second:
 
-- **Kills**, **deaths** and **K/D** across their whole Conquest record
-- **Number of battles** they actually fought in
+- **Kills**, **deaths**, **assists** and **K/D**
+- **Wins**, **losses**, total **fights** and **win rate**
+- **Golems** and **lamps** taken
+- **Potions**, **pearls**, **food** and **ancient ingots** used across their career
 - Their **town** — level, continent, member count, whether it is recruiting
-- **Who they currently fight for** — Loka lets players reinforce towns other than their own, so
-  this is taken from their most recent battle, not from their membership
-- **When they first appeared on Loka**
-- Their **last 5 fights**, each as `territory · your side v enemy side · kills/deaths`, with the
-  town they fought for, the enemy town, and how long ago it was
+- **Who they currently fight for** — Loka lets players reinforce towns other than their own
+- Their **nemesis**: whoever has killed them most
+- **When they first appeared on Loka**, and whether they are **in a fight right now**
+- Their **last 5 fights** — territory, side sizes, kills/deaths/assists, the towns, and the result
 
-![Recent fights](docs/player-finder-fights.png)
+![Career statistics](docs/player-finder-stats.png)
 
-Battles that are running right now are folded in and marked `LIVE`.
+Name lookup is case-insensitive.
 
-Name lookup is case-insensitive even though Loka's endpoint is not — a casing miss falls back to
-resolving the canonical name through Mojang and retrying by UUID.
+### K/D above nameplates
+
+The toggle at the top of the Player Finder puts each player's K/D beside their name tag in the
+world, coloured the way Loka players already read it:
+
+| K/D | Colour |
+| --- | --- |
+| below 1.0 | red |
+| 1.0 and above | yellow |
+| 3.0 and above | gold |
+
+Ratios are fetched in the background as players come into view, cached for fifteen minutes, and
+capped at a handful of requests in flight, so a full fight fills in over a few seconds rather than
+all at once.
+
+## Translator
+
+![Translator](docs/translator.png)
+
+For playing on an English-speaking server without speaking English.
+
+- **Reading**: turn *Auto-translate* on and every chat line is translated into your language as it
+  arrives. The Translator shows the translation with the original underneath.
+- **Writing**: type a reply in your own language, press **Translate**, and **Copy** puts the English
+  version on your clipboard — paste it into chat.
+
+Both languages are pickers, so this works for any pair the translation service supports, not just
+Polish and English. The mod never sends anything to the server itself; you always paste it yourself.
 
 ## Installing
 
@@ -48,38 +76,33 @@ resolving the canonical name through Mojang and retrying by UUID.
 Then open **Options → Controls → Key Binds**, find the **BetterLoka** category, and bind
 **Open BetterLoka menu** to whatever key you like. It defaults to `L`.
 
-## How the data works
+Settings live in `config/betterloka/config.json` and are written as you change them in the GUI.
 
-Loka's API exposes per-player kills and deaths *only* inside individual battle records, and it has
-no "battles for player X" endpoint — the only way to answer that question is to hold the battle
-history locally and look sideways through it. So on first run BetterLoka downloads the full history
-(about 8,000 battles, ~410 requests, a minute and a half) and writes it to
-`config/betterloka/battles.bin` as a gzipped binary index — roughly 3 MB, down from 65 MB of raw
-JSON.
+## Where the data comes from
 
-After that, every launch compares the battle count the server reports against the count already
-stored and fetches only the pages covering the difference. A typical start-up sync is one or two
-requests and finishes in under two seconds.
+**EldritchBot** parses Loka's Conquest fight logs and publishes per-player career totals. It has one
+JSON endpoint (`/api/player/<name>` — kills and deaths only, and case sensitive), so everything else
+is read from the server-rendered player page, and each fight's breakdown from the fight page it
+links to.
 
-Requests are paced by a shared token bucket and the client speaks HTTP/1.1 on purpose — over
-HTTP/2 the JDK client multiplexes everything onto one connection to `api.lokamc.com` and the sync
-serialises behind it, turning a 10-second sweep into 80 seconds of rate-limit backoff.
+**Loka's own API** supplies rank, account age, town rosters and the battles running right now — the
+things EldritchBot does not track.
 
-The Player Finder does not wait for any of this. Identity and town resolve in two requests and
-appear immediately; the combat card fills in when the history lands.
+A full profile is about ten requests and lands in roughly a second. The card appears as soon as the
+career totals arrive; the fight rows fill in behind it.
 
-### What the API does not provide
+Two things are done deliberately in the HTTP layer, both measured against the live services:
 
-Some things simply are not in Loka's public data, so BetterLoka does not show them rather than
-guessing:
+- Requests are paced by a token bucket, one per host, and a 429 backs every thread off at once.
+- The client speaks **HTTP/1.1 on purpose**. Over HTTP/2 the JDK client multiplexes every request
+  onto one connection per host and parallel work serialises behind it — the same sweep measured 8x
+  slower, with rate-limit backoff on top.
 
-- **Assists** — battle records carry kills, deaths and damage, but no assists.
-- **Nemesis** — kills are stored per player per battle, with no record of who killed whom, so
-  "who killed you most this month" is not derivable.
-- **Town join date** — town members carry only a `subowner` flag, with no joined-at timestamp.
+### What is not shown
 
-"First seen" is derived from the creation timestamp embedded in the player's identity ObjectID,
-which is when their first Loka profile was created.
+**Charge success rate** is not available. EldritchBot publishes how many golems and lamps a player
+has taken, but not how many they attempted, so a percentage cannot be computed without downloading
+every fight that player has ever been in.
 
 ## Building
 
@@ -92,23 +115,15 @@ Requires JDK 21.
 ## Testing
 
 ```bash
-./gradlew test                            # offline: parsing and cache round-trip
-./gradlew test -Pbetterloka.live=true     # also hits api.lokamc.com end-to-end (~5 min)
+./gradlew test                            # offline: HTML/JSON parsing
+./gradlew test -Pbetterloka.live=true     # also hits the live services end to end
 ```
 
-The live suite syncs the real battle history, builds a real profile out of it, and checks that a
-second run reuses the cache instead of resyncing.
-
-Two dev helpers are also available:
-
-```bash
-# Measure how fast the live API will let us page, to re-tune the request rate
-./gradlew test -Pbetterloka.diag=true -Pbetterloka.rate=5 --tests "*PageFetchDiagnosticTest"
-
-# Pre-seed a dev client's cache so ./gradlew runClient starts with the history in place
-./gradlew test -Pbetterloka.seed=run/config/betterloka/battles.bin --tests "*CacheSeedTest"
-```
+The parsing tests run against fixtures shaped like the real markup; the live suite is what catches
+those sites changing. It checks a real career, a real fight breakdown, the nameplate endpoint, the
+not-found path, case-insensitive lookup, and translation in both directions — and asserts that a
+whole profile still costs only a handful of requests.
 
 ## License
 
-MIT. Not affiliated with or endorsed by Loka.
+MIT. Not affiliated with or endorsed by Loka or EldritchBot.
