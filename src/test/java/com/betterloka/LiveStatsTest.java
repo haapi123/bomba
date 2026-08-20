@@ -157,6 +157,52 @@ class LiveStatsTest {
     }
 
     @Test
+    void readsTheMarket() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            com.betterloka.api.MarketApi market = new com.betterloka.api.MarketApi(transport);
+
+            java.util.List<String> types = market.fetchTypes();
+            assertTrue(types.size() > 100, "Loka's market covers hundreds of item types, got " + types.size());
+            assertEquals("DIAMOND_SWORD", market.matchTypes("diamond sword", 1).get(0),
+                    "a spaced query should still match the underscored material name");
+
+            java.util.List<com.betterloka.api.model.MarketListing> swords = market.fetchListings("DIAMOND_SWORD");
+            assertTrue(swords.size() > 5, "there are always swords on sale, got " + swords.size());
+            for (int i = 1; i < swords.size(); i++) {
+                assertTrue(swords.get(i - 1).pricePerUnit() <= swords.get(i).pricePerUnit(),
+                        "listings should come back cheapest per unit first");
+            }
+
+            var special = swords.stream().filter(com.betterloka.api.model.MarketListing::isSpecial).toList();
+            assertTrue(!special.isEmpty(), "named swords are what the Special tab lists");
+            assertTrue(special.size() < swords.size(),
+                    "every Loka item carries lore, so lore alone must not mark an item special");
+            var named = special.get(0);
+            assertNotNull(named.customName());
+            assertTrue(named.price() > 0);
+            assertTrue(named.customName().length() < 60,
+                    "the name must stop at its own component, not run into the lore: " + named.customName());
+
+            String seller = market.sellerName(swords.get(0).ownerId());
+            assertNotNull(seller, "listings carry only an identity id, which must resolve to a name");
+
+            System.out.printf("market: %d item types, %d diamond swords listed, %d of them named/lore%n",
+                    types.size(), swords.size(), special.size());
+            System.out.printf("  cheapest: %s from %s at %.0f (%.0f each, %d left)%n",
+                    swords.get(0).displayName(), seller, swords.get(0).price(),
+                    swords.get(0).pricePerUnit(), swords.get(0).quantity());
+            for (var listing : special.stream().limit(5).toList()) {
+                System.out.printf("  named:    %-34s [%s] %.0f%n", listing.customName(),
+                        String.join(", ", listing.enchantments()), listing.price());
+            }
+            if (!named.lore().isEmpty()) {
+                System.out.println("  lore:     " + String.join(" | ", named.lore().subList(0,
+                        Math.min(3, named.lore().size()))));
+            }
+        }
+    }
+
+    @Test
     void translatesBothWays() throws Exception {
         try (HttpTransport transport = new HttpTransport()) {
             TranslationService service = new TranslationService(transport);

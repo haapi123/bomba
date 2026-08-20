@@ -1,20 +1,16 @@
 {
   "key.category.betterloka.main": "BetterLoka",
   "key.betterloka.open_menu": "Open BetterLoka menu",
-
   "betterloka.menu.title": "BetterLoka",
   "betterloka.menu.subtitle": "Companion mod for play.lokamc.com",
-
   "betterloka.module.player_finder": "Player Finder",
   "betterloka.module.translator": "Translator",
   "betterloka.module.fight_manager": "Fight Manager",
   "betterloka.module.loka_helper": "Loka Helper",
   "betterloka.module.loka_market": "Loka Market",
   "betterloka.module.not_ready": "This module is not built yet.",
-
   "betterloka.toggle.on": "ON",
   "betterloka.toggle.off": "OFF",
-
   "betterloka.finder.title": "Player Finder",
   "betterloka.finder.field": "Player name",
   "betterloka.finder.placeholder": "Loka player name...",
@@ -24,7 +20,6 @@
   "betterloka.finder.not_found": "No player named \"%s\" on Loka.",
   "betterloka.finder.unreachable": "Could not reach the stats service.",
   "betterloka.finder.kd_toggle": "K/D above nameplates: %s",
-
   "betterloka.finder.stat.kills": "Kills",
   "betterloka.finder.stat.deaths": "Deaths",
   "betterloka.finder.stat.assists": "Assists",
@@ -39,7 +34,6 @@
   "betterloka.finder.stat.pearls": "Pearls",
   "betterloka.finder.stat.food": "Food",
   "betterloka.finder.stat.ingots": "Ancient Ingots",
-
   "betterloka.finder.first_seen": "First seen",
   "betterloka.finder.last_fight": "Last fight",
   "betterloka.finder.town": "Town",
@@ -48,12 +42,10 @@
   "betterloka.finder.members": "%s members",
   "betterloka.finder.recruiting": "recruiting",
   "betterloka.finder.nemesis": "Nemesis",
-
   "betterloka.finder.recent": "Last %s fights",
   "betterloka.finder.victory": "victory",
   "betterloka.finder.defeat": "defeat",
   "betterloka.finder.live": "IN FIGHT",
-
   "betterloka.translator.my_language": "Mine: %s",
   "betterloka.translator.chat_language": "Chat: %s",
   "betterloka.translator.auto": "Auto-translate: %s",
@@ -65,5 +57,29 @@
   "betterloka.translator.copied": "Copied — paste it into chat.",
   "betterloka.translator.failed": "Translation failed.",
   "betterloka.translator.output_hint": "The translation shows up here.",
-  "betterloka.translator.no_chat": "No chat captured yet. Messages appear here as they arrive."
+  "betterloka.translator.no_chat": "No chat captured yet. Messages appear here as they arrive.",
+  "betterloka.market.tab.search": "Search",
+  "betterloka.market.tab.special": "Special",
+  "betterloka.market.tab.overview": "Overview",
+  "betterloka.market.field": "Item",
+  "betterloka.market.placeholder": "Item name, e.g. diamond sword...",
+  "betterloka.market.search": "Search",
+  "betterloka.market.searching": "Searching the market...",
+  "betterloka.market.loading": "Loading the market... %s pages",
+  "betterloka.market.hint": "Search for an item, or open Special / Overview.",
+  "betterloka.market.no_type": "No item type matches \"%s\".",
+  "betterloka.market.no_offers": "Nothing on sale for %s right now.",
+  "betterloka.market.no_special": "No named or lore items on sale right now.",
+  "betterloka.market.offers": "%s - %s offers, cheapest per unit first",
+  "betterloka.market.seller": "by %s",
+  "betterloka.market.stock": "%s left",
+  "betterloka.market.each": " each",
+  "betterloka.market.unreachable": "Could not reach the Loka market API.",
+  "betterloka.market.total_value": "Total value listed",
+  "betterloka.market.total_listings": "Listings",
+  "betterloka.market.total_items": "Items on sale",
+  "betterloka.market.sellers": "Sellers",
+  "betterloka.market.special_count": "Named / lore items",
+  "betterloka.market.no_supply_1": "This is what is on sale, not the server's money supply.",
+  "betterloka.market.no_supply_2": "Loka's API does not publish total currency in circulation."
 }

@@ -30,7 +30,7 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.translator", TranslatorScreen::new);
         y = addModule(x, y, "betterloka.module.fight_manager", null);
         y = addModule(x, y, "betterloka.module.loka_helper", null);
-        addModule(x, y, "betterloka.module.loka_market", null);
+        addModule(x, y, "betterloka.module.loka_market", LokaMarketScreen::new);
 
         addDrawableChild(ButtonWidget.builder(ScreenTexts.DONE, button -> close())
                 .dimensions(x, this.height - 30, BUTTON_WIDTH, BUTTON_HEIGHT).build());

@@ -2,6 +2,9 @@ package com.betterloka.mixin;
 
 import com.betterloka.BetterLokaClient;
 import com.betterloka.gui.GuiTheme;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import net.minecraft.entity.PlayerLikeEntity;
@@ -32,14 +35,41 @@ public abstract class PlayerNameplateKdMixin {
         if (state.displayName == null || !BetterLokaClient.isNameplateKdEnabled()) {
             return;
         }
-        OptionalDouble ratio = BetterLokaClient.nameplateKd().killDeathOf(entity.getNameForScoreboard());
+        String account = accountNameOf(entity);
+        if (account == null) {
+            return;
+        }
+        OptionalDouble ratio = BetterLokaClient.nameplateKd().killDeathOf(account);
         if (ratio.isEmpty()) {
             return;
         }
         state.displayName = state.displayName.copy().append(badge(ratio.getAsDouble()));
     }
 
-    /** {@code  | +3.30}, coloured by how good the ratio is. */
+    /**
+     * The player's Mojang account name.
+     *
+     * <p>Deliberately not the nameplate text or {@code getNameForScoreboard}: Loka decorates players
+     * with a rank ("Duelist Rezorie"), and looking that up in a stats service finds nothing. The
+     * player list carries the undecorated profile, which is what the stats sites are keyed on.
+     */
+    private static String accountNameOf(PlayerLikeEntity entity) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        ClientPlayNetworkHandler network = client == null ? null : client.getNetworkHandler();
+        if (network != null) {
+            PlayerListEntry listed = network.getPlayerListEntry(entity.getUuid());
+            if (listed != null && listed.getProfile() != null) {
+                String name = listed.getProfile().name();
+                if (name != null && !name.isBlank()) {
+                    return name;
+                }
+            }
+        }
+        String fallback = entity.getNameForScoreboard();
+        return fallback == null || fallback.isBlank() ? null : fallback;
+    }
+
+    /** {@code  | 3.30}, coloured by how good the ratio is. */
     private static MutableText badge(double ratio) {
         return Text.literal(" | ").formatted(Formatting.DARK_GRAY)
                 .append(Text.literal(String.format(Locale.ROOT, "%.2f", ratio))

@@ -4,6 +4,7 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.translate.ChatLog;
 import com.betterloka.translate.TranslationService;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -20,26 +21,30 @@ import java.util.List;
 /**
  * Lets players follow and join Loka's chat across a language barrier.
  *
- * <p>The top half shows recent server chat with each line translated into the player's own language;
- * the bottom half takes a reply in that language, translates it into the language the server speaks,
- * and offers it for copying. Nothing is ever sent to the server by the mod — the player pastes the
- * result into chat themselves.
+ * <p>The top half lists what people have said, newest first, translated into the player's language
+ * with the original underneath; the bottom half takes a reply in that language, translates it into
+ * the language the server speaks, and offers it for copying. Nothing is ever sent to the server by
+ * the mod — the player pastes the result into chat themselves.
  */
 public class TranslatorScreen extends Screen {
-    private static final int MAX_CONTENT_WIDTH = 380;
+    private static final int MAX_CONTENT_WIDTH = 400;
     private static final int ROW_HEIGHT = 10;
-    private static final int CARD_PADDING = 4;
+    private static final int CARD_PADDING = 5;
     private static final int CARD_GAP = 4;
 
-    private static final int CONTROL_ROW_Y = 24;
+    private static final int CONTROL_ROW_Y = 26;
     private static final int CONTROL_ROW_HEIGHT = 16;
     private static final int CHAT_TOP = CONTROL_ROW_Y + CONTROL_ROW_HEIGHT + 6;
 
     private static final int COMPOSE_HEIGHT = 18;
     private static final int OUTPUT_HEIGHT = 20;
-    private static final int ACTION_WIDTH = 60;
+    private static final int ACTION_WIDTH = 62;
+
+    /** How many messages the list holds; the rest scroll off the bottom. */
+    private static final int VISIBLE_HISTORY = 40;
 
     private final Screen parent;
+    private final ScrollPanel scrollPanel = new ScrollPanel();
 
     private TextFieldWidget composeField;
     private ButtonWidget translateButton;
@@ -49,9 +54,6 @@ public class TranslatorScreen extends Screen {
     private boolean translating;
     private Text status;
     private int translateGeneration;
-
-    private int scroll;
-    private int contentHeight;
 
     public TranslatorScreen(Screen parent) {
         super(Text.translatable("betterloka.module.translator"));
@@ -71,15 +73,11 @@ public class TranslatorScreen extends Screen {
     }
 
     private int composeY() {
-        return this.height - 88;
+        return this.height - 86;
     }
 
     private int outputY() {
-        return this.height - 64;
-    }
-
-    private int chatBottom() {
-        return composeY() - 6;
+        return this.height - 62;
     }
 
     @Override
@@ -87,6 +85,8 @@ public class TranslatorScreen extends Screen {
         int left = contentLeft();
         int width = contentWidth();
         int third = (width - 8) / 3;
+
+        scrollPanel.setViewport(left, CHAT_TOP, width, Math.max(20, composeY() - 6 - CHAT_TOP));
 
         addDrawableChild(ButtonWidget.builder(nativeLanguageLabel(), button -> {
                     config().setNativeLanguage(nextLanguage(config().nativeLanguage()));
@@ -212,12 +212,24 @@ public class TranslatorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (mouseY >= CHAT_TOP && mouseY <= chatBottom()) {
-            int max = Math.max(0, contentHeight - (chatBottom() - CHAT_TOP));
-            scroll = Math.max(0, Math.min(max, scroll - (int) (verticalAmount * 12)));
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return scrollPanel.mouseScrolled(mouseX, mouseY, verticalAmount)
+                || super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        scrollPanel.mouseReleased();
+        return super.mouseReleased(click);
     }
 
     @Override
@@ -228,54 +240,65 @@ public class TranslatorScreen extends Screen {
 
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
-        int left = contentLeft();
-        int width = contentWidth();
-
-        renderChat(context, left, width);
-        renderOutput(context, left, width);
+        renderChat(context, mouseX, mouseY);
+        renderOutput(context, contentLeft(), contentWidth());
     }
 
-    private void renderChat(DrawContext context, int left, int width) {
-        context.enableScissor(left, CHAT_TOP, left + width, chatBottom());
+    private void renderChat(DrawContext context, int mouseX, int mouseY) {
+        int left = contentLeft();
+        int width = contentWidth();
+        List<ChatLog.Line> lines = BetterLokaClient.chatLog().recent(VISIBLE_HISTORY);
 
-        List<ChatLog.Line> lines = BetterLokaClient.chatLog().recent(40);
-        int y = CHAT_TOP - scroll;
-        int start = y;
+        context.enableScissor(left, scrollPanel.viewportTop(), left + width, scrollPanel.viewportBottom());
 
         if (lines.isEmpty()) {
             context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.translator.no_chat"),
-                    left, y + 4, GuiTheme.MUTED);
-            contentHeight = 20;
+                    left, scrollPanel.viewportTop() + 4, GuiTheme.MUTED);
             context.disableScissor();
+            scrollPanel.setContentHeight(0);
             return;
         }
 
-        int inner = width - CARD_PADDING * 2;
+        int cardWidth = scrollPanel.contentWidth();
+        int inner = cardWidth - CARD_PADDING * 2;
+        int y = scrollPanel.contentTop();
+        int start = y;
+
         for (ChatLog.Line line : lines) {
             boolean showTranslation = line.hasUsefulTranslation();
             int rows = showTranslation ? 2 : 1;
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
-            GuiTheme.panel(context, left, y, width, height);
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows + 1;
+            GuiTheme.panel(context, left, y, cardWidth, height);
 
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
 
+            // Name and time share the first line; the message body sits under them.
+            Text sender = Text.literal(line.sender()).formatted(Formatting.BOLD);
+            context.drawTextWithShadow(this.textRenderer, sender, textX, textY, GuiTheme.ACCENT);
+            String when = TimeFormat.ago(line.receivedAt());
+            context.drawTextWithShadow(this.textRenderer, when,
+                    left + cardWidth - CARD_PADDING - this.textRenderer.getWidth(when), textY, GuiTheme.MUTED);
+
+            // Measured on the styled text: bold is wider than the plain string, and measuring the
+            // plain one runs the message into the name.
+            int senderWidth = this.textRenderer.getWidth(sender) + 6;
+            String headline = showTranslation ? line.translated() : line.message();
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(headline, inner - senderWidth - 30),
+                    textX + senderWidth, textY, line.failed() ? GuiTheme.BAD : GuiTheme.TEXT);
+
             if (showTranslation) {
                 context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(line.translated(), inner), textX, textY, GuiTheme.TEXT);
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(line.original(), inner), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
-            } else {
-                int color = line.failed() ? GuiTheme.BAD : GuiTheme.TEXT;
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(line.original(), inner), textX, textY, color);
+                        this.textRenderer.trimToWidth(line.message(), inner), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
             y += height + CARD_GAP;
         }
 
-        contentHeight = y - start;
         context.disableScissor();
+        scrollPanel.setContentHeight(y - start);
+        scrollPanel.render(context, mouseX, mouseY);
     }
 
     private void renderOutput(DrawContext context, int left, int width) {

@@ -1,20 +1,16 @@
 {
   "key.category.betterloka.main": "BetterLoka",
   "key.betterloka.open_menu": "Otwórz menu BetterLoka",
-
   "betterloka.menu.title": "BetterLoka",
   "betterloka.menu.subtitle": "Mod pomocniczy dla play.lokamc.com",
-
   "betterloka.module.player_finder": "Player Finder",
   "betterloka.module.translator": "Translator",
   "betterloka.module.fight_manager": "Fight Manager",
   "betterloka.module.loka_helper": "Loka Helper",
   "betterloka.module.loka_market": "Loka Market",
   "betterloka.module.not_ready": "Ten moduł nie jest jeszcze gotowy.",
-
   "betterloka.toggle.on": "WŁ",
   "betterloka.toggle.off": "WYŁ",
-
   "betterloka.finder.title": "Player Finder",
   "betterloka.finder.field": "Nick gracza",
   "betterloka.finder.placeholder": "Nick gracza z Loki...",
@@ -24,7 +20,6 @@
   "betterloka.finder.not_found": "Nie ma gracza o nicku \"%s\" na Loce.",
   "betterloka.finder.unreachable": "Nie udało się połączyć z serwisem statystyk.",
   "betterloka.finder.kd_toggle": "K/D nad nickami: %s",
-
   "betterloka.finder.stat.kills": "Zabójstwa",
   "betterloka.finder.stat.deaths": "Śmierci",
   "betterloka.finder.stat.assists": "Asysty",
@@ -39,7 +34,6 @@
   "betterloka.finder.stat.pearls": "Perły",
   "betterloka.finder.stat.food": "Jedzenie",
   "betterloka.finder.stat.ingots": "Ancient Ingoty",
-
   "betterloka.finder.first_seen": "Pierwszy raz",
   "betterloka.finder.last_fight": "Ostatni fight",
   "betterloka.finder.town": "Town",
@@ -48,12 +42,10 @@
   "betterloka.finder.members": "%s członków",
   "betterloka.finder.recruiting": "rekrutuje",
   "betterloka.finder.nemesis": "Nemesis",
-
   "betterloka.finder.recent": "Ostatnie %s walk",
   "betterloka.finder.victory": "wygrana",
   "betterloka.finder.defeat": "przegrana",
   "betterloka.finder.live": "NA FIGHCIE",
-
   "betterloka.translator.my_language": "Mój: %s",
   "betterloka.translator.chat_language": "Czat: %s",
   "betterloka.translator.auto": "Auto-tłumaczenie: %s",
@@ -65,5 +57,29 @@
   "betterloka.translator.copied": "Skopiowano — wklej na czat.",
   "betterloka.translator.failed": "Nie udało się przetłumaczyć.",
   "betterloka.translator.output_hint": "Tutaj pojawi się tłumaczenie.",
-  "betterloka.translator.no_chat": "Brak wiadomości. Pojawią się tu, gdy ktoś napisze na czacie."
+  "betterloka.translator.no_chat": "Brak wiadomości. Pojawią się tu, gdy ktoś napisze na czacie.",
+  "betterloka.market.tab.search": "Szukaj",
+  "betterloka.market.tab.special": "Specjalne",
+  "betterloka.market.tab.overview": "Podsumowanie",
+  "betterloka.market.field": "Przedmiot",
+  "betterloka.market.placeholder": "Nazwa przedmiotu, np. diamond sword...",
+  "betterloka.market.search": "Szukaj",
+  "betterloka.market.searching": "Przeszukuję rynek...",
+  "betterloka.market.loading": "Wczytuję rynek... %s stron",
+  "betterloka.market.hint": "Wyszukaj przedmiot albo otwórz Specjalne / Podsumowanie.",
+  "betterloka.market.no_type": "Żaden przedmiot nie pasuje do \"%s\".",
+  "betterloka.market.no_offers": "Nikt teraz nie sprzedaje %s.",
+  "betterloka.market.no_special": "Brak przedmiotów z nazwą lub lorem w sprzedaży.",
+  "betterloka.market.offers": "%s - %s ofert, od najtańszej za sztukę",
+  "betterloka.market.seller": "od %s",
+  "betterloka.market.stock": "zostało %s",
+  "betterloka.market.each": " za szt.",
+  "betterloka.market.unreachable": "Nie udało się połączyć z API rynku Loki.",
+  "betterloka.market.total_value": "Łączna wartość ofert",
+  "betterloka.market.total_listings": "Ofert",
+  "betterloka.market.total_items": "Przedmiotów w sprzedaży",
+  "betterloka.market.sellers": "Sprzedających",
+  "betterloka.market.special_count": "Przedmiotów z nazwą / lorem",
+  "betterloka.market.no_supply_1": "To wartość wystawionych ofert, nie ilość waluty na serwerze.",
+  "betterloka.market.no_supply_2": "API Loki nie udostępnia sumy waluty w obiegu."
 }

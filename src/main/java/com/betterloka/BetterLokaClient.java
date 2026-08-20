@@ -3,6 +3,7 @@ package com.betterloka;
 import com.betterloka.api.EldritchApi;
 import com.betterloka.api.HttpTransport;
 import com.betterloka.api.LokaApi;
+import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.gui.BetterLokaMenuScreen;
@@ -40,6 +41,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
+    private static MarketApi market;
     private static TownCache towns;
     private static PlayerStatsService stats;
     private static NameplateKdService nameplateKd;
@@ -54,6 +56,7 @@ public class BetterLokaClient implements ClientModInitializer {
         transport = new HttpTransport();
         loka = new LokaApi(transport);
         eldritch = new EldritchApi(transport);
+        market = new MarketApi(transport);
         towns = new TownCache(loka);
         stats = new PlayerStatsService(loka, eldritch, towns);
         nameplateKd = new NameplateKdService(eldritch);
@@ -95,6 +98,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static BetterLokaConfig config() {
         return config;
+    }
+
+    public static MarketApi market() {
+        return market;
     }
 
     public static PlayerStatsService stats() {

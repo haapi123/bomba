@@ -7,6 +7,7 @@ import com.betterloka.api.model.LokaTown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -40,6 +41,7 @@ public class PlayerFinderScreen extends Screen {
     private static final int VIEWPORT_TOP = TOGGLE_ROW_Y + TOGGLE_ROW_HEIGHT + 6;
 
     private final Screen parent;
+    private final ScrollPanel scrollPanel = new ScrollPanel();
 
     private TextFieldWidget nameField;
     private ButtonWidget searchButton;
@@ -49,9 +51,6 @@ public class PlayerFinderScreen extends Screen {
     private boolean searching;
     /** Guards against a stale request overwriting the results of a newer one. */
     private int searchGeneration;
-
-    private int scroll;
-    private int contentHeight;
 
     public PlayerFinderScreen(Screen parent) {
         super(Text.translatable("betterloka.finder.title"));
@@ -75,6 +74,8 @@ public class PlayerFinderScreen extends Screen {
         int left = contentLeft();
         int width = contentWidth();
         int fieldWidth = width - SEARCH_BUTTON_WIDTH - 4;
+
+        scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
         String previous = nameField != null ? nameField.getText() : "";
         nameField = new TextFieldWidget(this.textRenderer, left, SEARCH_ROW_Y, fieldWidth, SEARCH_ROW_HEIGHT,
@@ -109,6 +110,7 @@ public class PlayerFinderScreen extends Screen {
                         .formatted(on ? Formatting.GREEN : Formatting.GRAY));
     }
 
+
     private void search() {
         String name = nameField.getText().trim();
         if (name.isEmpty() || searching) {
@@ -117,7 +119,7 @@ public class PlayerFinderScreen extends Screen {
         searching = true;
         error = null;
         profile = null;
-        scroll = 0;
+        scrollPanel.reset();
         int generation = ++searchGeneration;
 
         PlayerStatsService stats = BetterLokaClient.stats();
@@ -171,12 +173,24 @@ public class PlayerFinderScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (mouseY >= VIEWPORT_TOP && mouseY <= viewportBottom()) {
-            int max = Math.max(0, contentHeight - (viewportBottom() - VIEWPORT_TOP));
-            scroll = Math.max(0, Math.min(max, scroll - (int) (verticalAmount * 12)));
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return scrollPanel.mouseScrolled(mouseX, mouseY, verticalAmount)
+                || super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        scrollPanel.mouseReleased();
+        return super.mouseReleased(click);
     }
 
     @Override
@@ -190,22 +204,27 @@ public class PlayerFinderScreen extends Screen {
         int width = contentWidth();
 
         context.enableScissor(left, VIEWPORT_TOP, left + width, viewportBottom());
-        int y = VIEWPORT_TOP - scroll;
+        int y = scrollPanel.contentTop();
+        int cardWidth = scrollPanel.contentWidth();
+        int used;
         if (searching) {
             context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.searching"),
                     left, y + 4, GuiTheme.MUTED);
-            contentHeight = 20;
+            used = 20;
         } else if (error != null) {
             context.drawTextWithShadow(this.textRenderer, error, left, y + 4, GuiTheme.BAD);
-            contentHeight = 20;
+            used = 20;
         } else if (profile != null) {
-            contentHeight = renderProfile(context, left, y, width) - (VIEWPORT_TOP - scroll);
+            used = renderProfile(context, left, y, cardWidth) - y;
         } else {
             context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.hint"),
                     left, y + 4, GuiTheme.MUTED);
-            contentHeight = 20;
+            used = 20;
         }
         context.disableScissor();
+
+        scrollPanel.setContentHeight(used);
+        scrollPanel.render(context, mouseX, mouseY);
     }
 
     /** @return the y coordinate just past the rendered content. */

@@ -12,9 +12,9 @@ never talks to the game server and sends nothing about you anywhere.
 | --- | --- |
 | **Player Finder** | Working |
 | **Translator** | Working |
+| **Loka Market** | Working |
 | Fight Manager | Planned |
 | Loka Helper | Planned |
-| Loka Market | Planned |
 
 The planned modules are listed in the menu but open a placeholder screen for now.
 
@@ -53,6 +53,10 @@ Ratios are fetched in the background as players come into view, cached for fifte
 capped at a handful of requests in flight, so a full fight fills in over a few seconds rather than
 all at once.
 
+The lookup uses the player's Mojang account name from the player list, not the text on the
+nameplate: Loka decorates those with a rank ("Duelist Rezorie"), and searching a stats service for
+that finds nothing.
+
 ## Translator
 
 ![Translator](docs/translator.png)
@@ -64,8 +68,30 @@ For playing on an English-speaking server without speaking English.
 - **Writing**: type a reply in your own language, press **Translate**, and **Copy** puts the English
   version on your clipboard — paste it into chat.
 
+Messages are listed newest first as `Name: message`. Only actual chat is kept — join notices,
+territory announcements and command output are filtered out, so the conversation is not buried and
+no requests are wasted translating them.
+
 Both languages are pickers, so this works for any pair the translation service supports, not just
 Polish and English. The mod never sends anything to the server itself; you always paste it yourself.
+
+## Loka Market
+
+![Named items on the market](docs/market-special.png)
+
+Three views over Loka's market:
+
+- **Search** — type an item and get every offer, cheapest per unit first, with the seller, the price,
+  how many they have left and the price each.
+- **Special** — every *named* item on sale, dearest first, with its enchantments. This is where the
+  one-off swords live. Plain lore is not enough to qualify: on Loka every imbued item carries
+  "Imbued in <town>" lore, so only a player-given name marks a piece of gear out.
+- **Overview** — total value listed, how many listings, items and sellers.
+
+![Market overview](docs/market-overview.png)
+
+Loka's API publishes what is on sale but **not how much currency exists on the server**, so the
+overview says what it is showing rather than implying a money supply figure.
 
 ## Installing
 
@@ -103,6 +129,9 @@ Two things are done deliberately in the HTTP layer, both measured against the li
 **Charge success rate** is not available. EldritchBot publishes how many golems and lamps a player
 has taken, but not how many they attempted, so a percentage cannot be computed without downloading
 every fight that player has ever been in.
+
+**Total currency on the server** is not available either — Loka's market endpoints cover listings,
+not balances.
 
 ## Building
 
