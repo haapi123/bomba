@@ -8,11 +8,15 @@ never talks to the game server and sends nothing about you anywhere.
 
 ## Modules
 
+![The BetterLoka menu](docs/menu.png)
+
 | Module | Status |
 | --- | --- |
 | **Player Finder** | Working |
 | **Translator** | Working |
 | **Loka Market** | Working |
+| **Town Finder** | Working |
+| **Town Logger** | Working |
 | Fight Manager | Planned |
 | Loka Helper | Planned |
 
@@ -37,6 +41,23 @@ Type a Loka player's name, hit Search, and their whole Conquest record comes bac
 ![Career statistics](docs/player-finder-stats.png)
 
 Name lookup is case-insensitive.
+
+### Ranked 1v1
+
+![Ranked 1v1](docs/player-finder-ranked.png)
+
+Below the Conquest record, both of Loka's ranked 1v1 ladders — Potion and Barebones — with this
+season's **duels, wins, losses, win rate, rank** and ladder position, and underneath it the **best
+rank they have ever held and the season they held it in**.
+
+Loka publishes ladders rather than players, so a lookup means fetching a ladder and indexing it: the
+current standings are two requests and arrive with the rest of the profile. "Best rank ever" needs
+every past season's final table — about forty requests — so it is built once in the background and
+the line fills in when it lands. Both are shared by every player you then look up.
+
+A season's weekly snapshots are cumulative, which is what makes its **last published week** that
+season's result and keeps this to one table per season rather than one per week. Players are followed
+by UUID, not by name, because names change between seasons.
 
 ### K/D above nameplates
 
@@ -110,6 +131,44 @@ cannot fill the screen.
 Loka's API publishes what is on sale but **not how much currency exists on the server**, so the
 overview says what it is showing rather than implying a money supply figure.
 
+## Town Finder
+
+![Town Finder](docs/town-finder.png)
+
+A town by name: continent, level, strength, members, whether it is recruiting, and every territory it
+currently holds with the number and beacon coordinates. Territories come from the Town Logger's sweep,
+so this costs one request.
+
+A name with no living town behind it is usually a town that is gone rather than one that never
+existed, so the search falls back to the deleted-town roster and says so.
+
+## Town Logger
+
+![Town Logger](docs/town-logger.png)
+
+Which towns have fallen, and what they were holding.
+
+The distinction the module exists for: a territory that moves from one living town to another was
+**taken in a fight** and says nothing about either side. A territory that Loka still records to a
+town it no longer has means that **town was deleted or collapsed** — and that is what the first tab
+lists, with the continent, the territory number and the beacon coordinates.
+
+That works because Loka does not clear a deleted town's claims: the territories keep pointing at an
+id that no longer resolves. So the whole standing backlog appears on the **first sweep**, without
+having to have been running when it happened. Naming the town takes the deleted-town roster, since a
+deleted town 404s on a lookup by id.
+
+Three tabs: **Fallen towns**, **All changes** (captures, releases and claims as they happen) and
+**Unowned** (every territory nobody holds). The log is written to `config/betterloka/town-log.json`
+and survives restarts, so the baseline is not lost between sessions.
+
+### What it costs to leave running
+
+A sweep is three requests — one per continent — and about 850 KB, and runs every **10 minutes** by
+default. The deleted-town roster is forty small requests and is refreshed at most once an hour, since
+it only changes when a town dies. That is roughly **6 MB an hour**; the interval button offers 2, 5,
+10, 30 and 60 minutes, **Check now** forces a sweep, and the whole thing can be switched off.
+
 ## Installing
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer) 0.19.0+ for Minecraft 1.21.11.
@@ -128,8 +187,11 @@ JSON endpoint (`/api/player/<name>` — kills and deaths only, and case sensitiv
 is read from the server-rendered player page, and each fight's breakdown from the fight page it
 links to.
 
-**Loka's own API** supplies rank, account age, town rosters and the battles running right now — the
-things EldritchBot does not track.
+**Loka's own API** supplies rank, account age, town rosters, territory ownership, the deleted-town
+roster and the battles running right now — the things EldritchBot does not track.
+
+**Loka's ranked ladders** at `webapi.lokamc.com` are what the leaderboard page on the site reads, so
+the mod reads them directly rather than scraping the page around them.
 
 A full profile is about ten requests and lands in roughly a second. The card appears as soon as the
 career totals arrive; the fight rows fill in behind it.
@@ -167,8 +229,16 @@ Requires JDK 21.
 
 The parsing tests run against fixtures shaped like the real markup; the live suite is what catches
 those sites changing. It checks a real career, a real fight breakdown, the nameplate endpoint, the
-not-found path, case-insensitive lookup, and translation in both directions — and asserts that a
-whole profile still costs only a handful of requests.
+not-found path, case-insensitive lookup, the market, translation in both directions, both ranked
+ladders and the territory sweep — and asserts that a whole profile still costs only a handful of
+requests.
+
+Two of those live checks are load-bearing assumptions rather than parsing:
+
+- the ranked history is only usable per season because a season's weekly snapshots are **cumulative**,
+  so the test asserts a later week includes the earlier one;
+- the Town Logger only works because Loka **leaves a deleted town's id on its territories**, so the
+  test sweeps every continent and resolves each dangling holder against the deleted-town roster.
 
 ## License
 

@@ -2,8 +2,11 @@ package com.betterloka.gui;
 
 import com.betterloka.BetterLokaClient;
 import com.betterloka.api.ApiException;
+import com.betterloka.api.ArenaApi;
+import com.betterloka.api.model.ArenaEntry;
 import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
@@ -18,6 +21,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletionException;
 
@@ -49,6 +53,12 @@ public class PlayerFinderScreen extends Screen {
     private PlayerProfile profile;
     private Text error;
     private boolean searching;
+
+    /** Ranked 1v1: this season's standings, and the best rank of any season. */
+    private List<ArenaService.Standing> arenaCurrent = List.of();
+    private List<ArenaService.Standing> arenaBest = List.of();
+    private boolean arenaLoading;
+    private boolean arenaHistoryLoading;
     /** Guards against a stale request overwriting the results of a newer one. */
     private int searchGeneration;
 
@@ -119,8 +129,20 @@ public class PlayerFinderScreen extends Screen {
         searching = true;
         error = null;
         profile = null;
+        arenaCurrent = List.of();
+        arenaBest = List.of();
+        arenaLoading = true;
+        arenaHistoryLoading = true;
         scrollPanel.reset();
         int generation = ++searchGeneration;
+
+        // The ladders are a separate service from the career pages, so they are asked in parallel
+        // rather than lengthening the profile's critical path.
+        ArenaService arena = BetterLokaClient.arenaStats();
+        arena.current(name, null).whenComplete((standings, throwable) -> applyOnClientThread(generation, () -> {
+            arenaLoading = false;
+            arenaCurrent = throwable != null ? List.of() : standings;
+        }));
 
         PlayerStatsService stats = BetterLokaClient.stats();
         stats.lookup(name, headline -> applyOnClientThread(generation, () -> {
@@ -128,6 +150,15 @@ public class PlayerFinderScreen extends Screen {
             searching = false;
             error = null;
             profile = headline;
+            // Names change between seasons, so the historical index is searched by UUID once Loka's
+            // record of the account has supplied one.
+            arena.best(headline.name(), headline.uuid())
+                    .whenComplete((standings, throwable) -> applyOnClientThread(generation, () -> {
+                        arenaHistoryLoading = false;
+                        if (throwable == null) {
+                            arenaBest = standings;
+                        }
+                    }));
         })).whenComplete((result, throwable) -> applyOnClientThread(generation, () -> {
             searching = false;
             if (throwable != null) {
@@ -269,6 +300,7 @@ public class PlayerFinderScreen extends Screen {
         });
 
         y = renderTownCard(context, left, y, width, inner);
+        y = renderRankedCards(context, left, y, width, inner);
 
         if (stats.nemesisName() != null) {
             y = card(context, left, y, width, 1, (x, rowY) ->
@@ -397,6 +429,90 @@ public class PlayerFinderScreen extends Screen {
             y += height + CARD_GAP;
         }
         return y;
+    }
+
+    /**
+     * The ranked 1v1 record, one card per ladder.
+     *
+     * <p>This season's standings arrive with the rest of the profile; the best rank ever needs every
+     * past season's final table, so that line says it is loading until the index is built and then
+     * fills in behind the card.
+     */
+    private int renderRankedCards(DrawContext context, int left, int y, int width, int inner) {
+        if (arenaCurrent.isEmpty()) {
+            return card(context, left, y, width, 1, (x, rowY) ->
+                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                            label("betterloka.finder.ranked"),
+                            label(arenaLoading ? "betterloka.finder.loading" : "betterloka.finder.unranked"),
+                            GuiTheme.MUTED));
+        }
+
+        boolean any = false;
+        for (ArenaService.Standing standing : arenaCurrent) {
+            ArenaEntry current = standing.current();
+            if (current == null) {
+                continue;
+            }
+            any = true;
+            ArenaService.Best best = bestFor(standing.ladder());
+            int rows = 4;
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+            GuiTheme.panel(context, left, y, width, height);
+
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable(standing.ladder().translationKey()).copy().formatted(Formatting.BOLD),
+                    textX, textY, GuiTheme.ACCENT);
+            String position = "#" + current.position();
+            context.drawTextWithShadow(this.textRenderer, position,
+                    left + width - CARD_PADDING - this.textRenderer.getWidth(position), textY, GuiTheme.MUTED);
+
+            twoColumns(context, textX, textY + ROW_HEIGHT, inner,
+                    label("betterloka.finder.duels"), String.valueOf(current.duels()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.winrate"), current.winRatioText(), GuiTheme.TEXT);
+            twoColumns(context, textX, textY + ROW_HEIGHT * 2, inner,
+                    label("betterloka.finder.stat.wins"), String.valueOf(current.wins()), GuiTheme.GOOD,
+                    label("betterloka.finder.stat.losses"), String.valueOf(current.losses()), GuiTheme.BAD);
+
+            // The rank goes in its own row: it is coloured by tier, which a shared column would lose.
+            GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
+                    label("betterloka.finder.rank"),
+                    current.rank() == null ? "—" : current.rank().label(),
+                    current.rank() == null ? GuiTheme.MUTED : current.rank().color());
+            y += height + CARD_GAP;
+
+            y = card(context, left, y, width, 1, (x, rowY) -> {
+                if (best == null) {
+                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                            label("betterloka.finder.best_rank"),
+                            label(arenaHistoryLoading ? "betterloka.finder.loading" : "betterloka.finder.unranked"),
+                            GuiTheme.MUTED);
+                    return;
+                }
+                GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                        Text.translatable("betterloka.finder.best_rank_season", best.season()).getString(),
+                        best.entry().rank().label(), best.entry().rank().color());
+            });
+        }
+
+        if (!any) {
+            return card(context, left, y, width, 1, (x, rowY) ->
+                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                            label("betterloka.finder.ranked"), label("betterloka.finder.unranked"),
+                            GuiTheme.MUTED));
+        }
+        return y;
+    }
+
+    private ArenaService.Best bestFor(ArenaApi.Ladder ladder) {
+        for (ArenaService.Standing standing : arenaBest) {
+            if (standing.ladder() == ladder) {
+                return standing.best();
+            }
+        }
+        return null;
     }
 
     /** Draws a card of {@code rows} rows and returns the y just past it. */

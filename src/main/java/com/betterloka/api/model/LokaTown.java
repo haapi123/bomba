@@ -27,6 +27,14 @@ public final class LokaTown {
         this.memberCount = memberCount;
     }
 
+    /**
+     * A town that only exists as a name any more — restored from the saved log, where nothing is
+     * kept but what a deleted town can no longer be asked for.
+     */
+    public static LokaTown deleted(String id, String name, String world) {
+        return new LokaTown(id, name, world, null, 0, 0, false, true, 0);
+    }
+
     public static LokaTown fromJson(JsonObject json) {
         JsonObject members = Json.object(json, "members");
         return new LokaTown(

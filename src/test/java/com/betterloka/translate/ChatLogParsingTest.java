@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * has to tell one from the other.
  */
 class ChatLogParsingTest {
+    private static final int GREEN = 0x55FF55;
+    private static final int AQUA = 0x55FFFF;
 
     @Test
     void readsLokaChatWithRankAndTownDecoration() {
@@ -53,12 +55,43 @@ class ChatLogParsingTest {
                 "no name-shaped token before a colon means this is not someone speaking");
         assertNull(ChatLog.parse("You have been given 3 Ancient Ingots"));
         assertNull(ChatLog.parse(""));
-        assertNull(ChatLog.parse(null));
+        assertNull(ChatLog.parse((String) null));
     }
 
     @Test
     void ignoresAnEmptyMessageBody() {
         assertNull(ChatLog.parse("Rezorie:   "));
+    }
+
+    /**
+     * The regression that stopped town and alliance chat being read at all. Loka writes
+     * {@code [Alliance] [Town] <icon> Nick: message}, and with a chat timestamp in front that runs
+     * past fifty characters before the message starts — longer than the prefix the parser used to
+     * allow, so anyone with a long name silently vanished from the Translator.
+     */
+    @Test
+    void readsLokaTeamChatHoweverLongTheDecorationInFrontIs() {
+        ChatLog.Line town = ChatLog.parse(ChatMessage.colored(
+                "[21:56:36] [Sunspear] [Newgen] ✦ Mindmecraft: im going bed", GREEN));
+        assertNotNull(town, "a timestamped town line is still someone speaking");
+        assertEquals("Mindmecraft", town.sender());
+        assertEquals("im going bed", town.message());
+        assertEquals(ChatChannel.TOWN, town.channel());
+
+        ChatLog.Line alliance = ChatLog.parse(ChatMessage.colored(
+                "[21:56:54] [The Beasts] [Grimwall] ✦ wr3ck3rwanted: buggati u gona get 20v1", AQUA));
+        assertNotNull(alliance, "fifty characters of decoration is still not an announcement");
+        assertEquals("wr3ck3rwanted", alliance.sender());
+        assertEquals("buggati u gona get 20v1", alliance.message());
+        assertEquals(ChatChannel.ALLIANCE, alliance.channel());
+    }
+
+    @Test
+    void doesNotMistakeATimestampsColonForTheSenderSeparator() {
+        ChatLog.Line line = ChatLog.parse("[21:56:36] Rezorie: siema");
+        assertNotNull(line);
+        assertEquals("Rezorie", line.sender());
+        assertEquals("siema", line.message());
     }
 
     @Test
@@ -69,24 +102,36 @@ class ChatLogParsingTest {
     }
 
     @Test
-    void remembersWhichChannelTheColourIdentified() {
-        ChatLog.Line town = ChatLog.parse("Rezorie: bronimy zamku", ChatChannel.TOWN);
+    void takesTheChannelFromTheColourOfWhatWasSaid() {
+        ChatLog.Line town = ChatLog.parse(ChatMessage.colored("Rezorie: bronimy zamku", GREEN));
         assertNotNull(town);
         assertEquals(ChatChannel.TOWN, town.channel());
-        assertEquals("Rezorie", town.sender());
-        assertEquals("bronimy zamku", town.message());
 
-        ChatLog.Line alliance = ChatLog.parse("Ghuraa: kto na fighta", ChatChannel.ALLIANCE);
+        ChatLog.Line alliance = ChatLog.parse(ChatMessage.colored("Ghuraa: kto na fighta", AQUA));
         assertNotNull(alliance);
         assertEquals(ChatChannel.ALLIANCE, alliance.channel());
     }
 
+    /** A coloured rank in an otherwise white line is decoration, not the channel. */
+    @Test
+    void ignoresAColouredWordInsideOrdinaryChat() {
+        String text = "[Newgen] Rezorie: this is quite a long public message about nothing";
+        int[] colors = new int[text.length()];
+        java.util.Arrays.fill(colors, -1);
+        java.util.Arrays.fill(colors, 0, "[Newgen]".length(), GREEN);
+
+        ChatLog.Line line = ChatLog.parse(new ChatMessage(text, colors));
+        assertNotNull(line);
+        assertEquals(ChatChannel.PUBLIC, line.channel());
+    }
+
     @Test
     void readsTeamChatWrittenWithAnArrowInsteadOfAColon() {
-        ChatLog.Line line = ChatLog.parse("Rezorie » wchodzimy", ChatChannel.TOWN);
+        ChatLog.Line line = ChatLog.parse(ChatMessage.colored("Rezorie » wchodzimy", GREEN));
         assertNotNull(line);
         assertEquals("Rezorie", line.sender());
         assertEquals("wchodzimy", line.message());
+        assertEquals(ChatChannel.TOWN, line.channel());
     }
 
     @Test

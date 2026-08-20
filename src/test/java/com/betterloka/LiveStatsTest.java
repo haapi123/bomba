@@ -203,6 +203,99 @@ class LiveStatsTest {
     }
 
     @Test
+    void readsTheRankedArenaLadders() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            com.betterloka.api.ArenaApi arena = new com.betterloka.api.ArenaApi(transport);
+
+            var potion = arena.fetchCurrent(com.betterloka.api.ArenaApi.Ladder.POTION);
+            assertTrue(potion.size() > 100, "the potion ladder is hundreds deep, got " + potion.size());
+
+            var top = potion.get(0);
+            assertNotNull(top.rank(), "every ranked row carries a rank");
+            assertNotNull(top.uuid(), "rows are keyed by a packed UUID, which must decode");
+            assertTrue(top.duels() > 0);
+
+            // The leaderboard is served in rank order, so parsing it must preserve that order.
+            for (int i = 1; i < potion.size(); i++) {
+                var higher = potion.get(i - 1).rank();
+                var lower = potion.get(i).rank();
+                if (higher != null && lower != null) {
+                    assertTrue(higher.compareTo(lower) >= 0,
+                            "row " + i + " outranks the row above it: " + lower + " after " + higher);
+                }
+            }
+
+            var seasons = arena.fetchSeasons();
+            assertTrue(seasons.size() > 1, "there is more than one past season");
+            int latest = seasons.get(seasons.size() - 1);
+            var weeks = arena.fetchWeeks(latest);
+            assertTrue(!weeks.isEmpty(), "a season publishes at least one week");
+
+            // Weekly snapshots are cumulative, which is what makes a season's last week its result.
+            var first = arena.fetchHistory(com.betterloka.api.ArenaApi.Ladder.POTION, latest, weeks.get(0));
+            var last = arena.fetchHistory(com.betterloka.api.ArenaApi.Ladder.POTION, latest,
+                    weeks.get(weeks.size() - 1));
+            assertTrue(last.get(0).duels() >= first.get(0).duels(),
+                    "later weeks must include the earlier ones, or the season's last week is not its result");
+
+            System.out.printf("arena: %d ranked on potion, seasons %s, season %d has %d weeks%n",
+                    potion.size(), seasons, latest, weeks.size());
+            for (var entry : potion.subList(0, 3)) {
+                System.out.printf("  #%d %-16s %-14s %d-%d (%s)%n", entry.position(), entry.name(),
+                        entry.rank(), entry.wins(), entry.losses(), entry.winRatioText());
+            }
+        }
+    }
+
+    /**
+     * The Town Logger's whole premise: Loka leaves a deleted town's id on the territories it held, so
+     * a fallen town can be found and named without having been watching when it happened.
+     */
+    @Test
+    void findsTerritoriesHeldByTownsThatNoLongerExist() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            LokaApi api = new LokaApi(transport);
+
+            java.util.List<com.betterloka.api.model.Territory> all = new java.util.ArrayList<>();
+            for (String world : LokaApi.CONQUEST_WORLDS) {
+                var slice = api.fetchTerritories(world);
+                assertTrue(slice.size() > 50, world + " should have a hundred-odd territories, got " + slice.size());
+                all.addAll(slice);
+            }
+
+            var owned = all.stream().filter(com.betterloka.api.model.Territory::isOwned).toList();
+            assertTrue(!owned.isEmpty(), "towns hold territory");
+            var withCoordinates = owned.stream().filter(t -> t.x() != 0 || t.z() != 0).toList();
+            assertEquals(owned.size(), withCoordinates.size(), "every beacon must parse to real coordinates");
+
+            java.util.Map<String, com.betterloka.api.model.LokaTown> deleted = new java.util.HashMap<>();
+            LokaApi.TownPage page = api.fetchDeletedTownPage(0);
+            for (int i = 0; i < page.totalPages(); i++) {
+                for (var town : (i == 0 ? page : api.fetchDeletedTownPage(i)).towns()) {
+                    deleted.put(town.id(), town);
+                }
+            }
+            assertTrue(deleted.size() > 100, "Loka has hundreds of deleted towns, got " + deleted.size());
+
+            var fallen = owned.stream().filter(t -> deleted.containsKey(t.townId())).toList();
+            System.out.printf("territories: %d total, %d held, %d deleted towns known, %d held by a dead town%n",
+                    all.size(), owned.size(), deleted.size(), fallen.size());
+            for (var territory : fallen) {
+                System.out.printf("  fell: %-20s %-8s #%-4s (%s) [%s]%n",
+                        deleted.get(territory.townId()).name(), territory.continent(), territory.num(),
+                        territory.coordinates(), territory.areaName());
+            }
+
+            // Not asserted to be non-empty: Loka does clear these eventually, and a season where it
+            // has caught up with every one is a legitimate result, not a parsing failure.
+            for (var territory : fallen) {
+                assertNotNull(deleted.get(territory.townId()).name(),
+                        "a fallen town has to be nameable, or the log cannot say which town went");
+            }
+        }
+    }
+
+    @Test
     void translatesBothWays() throws Exception {
         try (HttpTransport transport = new HttpTransport()) {
             TranslationService service = new TranslationService(transport);

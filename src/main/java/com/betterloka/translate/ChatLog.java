@@ -20,9 +20,10 @@ import java.util.regex.Pattern;
  * join notices, territory announcements, command output — and translating all of it buries the
  * conversation and wastes requests, so anything that does not parse as somebody speaking is dropped.
  *
- * <p>Town and alliance chat are kept too, and remembered as such: they are written in a looser
- * format than public chat, so they are parsed more permissively once their colour has identified
- * them.
+ * <p>Town and alliance chat are kept too, and remembered as such. Loka writes them
+ * {@code [Alliance] [Town] <icon> Nick: message}, which with a chat timestamp in front runs to fifty
+ * characters before the message even starts, so the sender is found by scanning for the separator
+ * rather than by assuming the decoration is short.
  */
 public final class ChatLog {
     /** How many messages to keep. Enough to catch up on a fight call without holding a session. */
@@ -35,18 +36,17 @@ public final class ChatLog {
     private static final Pattern ANGLE_FORM = Pattern.compile("^<(" + NAME + ")>\\s*(.+)$", Pattern.DOTALL);
 
     /**
-     * {@code [Tag] Rank Nick: message} — Loka and most plugin chats. The sender half may carry ranks,
-     * town tags and separators, so the name is taken as the last name-shaped token before the colon.
+     * A colon or arrow with a space after it: the candidate boundaries between who is speaking and
+     * what they said. Every one is tried in turn, so however much rank, alliance, town and timestamp
+     * decoration Loka puts in front, the sender is still found.
+     *
+     * <p>The space matters — it is what keeps the {@code 21:56:36} of a chat timestamp from looking
+     * like a sender boundary.
      */
-    private static final Pattern COLON_FORM = Pattern.compile("^(.{0,48}?)\\s*:\\s+(.+)$", Pattern.DOTALL);
-    private static final Pattern LAST_NAME = Pattern.compile("(" + NAME + ")\\s*$");
+    private static final Pattern SEPARATOR = Pattern.compile("([:»›→])\\s+");
 
-    /**
-     * {@code Nick » message} — team chats often drop the colon for an arrow. Only tried on town and
-     * alliance messages: in public chat an arrow is far more likely to be part of what was said.
-     */
-    private static final Pattern ARROW_FORM =
-            Pattern.compile("^(.{0,48}?)\\s*[»›→>]+\\s+(.+)$", Pattern.DOTALL);
+    /** The sender is the last name-shaped token before the separator. */
+    private static final Pattern LAST_NAME = Pattern.compile("(" + NAME + ")\\s*$");
 
     /**
      * A leading channel marker, where the server writes one. Colour is the reliable signal on Loka,
@@ -116,11 +116,9 @@ public final class ChatLog {
     /**
      * Records a chat message and, when incoming translation is on, starts translating it.
      * Anything that is not somebody speaking is ignored.
-     *
-     * @param channel the channel its colour identified it as
      */
-    public void record(String raw, ChatChannel channel) {
-        Line line = parse(raw, channel);
+    public void record(ChatMessage message) {
+        Line line = parse(message);
         if (line == null) {
             return;
         }
@@ -137,26 +135,28 @@ public final class ChatLog {
 
     /** @return the parsed message, or {@code null} if the text is not player chat. */
     static Line parse(String raw) {
-        return parse(raw, ChatChannel.PUBLIC);
+        return parse(ChatMessage.plain(raw == null ? "" : raw));
     }
 
     /** @return the parsed message, or {@code null} if the text is not player chat. */
-    static Line parse(String raw, ChatChannel colorChannel) {
-        if (raw == null) {
+    static Line parse(ChatMessage message) {
+        if (message == null || message.length() == 0) {
             return null;
         }
-        String text = raw.strip();
+        // Leading whitespace is dropped by shifting the whole message, so colour offsets stay aligned
+        // with the text they belong to.
+        ChatMessage body = message.substring(leadingSpace(message.text()));
+        String text = body.text().stripTrailing();
         if (text.isEmpty()) {
             return null;
         }
 
-        ChatChannel channel = colorChannel == null ? ChatChannel.PUBLIC : colorChannel;
+        ChatChannel tagged = ChatChannel.PUBLIC;
         Matcher tag = CHANNEL_TAG.matcher(text);
         if (tag.find()) {
-            if (channel == ChatChannel.PUBLIC) {
-                channel = channelOfTag(tag.group(1));
-            }
-            text = text.substring(tag.end()).strip();
+            tagged = channelOfTag(tag.group(1));
+            body = body.substring(tag.end());
+            text = body.text().stripTrailing();
             if (text.isEmpty()) {
                 return null;
             }
@@ -164,32 +164,52 @@ public final class ChatLog {
 
         Matcher angle = ANGLE_FORM.matcher(text);
         if (angle.matches()) {
-            return lineOf(angle.group(1), angle.group(2), channel);
+            int start = text.length() - angle.group(2).length();
+            return lineOf(angle.group(1), angle.group(2), channel(tagged, body, start));
         }
 
-        Matcher colon = COLON_FORM.matcher(text);
-        if (colon.matches()) {
-            Matcher name = LAST_NAME.matcher(colon.group(1));
-            if (name.find()) {
-                return lineOf(name.group(1), colon.group(2), channel);
+        // Colons first, then arrows: in public chat an arrow is far more likely to be part of what
+        // was said, so it is only accepted when the colour says this is team chat.
+        Matcher separator = SEPARATOR.matcher(text);
+        Line arrowFallback = null;
+        while (separator.find()) {
+            Matcher name = LAST_NAME.matcher(text.substring(0, separator.start()));
+            if (!name.find()) {
+                continue;
+            }
+            String said = text.substring(separator.end());
+            ChatChannel channel = channel(tagged, body, separator.end());
+            if (":".equals(separator.group(1))) {
+                return lineOf(name.group(1), said, channel);
+            }
+            if (arrowFallback == null && channel.isTeamChannel()) {
+                arrowFallback = lineOf(name.group(1), said, channel);
             }
         }
+        return arrowFallback;
+    }
 
-        if (channel.isTeamChannel()) {
-            Matcher arrow = ARROW_FORM.matcher(text);
-            if (arrow.matches()) {
-                Matcher name = LAST_NAME.matcher(arrow.group(1));
-                if (name.find()) {
-                    return lineOf(name.group(1), arrow.group(2), channel);
-                }
-            }
+    /** The channel a message belongs to: what its body is coloured, or what its tag said. */
+    private static ChatChannel channel(ChatChannel tagged, ChatMessage message, int bodyStart) {
+        ChatChannel colored = message.channelOf(bodyStart, message.length());
+        if (colored.isTeamChannel()) {
+            return colored;
         }
-        return null;
+        // Some servers colour only the decoration, so fall back to the line as a whole, then the tag.
+        ChatChannel whole = message.channelOf(0, message.length());
+        return whole.isTeamChannel() ? whole : tagged;
+    }
+
+    private static int leadingSpace(String text) {
+        int i = 0;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        return i;
     }
 
     private static ChatChannel channelOfTag(String tag) {
-        String upper = tag.toUpperCase(Locale.ROOT);
-        return switch (upper) {
+        return switch (tag.toUpperCase(Locale.ROOT)) {
             case "T", "TC", "TOWN" -> ChatChannel.TOWN;
             case "A", "AC", "ALLIANCE", "ALLY", "NATION" -> ChatChannel.ALLIANCE;
             default -> ChatChannel.PUBLIC;
@@ -197,8 +217,8 @@ public final class ChatLog {
     }
 
     private static Line lineOf(String sender, String message, ChatChannel channel) {
-        String body = message.strip();
-        return body.isEmpty() ? null : new Line(sender, body, channel);
+        String said = message.strip();
+        return said.isEmpty() ? null : new Line(sender, said, channel);
     }
 
     /** Starts (or restarts) the translation of one message. */

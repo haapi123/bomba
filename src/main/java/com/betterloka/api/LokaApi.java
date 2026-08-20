@@ -4,6 +4,7 @@ import com.betterloka.api.model.BattleZone;
 import com.betterloka.api.model.Json;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.api.model.Territory;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -117,6 +118,42 @@ public final class LokaApi {
 
     public TownPage fetchTownPage(int page) throws ApiException {
         JsonObject json = getObject(BASE_URL + "/towns?size=" + PAGE_SIZE + "&page=" + page);
+        List<LokaTown> towns = new ArrayList<>();
+        for (JsonElement element : embeddedArray(json, "towns")) {
+            if (element.isJsonObject()) {
+                towns.add(LokaTown.fromJson(element.getAsJsonObject()));
+            }
+        }
+        return new TownPage(towns, Json.integer(Json.object(json, "page"), "totalPages", 0));
+    }
+
+    /**
+     * The worlds Conquest is played on. The API also carries {@code lilboi}, {@code bigboi} and
+     * {@code ctw} — event and minigame maps whose "territories" are not town claims — so the sweep
+     * names the three continents rather than taking whatever comes back.
+     */
+    public static final List<String> CONQUEST_WORLDS = List.of("north", "west", "south");
+
+    /** Every territory on one continent, in a single request. */
+    public List<Territory> fetchTerritories(String world) throws ApiException {
+        List<Territory> territories = new ArrayList<>();
+        JsonObject json = getObject(BASE_URL + "/territories/search/findByWorld?world=" + encode(world));
+        for (JsonElement element : embeddedArray(json, "territories")) {
+            if (element.isJsonObject()) {
+                territories.add(Territory.fromJson(element.getAsJsonObject()));
+            }
+        }
+        return territories;
+    }
+
+    /**
+     * One page of towns that have been deleted.
+     *
+     * <p>A deleted town 404s on {@code findById}, so this listing is the only way to put a name to
+     * the id a fallen town leaves behind on its territories.
+     */
+    public TownPage fetchDeletedTownPage(int page) throws ApiException {
+        JsonObject json = getObject(BASE_URL + "/towns/search/findDeleted?size=" + PAGE_SIZE + "&page=" + page);
         List<LokaTown> towns = new ArrayList<>();
         for (JsonElement element : embeddedArray(json, "towns")) {
             if (element.isJsonObject()) {

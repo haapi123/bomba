@@ -29,6 +29,15 @@ public final class BetterLokaConfig {
     /** Translate incoming server chat into {@link #nativeLanguage}. */
     private boolean translateIncoming = false;
 
+    /** Keep watching who holds every territory, so fallen towns are noticed. */
+    private boolean townLogEnabled = true;
+
+    /**
+     * Minutes between territory sweeps. Each one is three requests and roughly 850 KB, so this is
+     * the setting that decides what the Town Logger costs to leave running.
+     */
+    private int townLogIntervalMinutes = 10;
+
     private transient Path file;
 
     public static BetterLokaConfig load(Path file) {
@@ -97,6 +106,27 @@ public final class BetterLokaConfig {
 
     public void setTranslateIncoming(boolean translateIncoming) {
         this.translateIncoming = translateIncoming;
+        save();
+    }
+
+    public boolean townLogEnabled() {
+        return townLogEnabled;
+    }
+
+    public void setTownLogEnabled(boolean townLogEnabled) {
+        this.townLogEnabled = townLogEnabled;
+        save();
+    }
+
+    /** The intervals the Town Logger screen offers, in minutes. */
+    public static final int[] TOWN_LOG_INTERVALS = {2, 5, 10, 30, 60};
+
+    public int townLogIntervalMinutes() {
+        return townLogIntervalMinutes < 1 ? 10 : townLogIntervalMinutes;
+    }
+
+    public void setTownLogIntervalMinutes(int minutes) {
+        this.townLogIntervalMinutes = Math.max(1, minutes);
         save();
     }
 }
