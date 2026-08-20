@@ -41,6 +41,14 @@ public final class ArenaApi {
         public String translationKey() {
             return translationKey;
         }
+
+        /**
+         * Just the ladder's name, for places too tight for the full "Ranked 1v1 — Potion". Not
+         * translated: "Potion" and "Barebones" are what Loka calls them in every language.
+         */
+        public String shortName() {
+            return name().charAt(0) + name().substring(1).toLowerCase(java.util.Locale.ROOT);
+        }
     }
 
     private final HttpTransport transport;

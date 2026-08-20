@@ -103,6 +103,18 @@ public final class TownCache {
         }
     }
 
+    /** Every living town, loading the roster first if it is stale. */
+    public java.util.List<LokaTown> all() {
+        ensureLoaded();
+        java.util.List<LokaTown> towns = new java.util.ArrayList<>();
+        for (LokaTown town : byId.values()) {
+            if (!town.deleted()) {
+                towns.add(town);
+            }
+        }
+        return towns;
+    }
+
     /** @return the town's name, or {@code null} when it cannot be resolved. */
     public String nameOf(String townId) {
         LokaTown town = byId(townId);

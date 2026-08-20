@@ -1,5 +1,6 @@
 package com.betterloka.gui;
 
+import com.betterloka.stats.PlayerTrait;
 import com.betterloka.translate.ChatChannel;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -12,6 +13,25 @@ public final class GuiTheme {
     public static final int GOOD = 0xFF7BD88F;
     public static final int BAD = 0xFFE06C75;
     public static final int LIVE = 0xFFFFB454;
+
+    /**
+     * A pill with a coloured outline, as the trait chips are drawn.
+     *
+     * <p>The fill is a dimmed version of the outline rather than a flat dark, so a row of chips reads
+     * as coloured at a glance without the text having to fight its own background.
+     */
+    public static void chip(DrawContext context, int x, int y, int width, int height, int color) {
+        int fill = (color & 0x00FFFFFF) | 0x30000000;
+        // Corners left unpainted, which reads as rounded at this size.
+        context.fill(x + 1, y, x + width - 1, y + height, fill);
+        context.fill(x, y + 1, x + 1, y + height - 1, fill);
+        context.fill(x + width - 1, y + 1, x + width, y + height - 1, fill);
+
+        context.fill(x + 1, y, x + width - 1, y + 1, color);
+        context.fill(x + 1, y + height - 1, x + width - 1, y + height, color);
+        context.fill(x, y + 1, x + 1, y + height - 1, color);
+        context.fill(x + width - 1, y + 1, x + width, y + height - 1, color);
+    }
 
     /** Enchantments, in the violet the game already associates with them. */
     public static final int ENCHANT = 0xFFB9A0FF;
@@ -73,6 +93,15 @@ public final class GuiTheme {
     /** The same K/D colour as {@link #nameplateRatioColor}, opaque, for drawing into a screen. */
     public static int ratioColor(double ratio) {
         return 0xFF000000 | nameplateRatioColor(ratio);
+    }
+
+    /** The colour a trait chip is drawn in: green, yellow, red. */
+    public static int traitColor(PlayerTrait.Level level) {
+        return switch (level) {
+            case GOOD -> 0xFF5FD37A;
+            case MIXED -> 0xFFE8C349;
+            case POOR -> 0xFFE0605C;
+        };
     }
 
     /** The colour a chat channel is drawn in. */

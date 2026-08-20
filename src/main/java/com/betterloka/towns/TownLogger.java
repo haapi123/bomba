@@ -3,6 +3,7 @@ package com.betterloka.towns;
 import com.betterloka.BetterLoka;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.LokaApi;
+import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.Territory;
 import com.betterloka.config.BetterLokaConfig;
@@ -59,6 +60,8 @@ public final class TownLogger {
     private volatile Map<String, Territory> snapshot = Map.of();
     /** Deleted town id to name — the only way a fallen town can be named. */
     private volatile Map<String, LokaTown> deletedTowns = Map.of();
+    /** Who is allied with whom right now; the history behind it lives in the store. */
+    private volatile List<LokaAlliance> alliances = List.of();
     private volatile long deletedTownsLoadedAt;
 
     private volatile State state = State.OFF;
@@ -136,6 +139,7 @@ public final class TownLogger {
         }
 
         refreshDeletedTowns();
+        refreshAlliances();
 
         List<TownLogEvent> events = new ArrayList<>();
         events.addAll(fallenTowns(now));
@@ -192,6 +196,51 @@ public final class TownLogger {
             }
         }
         return events;
+    }
+
+    /**
+     * Takes a reading of who is allied with whom.
+     *
+     * <p>One request. Loka publishes the alliances that exist right now and keeps no history, so
+     * "who do they usually ally with" can only be built by looking regularly and remembering — which
+     * is why this rides along with the territory sweep rather than being asked for on demand.
+     */
+    private void refreshAlliances() {
+        try {
+            List<LokaAlliance> found = loka.fetchAlliances();
+            if (found.isEmpty()) {
+                return;
+            }
+            alliances = List.copyOf(found);
+
+            Map<String, String> names = new HashMap<>();
+            for (LokaAlliance alliance : found) {
+                for (String townId : alliance.townIds()) {
+                    String name = towns.nameOf(townId);
+                    if (name != null) {
+                        names.put(townId, name);
+                    }
+                }
+            }
+            store.recordAlliances(found, names);
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not refresh the alliance list", e);
+        }
+    }
+
+    /** The alliance a town is currently in, or {@code null} if it is in none. */
+    public LokaAlliance allianceOf(String townId) {
+        for (LokaAlliance alliance : alliances) {
+            if (alliance.contains(townId)) {
+                return alliance;
+            }
+        }
+        return null;
+    }
+
+    /** Who this town has been allied with while the mod has been watching, longest first. */
+    public List<TownLogStore.TownPartner> partnersOf(String townId) {
+        return store.partnersOf(townId);
     }
 
     /**

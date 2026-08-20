@@ -2,6 +2,7 @@ package com.betterloka.api;
 
 import com.betterloka.api.model.BattleZone;
 import com.betterloka.api.model.Json;
+import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.Territory;
@@ -125,6 +126,50 @@ public final class LokaApi {
             }
         }
         return new TownPage(towns, Json.integer(Json.object(json, "page"), "totalPages", 0));
+    }
+
+    /** Every alliance. There are about ten, so this is one request. */
+    public List<LokaAlliance> fetchAlliances() throws ApiException {
+        List<LokaAlliance> alliances = new ArrayList<>();
+        JsonObject json = getObject(BASE_URL + "/alliances?size=" + PAGE_SIZE + "&page=0");
+        int pages = Json.integer(Json.object(json, "page"), "totalPages", 1);
+        collectAlliances(json, alliances);
+        for (int page = 1; page < pages; page++) {
+            collectAlliances(getObject(BASE_URL + "/alliances?size=" + PAGE_SIZE + "&page=" + page), alliances);
+        }
+        return alliances;
+    }
+
+    private void collectAlliances(JsonObject json, List<LokaAlliance> into) {
+        for (JsonElement element : embeddedArray(json, "alliances")) {
+            if (element.isJsonObject()) {
+                into.add(LokaAlliance.fromJson(element.getAsJsonObject()));
+            }
+        }
+    }
+
+    /**
+     * The account name behind an identity ID.
+     *
+     * <p>Town owners and sub-owners are recorded by identity, and one identity can own several
+     * accounts, so the first is taken as the person's name.
+     *
+     * @return the name, or {@code null} if the identity is unknown
+     */
+    public String findNameByIdentity(String identityId) throws ApiException {
+        if (identityId == null || identityId.isEmpty()) {
+            return null;
+        }
+        JsonObject json = getObject(BASE_URL + "/players/search/findByIdentityId?identityId=" + encode(identityId));
+        for (JsonElement element : embeddedArray(json, "players")) {
+            if (element.isJsonObject()) {
+                String name = Json.string(element.getAsJsonObject(), "name");
+                if (name != null && !name.isBlank()) {
+                    return name;
+                }
+            }
+        }
+        return null;
     }
 
     /**

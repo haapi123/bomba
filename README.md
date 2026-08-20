@@ -42,6 +42,33 @@ Type a Loka player's name, hit Search, and their whole Conquest record comes bac
 
 Name lookup is case-insensitive.
 
+### Trait chips
+
+![Trait chips](docs/player-finder-traits.png)
+
+A row of coloured chips under the name, summing up how someone plays. Hover one and it says what
+earned it. Green, yellow, red — and **no chip at all** when there is nothing to base one on, because
+"does not duel" and "duels badly" are different claims and only one of them is an accusation.
+
+| Chip | Green | Yellow | Red | Absent |
+| --- | --- | --- | --- | --- |
+| **K/D** | above 3.00 | 1.00 to 3.00 | below 1.00 | never fought |
+| **Active** | every listed fight inside 30 days | 1–8 fights in 30 days | none in 30 days | — |
+| **Charge** | 0.70+ charges a fight | 0.15 to 0.70 | below 0.15 | under 10 fights |
+| **Duels** | above Diamond III | Emerald I to Diamond III | below Emerald I | not on either ladder |
+
+Two of these are not quite what was asked for, because the data does not go that far:
+
+- **Charge** was meant to be a success rate. Nothing publishes one: EldritchBot records every charge
+  a player *took* — the count matches their golems and lamps exactly, in every fight checked — and no
+  source anywhere records how many they went for, so there is no denominator to divide by. Charges
+  per fight is the measure the data supports, and it still separates the dedicated charge-takers
+  from the players who never touch it. The cuts are 0.70 and 0.15; across a sample of live careers
+  the spread ran 0.00 to 2.15 with a median of 0.64, so 0.70 is about the top third.
+- **Active** was meant to be "more than 10 fights in 30 days". EldritchBot lists nine recent fights
+  and stops, so past nine there is nothing to count. Green therefore means *every listed fight was
+  inside the window* — at least nine, and the list ran out — which the tooltip says outright.
+
 ### Ranked 1v1
 
 ![Ranked 1v1](docs/player-finder-ranked.png)
@@ -133,14 +160,33 @@ overview says what it is showing rather than implying a money supply figure.
 
 ## Town Finder
 
+![Towns recruiting](docs/town-finder-recruiting.png)
+
+Opens on **every town currently recruiting**, filterable by continent, with level, member count,
+vulnerability hour and slogan. Click any of them to open it.
+
 ![Town Finder](docs/town-finder.png)
 
-A town by name: continent, level, strength, members, whether it is recruiting, and every territory it
-currently holds with the number and beacon coordinates. Territories come from the Town Logger's sweep,
-so this costs one request.
+A town, whether searched for or clicked:
+
+- **Level, strength, members, recruiting**
+- **Vulnerable from** — the hour its window opens. Loka publishes the start hour and nothing else, so
+  that is all this says: across the live roster the values run 09:00 to 20:00 and pile up at 09:00
+  and 19:00, the European and American prime times.
+- **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as
+- **Alliance** it belongs to now, and **who it has been allied with, longest first**
+- Every **territory it holds**, with number and beacon coordinates
 
 A name with no living town behind it is usually a town that is gone rather than one that never
 existed, so the search falls back to the deleted-town roster and says so.
+
+### Who they usually ally with
+
+Loka's API publishes the alliances that exist right now and keeps **no history at all**, and nothing
+else publishes one either — so this is the one thing here that cannot be answered on the spot. The
+Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
+each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
+then it says so rather than showing nothing.
 
 ## Town Logger
 
@@ -233,12 +279,17 @@ not-found path, case-insensitive lookup, the market, translation in both directi
 ladders and the territory sweep — and asserts that a whole profile still costs only a handful of
 requests.
 
-Two of those live checks are load-bearing assumptions rather than parsing:
+Some of those live checks are load-bearing assumptions rather than parsing:
 
 - the ranked history is only usable per season because a season's weekly snapshots are **cumulative**,
   so the test asserts a later week includes the earlier one;
 - the Town Logger only works because Loka **leaves a deleted town's id on its territories**, so the
-  test sweeps every continent and resolves each dangling holder against the deleted-town roster.
+  test sweeps every continent and resolves each dangling holder against the deleted-town roster;
+- the vulnerability window is only an hour of the day if it reads as one, so the test asserts it.
+
+The offline suite covers the log's persistence too. Its baseline, its already-reported towns and its
+alliance history are all written as records, and a serialiser that could not read them back would
+look exactly like a logger that forgets everything on restart.
 
 ## License
 

@@ -10,6 +10,7 @@ import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
+import com.betterloka.stats.PlayerTrait;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -17,10 +18,13 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.screen.ScreenTexts;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletionException;
@@ -37,6 +41,13 @@ public class PlayerFinderScreen extends Screen {
     private static final int ROW_HEIGHT = 11;
     private static final int CARD_PADDING = 6;
     private static final int CARD_GAP = 6;
+
+    private static final int CHIP_HEIGHT = 14;
+    private static final int CHIP_PADDING = 5;
+    private static final int CHIP_GAP = 4;
+
+    /** How wide a chip's explanation is allowed to get before it wraps. */
+    private static final int TOOLTIP_WIDTH = 190;
 
     private static final int SEARCH_ROW_Y = 32;
     private static final int SEARCH_ROW_HEIGHT = 20;
@@ -59,6 +70,11 @@ public class PlayerFinderScreen extends Screen {
     private List<ArenaService.Standing> arenaBest = List.of();
     private boolean arenaLoading;
     private boolean arenaHistoryLoading;
+
+    /** The chip under the pointer this frame, and where the pointer is; both reset every frame. */
+    private PlayerTrait hoveredTrait;
+    private int lastMouseX;
+    private int lastMouseY;
     /** Guards against a stale request overwriting the results of a newer one. */
     private int searchGeneration;
 
@@ -228,6 +244,9 @@ public class PlayerFinderScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         searchButton.active = !searching && !nameField.getText().trim().isEmpty();
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+        hoveredTrait = null;
 
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 14, GuiTheme.TEXT);
 
@@ -256,6 +275,20 @@ public class PlayerFinderScreen extends Screen {
 
         scrollPanel.setContentHeight(used);
         scrollPanel.render(context, mouseX, mouseY);
+
+        // Drawn last and outside the scissor, or the panel the chip sits in would clip its own tooltip.
+        if (hoveredTrait != null) {
+            // Wrapped by hand: Minecraft draws a tooltip line as given, so a whole sentence would run
+            // off the side of the screen.
+            List<OrderedText> lines = new ArrayList<>();
+            lines.add(chipLabel(hoveredTrait).copy()
+                    .withColor(GuiTheme.traitColor(hoveredTrait.level()) & 0xFFFFFF).asOrderedText());
+            lines.addAll(this.textRenderer.wrapLines(
+                    Text.translatable(hoveredTrait.kind().reasonKey(hoveredTrait.level()), hoveredTrait.detail())
+                            .formatted(Formatting.GRAY),
+                    TOOLTIP_WIDTH));
+            context.drawOrderedTooltip(this.textRenderer, lines, mouseX, mouseY);
+        }
     }
 
     /** @return the y coordinate just past the rendered content. */
@@ -265,6 +298,7 @@ public class PlayerFinderScreen extends Screen {
         EldritchStats stats = profile.stats();
 
         y = renderIdentityCard(context, left, y, width, inner);
+        y = renderTraits(context, left, y, width);
 
         y = card(context, left, y, width, 2, (x, rowY) -> {
             twoColumns(context, x, rowY, inner,
@@ -310,6 +344,82 @@ public class PlayerFinderScreen extends Screen {
         }
 
         return renderFights(context, left, y, width, inner);
+    }
+
+    /**
+     * The trait chips: a centred, wrapping row of coloured pills, each explaining itself on hover.
+     *
+     * <p>The hovered chip is only remembered here — the tooltip is drawn at the end of {@code render}
+     * so it is not clipped by the scissor the content is drawn inside.
+     */
+    private int renderTraits(DrawContext context, int left, int y, int width) {
+        List<PlayerTrait> traits = PlayerTrait.of(profile, arenaCurrent, LocalDate.now());
+        if (traits.isEmpty()) {
+            return y;
+        }
+
+        int inner = width - CARD_PADDING * 2;
+        List<List<PlayerTrait>> rows = wrapChips(traits, inner);
+        int height = CARD_PADDING * 2 + rows.size() * CHIP_HEIGHT + (rows.size() - 1) * CHIP_GAP;
+        GuiTheme.panel(context, left, y, width, height);
+
+        int rowY = y + CARD_PADDING;
+        for (List<PlayerTrait> row : rows) {
+            int rowWidth = 0;
+            for (PlayerTrait trait : row) {
+                rowWidth += chipWidth(trait) + CHIP_GAP;
+            }
+            rowWidth -= CHIP_GAP;
+
+            int chipX = left + CARD_PADDING + (inner - rowWidth) / 2;
+            for (PlayerTrait trait : row) {
+                int chipW = chipWidth(trait);
+                int color = GuiTheme.traitColor(trait.level());
+                GuiTheme.chip(context, chipX, rowY, chipW, CHIP_HEIGHT, color);
+                context.drawTextWithShadow(this.textRenderer, chipLabel(trait), chipX + CHIP_PADDING,
+                        rowY + (CHIP_HEIGHT - 8) / 2, color);
+                if (hovering(chipX, rowY, chipW, CHIP_HEIGHT)) {
+                    hoveredTrait = trait;
+                }
+                chipX += chipW + CHIP_GAP;
+            }
+            rowY += CHIP_HEIGHT + CHIP_GAP;
+        }
+        return y + height + CARD_GAP;
+    }
+
+    /** Greedy wrap: chips keep their order, and a row is broken as soon as the next one would not fit. */
+    private List<List<PlayerTrait>> wrapChips(List<PlayerTrait> traits, int inner) {
+        List<List<PlayerTrait>> rows = new ArrayList<>();
+        List<PlayerTrait> row = new ArrayList<>();
+        int used = 0;
+        for (PlayerTrait trait : traits) {
+            int chipW = chipWidth(trait);
+            if (!row.isEmpty() && used + CHIP_GAP + chipW > inner) {
+                rows.add(row);
+                row = new ArrayList<>();
+                used = 0;
+            }
+            used += (row.isEmpty() ? 0 : CHIP_GAP) + chipW;
+            row.add(trait);
+        }
+        if (!row.isEmpty()) {
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private int chipWidth(PlayerTrait trait) {
+        return this.textRenderer.getWidth(chipLabel(trait)) + CHIP_PADDING * 2;
+    }
+
+    private static Text chipLabel(PlayerTrait trait) {
+        return Text.translatable(trait.kind().labelKey(), trait.detail());
+    }
+
+    private boolean hovering(int x, int y, int width, int height) {
+        return lastMouseX >= x && lastMouseX < x + width && lastMouseY >= y && lastMouseY < y + height
+                && lastMouseY >= VIEWPORT_TOP && lastMouseY < viewportBottom();
     }
 
     private int renderIdentityCard(DrawContext context, int left, int y, int width, int inner) {

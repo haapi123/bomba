@@ -134,6 +134,10 @@ public class BetterLokaClient implements ClientModInitializer {
         return towns;
     }
 
+    public static LokaApi lokaApi() {
+        return loka;
+    }
+
     /** For screens that need to run a Loka lookup off the render thread. */
     public static java.util.concurrent.ExecutorService lokaExecutor() {
         return loka.executor();

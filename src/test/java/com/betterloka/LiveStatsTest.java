@@ -295,6 +295,76 @@ class LiveStatsTest {
         }
     }
 
+    /**
+     * The Town Finder's detail view: an alliance a town belongs to, and the people running it. Both
+     * come from endpoints the rest of the mod does not touch, so nothing else would notice them
+     * changing shape.
+     */
+    @Test
+    void readsAlliancesAndTheirTownsAndOfficers() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            LokaApi api = new LokaApi(transport);
+
+            var alliances = api.fetchAlliances();
+            assertTrue(alliances.size() > 3, "Loka runs about ten alliances, got " + alliances.size());
+
+            var populated = alliances.stream().filter(a -> !a.townIds().isEmpty()).toList();
+            assertTrue(!populated.isEmpty(), "some alliance has towns in it");
+            var alliance = populated.get(0);
+            assertNotNull(alliance.name());
+            assertTrue(alliance.contains(alliance.townIds().get(0)));
+
+            // The leader is a town, not a person: the field is a town id like the members.
+            var leader = api.findTownById(alliance.leaderTownId());
+            String leaderName = leader == null ? "(gone)" : leader.name();
+
+            var town = api.findTownByName("Hilo");
+            assertNotNull(town, "Hilo has been on Loka for years");
+            assertTrue(town.vulnerabilityWindow() >= 0 && town.vulnerabilityWindow() <= 23,
+                    "the vulnerability window must read as an hour of the day, got " + town.vulnerabilityWindow());
+            assertNotNull(town.ownerId(), "a living town has an owner");
+
+            String owner = api.findNameByIdentity(town.ownerId());
+            assertNotNull(owner, "the owner identity must resolve to an account name");
+
+            java.util.List<String> subOwners = new java.util.ArrayList<>();
+            for (String identity : town.subOwnerIds()) {
+                String name = api.findNameByIdentity(identity);
+                if (name != null) {
+                    subOwners.add(name);
+                }
+            }
+
+            System.out.printf("alliances: %d, %s leads %s with %d towns%n",
+                    alliances.size(), leaderName, alliance.name(), alliance.townIds().size());
+            System.out.printf("  %s: vuln %02d:00, level %.0f, owner %s, subowners %s%n",
+                    town.name(), town.vulnerabilityWindow(), town.townLevel(), owner, subOwners);
+        }
+    }
+
+    /** The Player Finder's chips are only as good as the numbers they read. */
+    @Test
+    void buildsTraitsFromARealCareer() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            EldritchApi api = new EldritchApi(transport);
+            var stats = api.fetchStats(PLAYER);
+
+            var profile = new PlayerProfile(stats.name(), null, null, null, null, stats.town(), stats,
+                    null, false, java.util.List.of(), PlayerProfile.FightsState.READY);
+            var traits = com.betterloka.stats.PlayerTrait.of(profile, java.util.List.of(),
+                    java.time.LocalDate.now());
+
+            assertTrue(!traits.isEmpty(), "a career this long must produce chips");
+            for (var trait : traits) {
+                assertNotNull(trait.level());
+                System.out.printf("trait: %-12s %s %s%n", trait.kind(), trait.level(),
+                        java.util.Arrays.toString(trait.detail()));
+            }
+            assertTrue(traits.stream().noneMatch(t -> t.kind() == com.betterloka.stats.PlayerTrait.Kind.DUELS),
+                    "no ladder was passed in, so there must be no duel chip rather than a bad one");
+        }
+    }
+
     @Test
     void translatesBothWays() throws Exception {
         try (HttpTransport transport = new HttpTransport()) {

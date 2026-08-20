@@ -1,6 +1,7 @@
 package com.betterloka.towns;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.Territory;
 import com.google.gson.Gson;
@@ -16,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +44,24 @@ public final class TownLogStore {
         Map<String, DeadTown> deletedTowns = new LinkedHashMap<>();
         long deletedTownsLoadedAt;
         Set<String> reported = new HashSet<>();
+        Map<String, Partnership> partners = new LinkedHashMap<>();
+    }
+
+    /**
+     * How long two towns have been allied, counted in days they were seen sharing an alliance.
+     *
+     * <p>Loka's API publishes who is allied right now and keeps no history, so the only way to answer
+     * "who do they usually ally with" is to watch: this accumulates from the day the mod is first
+     * run. Counted per day rather than per sweep so a long session does not outweigh a long alliance.
+     */
+    private static final class Partnership {
+        String townId;
+        String partnerId;
+        String partnerName;
+        int days;
+        long firstSeen;
+        long lastSeen;
+        long lastCountedDay;
     }
 
     /** Only the name is worth keeping: it is the one thing a deleted town cannot be asked for. */
@@ -76,11 +96,74 @@ public final class TownLogStore {
                 if (saved.reported == null) {
                     saved.reported = new HashSet<>();
                 }
+                if (saved.partners == null) {
+                    saved.partners = new LinkedHashMap<>();
+                }
             }
         } catch (IOException | JsonSyntaxException e) {
             BetterLoka.LOGGER.warn("Could not read the saved town log, starting fresh", e);
             saved = new Saved();
         }
+    }
+
+    /**
+     * Folds one look at the alliances in, crediting each pair of allied towns with a day together.
+     *
+     * @param names town id to current name, for the partners this run saw
+     */
+    public synchronized void recordAlliances(List<LokaAlliance> alliances, Map<String, String> names) {
+        long today = System.currentTimeMillis() / 86_400_000L;
+        long now = System.currentTimeMillis();
+        for (LokaAlliance alliance : alliances) {
+            List<String> towns = alliance.townIds();
+            for (String town : towns) {
+                for (String partner : towns) {
+                    if (!town.equals(partner)) {
+                        credit(town, partner, names.get(partner), today, now);
+                    }
+                }
+            }
+        }
+        save();
+    }
+
+    private void credit(String townId, String partnerId, String partnerName, long today, long now) {
+        Partnership held = saved.partners.computeIfAbsent(townId + "|" + partnerId, key -> {
+            Partnership fresh = new Partnership();
+            fresh.townId = townId;
+            fresh.partnerId = partnerId;
+            fresh.firstSeen = now;
+            return fresh;
+        });
+        if (partnerName != null) {
+            held.partnerName = partnerName;
+        }
+        held.lastSeen = now;
+        if (held.lastCountedDay != today) {
+            held.lastCountedDay = today;
+            held.days++;
+        }
+    }
+
+    /** Who this town has been allied with, longest first. */
+    public synchronized List<TownPartner> partnersOf(String townId) {
+        List<TownPartner> partners = new ArrayList<>();
+        if (townId == null) {
+            return partners;
+        }
+        for (Partnership held : saved.partners.values()) {
+            if (townId.equals(held.townId)) {
+                partners.add(new TownPartner(held.partnerId, held.partnerName, held.days,
+                        held.firstSeen, held.lastSeen));
+            }
+        }
+        partners.sort(Comparator.comparingInt(TownPartner::days).reversed()
+                .thenComparing(TownPartner::lastSeen, Comparator.reverseOrder()));
+        return List.copyOf(partners);
+    }
+
+    /** A town this one has been allied with, and for how many days it has been seen. */
+    public record TownPartner(String townId, String name, int days, long firstSeen, long lastSeen) {
     }
 
     /**
