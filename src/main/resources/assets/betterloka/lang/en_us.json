@@ -57,6 +57,8 @@
   "betterloka.translator.copied": "Copied — paste it into chat.",
   "betterloka.translator.failed": "Translation failed.",
   "betterloka.translator.output_hint": "The translation shows up here.",
+  "betterloka.translator.channel.town": "[Town]",
+  "betterloka.translator.channel.alliance": "[Alliance]",
   "betterloka.translator.no_chat": "No chat captured yet. Messages appear here as they arrive.",
   "betterloka.market.tab.search": "Search",
   "betterloka.market.tab.special": "Special",
@@ -79,6 +81,7 @@
   "betterloka.market.total_listings": "Listings",
   "betterloka.market.total_items": "Items on sale",
   "betterloka.market.sellers": "Sellers",
+  "betterloka.market.more_enchants": "+%s more",
   "betterloka.market.special_count": "Named / lore items",
   "betterloka.market.no_supply_1": "This is what is on sale, not the server's money supply.",
   "betterloka.market.no_supply_2": "Loka's API does not publish total currency in circulation."

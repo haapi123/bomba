@@ -57,6 +57,10 @@ The lookup uses the player's Mojang account name from the player list, not the t
 nameplate: Loka decorates those with a rank ("Duelist Rezorie"), and searching a stats service for
 that finds nothing.
 
+The badge is added where the game builds the label — `EntityRenderer.getDisplayName` — rather than
+by editing the render state afterwards, so it goes through vanilla's own nameplate placement,
+scaling and occlusion.
+
 ## Translator
 
 ![Translator](docs/translator.png)
@@ -72,6 +76,13 @@ Messages are listed newest first as `Name: message`. Only actual chat is kept �
 territory announcements and command output are filtered out, so the conversation is not buried and
 no requests are wasted translating them.
 
+**Town and alliance chat are translated too**, and marked as such: a `[Town]` or `[Alliance]` badge
+and a coloured spine down the left of the card. Loka does not label those channels in the text — it
+colours them, green for town and light blue for alliance — so the mod reads the colour off the
+message rather than its wording, and matches by hue so a hand-picked shade still counts. Team chat
+is also parsed more loosely once identified, since it is often written `Name » message` rather than
+`Name: message`.
+
 Both languages are pickers, so this works for any pair the translation service supports, not just
 Polish and English. The mod never sends anything to the server itself; you always paste it yourself.
 
@@ -83,10 +94,16 @@ Three views over Loka's market:
 
 - **Search** — type an item and get every offer, cheapest per unit first, with the seller, the price,
   how many they have left and the price each.
-- **Special** — every *named* item on sale, dearest first, with its enchantments. This is where the
-  one-off swords live. Plain lore is not enough to qualify: on Loka every imbued item carries
-  "Imbued in <town>" lore, so only a player-given name marks a piece of gear out.
+- **Special** — every *named* item on sale, dearest first. This is where the one-off swords live.
+  Plain lore is not enough to qualify: on Loka every imbued item carries "Imbued in <town>" lore, so
+  only a player-given name marks a piece of gear out.
 - **Overview** — total value listed, how many listings, items and sellers.
+
+Every card is three columns: **what it is and who is selling it** on the left, **its enchantments**
+down the middle, **what it costs** on the right. Enchantments are read out of the listed item stack
+itself, so they show on search results as well — a bare Sharpness V book is as enchanted as a named
+sword. Past five enchantments the rest are counted rather than listed, so one fully kitted sword
+cannot fill the screen.
 
 ![Market overview](docs/market-overview.png)
 

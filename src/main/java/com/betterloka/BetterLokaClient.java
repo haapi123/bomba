@@ -9,6 +9,7 @@ import com.betterloka.data.TownCache;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.NameplateKdService;
 import com.betterloka.stats.PlayerStatsService;
+import com.betterloka.translate.ChatChannels;
 import com.betterloka.translate.ChatLog;
 import com.betterloka.translate.TranslationService;
 import net.fabricmc.api.ClientModInitializer;
@@ -64,14 +65,15 @@ public class BetterLokaClient implements ClientModInitializer {
         chatLog = new ChatLog(translations, config);
 
         // Loka sends its chat as system messages; signed player chat is captured too so the
-        // Translator also works on servers that use it.
+        // Translator also works on servers that use it. The whole Text is inspected rather than just
+        // its string, because Loka marks town and alliance chat by colour and nothing else.
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (!overlay) {
-                chatLog.record(message.getString());
+                chatLog.record(message.getString(), ChatChannels.detect(message));
             }
         });
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
-                chatLog.record(message.getString()));
+                chatLog.record(message.getString(), ChatChannels.detect(message)));
 
         openMenuKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.betterloka.open_menu", GLFW.GLFW_KEY_L, KEY_CATEGORY));

@@ -2,6 +2,7 @@ package com.betterloka.gui;
 
 import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
+import com.betterloka.translate.ChatChannel;
 import com.betterloka.translate.ChatLog;
 import com.betterloka.translate.TranslationService;
 import net.minecraft.client.gui.Click;
@@ -268,14 +269,31 @@ public class TranslatorScreen extends Screen {
             boolean showTranslation = line.hasUsefulTranslation();
             int rows = showTranslation ? 2 : 1;
             int height = CARD_PADDING * 2 + ROW_HEIGHT * rows + 1;
+            ChatChannel channel = line.channel();
+            int channelColor = GuiTheme.channelColor(channel);
+
             GuiTheme.panel(context, left, y, cardWidth, height);
+            // Town and alliance cards get a coloured spine, so the channel reads at a glance even
+            // before the badge is looked at.
+            if (channel.isTeamChannel()) {
+                context.fill(left, y, left + 2, y + height, channelColor);
+            }
 
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
+            int used = 0;
+
+            Text badge = channelBadge(channel);
+            if (badge != null) {
+                context.drawTextWithShadow(this.textRenderer, badge, textX, textY, channelColor);
+                int badgeWidth = this.textRenderer.getWidth(badge) + 4;
+                textX += badgeWidth;
+                used += badgeWidth;
+            }
 
             // Name and time share the first line; the message body sits under them.
             Text sender = Text.literal(line.sender()).formatted(Formatting.BOLD);
-            context.drawTextWithShadow(this.textRenderer, sender, textX, textY, GuiTheme.ACCENT);
+            context.drawTextWithShadow(this.textRenderer, sender, textX, textY, channelColor);
             String when = TimeFormat.ago(line.receivedAt());
             context.drawTextWithShadow(this.textRenderer, when,
                     left + cardWidth - CARD_PADDING - this.textRenderer.getWidth(when), textY, GuiTheme.MUTED);
@@ -283,14 +301,17 @@ public class TranslatorScreen extends Screen {
             // Measured on the styled text: bold is wider than the plain string, and measuring the
             // plain one runs the message into the name.
             int senderWidth = this.textRenderer.getWidth(sender) + 6;
+            used += senderWidth;
+            // Measured, not guessed: "just now" and "12m ago" are different widths, and a fixed
+            // reserve runs the message under the timestamp.
+            used += this.textRenderer.getWidth(when) + 8;
             String headline = showTranslation ? line.translated() : line.message();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(headline, inner - senderWidth - 30),
+            context.drawTextWithShadow(this.textRenderer, elide(headline, Math.max(20, inner - used)),
                     textX + senderWidth, textY, line.failed() ? GuiTheme.BAD : GuiTheme.TEXT);
 
             if (showTranslation) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(line.message(), inner), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+                context.drawTextWithShadow(this.textRenderer, elide(line.message(), inner),
+                        left + CARD_PADDING, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
             y += height + CARD_GAP;
@@ -299,6 +320,24 @@ public class TranslatorScreen extends Screen {
         context.disableScissor();
         scrollPanel.setContentHeight(y - start);
         scrollPanel.render(context, mouseX, mouseY);
+    }
+
+    /** Trims to width, marking the cut — a message that simply stops mid-word reads as a bug. */
+    private String elide(String text, int width) {
+        String trimmed = this.textRenderer.trimToWidth(text, width);
+        if (trimmed.length() == text.length()) {
+            return text;
+        }
+        return this.textRenderer.trimToWidth(text, Math.max(0, width - this.textRenderer.getWidth("…"))) + "…";
+    }
+
+    /** @return the {@code [Town]} / {@code [Alliance]} marker, or {@code null} for public chat. */
+    private static Text channelBadge(ChatChannel channel) {
+        return switch (channel) {
+            case TOWN -> Text.translatable("betterloka.translator.channel.town");
+            case ALLIANCE -> Text.translatable("betterloka.translator.channel.alliance");
+            case PUBLIC -> null;
+        };
     }
 
     private void renderOutput(DrawContext context, int left, int width) {

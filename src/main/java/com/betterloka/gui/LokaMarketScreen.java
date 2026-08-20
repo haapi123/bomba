@@ -58,6 +58,15 @@ public class LokaMarketScreen extends Screen {
     /** Loading every listing is around fifty requests, so the special view is capped for sanity. */
     private static final int MAX_SPECIAL_ROWS = 120;
 
+    /** Gap between the three columns of a listing card. */
+    private static final int COLUMN_GAP = 8;
+
+    /** The enchantment column never gets narrower than this, however long the item name is. */
+    private static final int MIN_ENCHANT_WIDTH = 72;
+
+    /** How many enchantments to spell out before the rest are just counted. */
+    private static final int MAX_ENCHANT_ROWS = 5;
+
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
@@ -352,7 +361,29 @@ public class LokaMarketScreen extends Screen {
         int inner = width - CARD_PADDING * 2;
         for (MarketListing listing : listings) {
             boolean special = listing.isSpecial();
-            int rows = special ? 3 : 2;
+
+            // Three columns: what it is and who is selling it on the left, its enchantments down the
+            // middle, what it costs on the right.
+            List<String> leftLines = new ArrayList<>();
+            leftLines.add(listing.displayName());
+            leftLines.add(Text.translatable("betterloka.market.seller", sellerOf(listing)).getString());
+            if (special) {
+                leftLines.add(listing.prettyType());
+            }
+
+            List<String> enchantLines = enchantLines(listing.enchantments());
+
+            String price = money(listing.price());
+            String stock = Text.translatable("betterloka.market.stock", listing.quantity()).getString()
+                    + "  ·  " + money(listing.pricePerUnit()) + Text.translatable("betterloka.market.each").getString();
+
+            int rightWidth = Math.max(this.textRenderer.getWidth(price), this.textRenderer.getWidth(stock)) + COLUMN_GAP;
+            int middleWidth = enchantLines.isEmpty()
+                    ? 0
+                    : Math.max(MIN_ENCHANT_WIDTH, (inner - rightWidth) * 2 / 5);
+            int leftWidth = Math.max(40, inner - rightWidth - middleWidth - (middleWidth == 0 ? 0 : COLUMN_GAP));
+
+            int rows = Math.max(2, Math.max(leftLines.size(), enchantLines.size()));
             int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
             GuiTheme.panel(context, left, y, width, height);
 
@@ -360,36 +391,49 @@ public class LokaMarketScreen extends Screen {
             int textY = y + CARD_PADDING;
 
             context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(listing.displayName(), inner - 70), textX, textY,
+                    this.textRenderer.trimToWidth(leftLines.get(0), leftWidth), textX, textY,
                     special ? GuiTheme.ACCENT : GuiTheme.TEXT);
+            for (int i = 1; i < leftLines.size(); i++) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(leftLines.get(i), leftWidth),
+                        textX, textY + ROW_HEIGHT * i, GuiTheme.MUTED);
+            }
 
-            String price = money(listing.price());
+            int middleX = textX + leftWidth + COLUMN_GAP;
+            for (int i = 0; i < enchantLines.size(); i++) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(enchantLines.get(i), middleWidth),
+                        middleX, textY + ROW_HEIGHT * i, GuiTheme.ENCHANT);
+            }
+
             context.drawTextWithShadow(this.textRenderer, price,
                     left + width - CARD_PADDING - this.textRenderer.getWidth(price), textY, GuiTheme.GOOD);
-
-            String seller = sellerOf(listing);
-            String left2 = Text.translatable("betterloka.market.seller", seller).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(left2, inner - 80), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
-
-            String stock = Text.translatable("betterloka.market.stock", listing.quantity()).getString()
-                    + "  ·  " + money(listing.pricePerUnit()) + Text.translatable("betterloka.market.each").getString();
             context.drawTextWithShadow(this.textRenderer, stock,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(stock), textY + ROW_HEIGHT, GuiTheme.MUTED);
-
-            if (special) {
-                StringBuilder detail = new StringBuilder(listing.prettyType());
-                if (!listing.enchantments().isEmpty()) {
-                    detail.append("  ·  ").append(String.join(", ", listing.enchantments()));
-                }
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(detail.toString(), inner), textX, textY + ROW_HEIGHT * 2,
-                        GuiTheme.MUTED);
-            }
+                    left + width - CARD_PADDING - this.textRenderer.getWidth(stock), textY + ROW_HEIGHT,
+                    GuiTheme.MUTED);
 
             y += height + CARD_GAP;
         }
         return y;
+    }
+
+    /**
+     * The enchantment column, one per line so a fully kitted sword stays readable.
+     *
+     * <p>Beyond {@link #MAX_ENCHANT_ROWS} the rest are counted rather than listed — a card that grows
+     * to a dozen lines pushes everything else off the screen.
+     */
+    private static List<String> enchantLines(List<String> enchantments) {
+        if (enchantments.isEmpty()) {
+            return List.of();
+        }
+        if (enchantments.size() <= MAX_ENCHANT_ROWS) {
+            return enchantments;
+        }
+        List<String> shown = new ArrayList<>(enchantments.subList(0, MAX_ENCHANT_ROWS - 1));
+        shown.add(Text.translatable("betterloka.market.more_enchants",
+                enchantments.size() - (MAX_ENCHANT_ROWS - 1)).getString());
+        return shown;
     }
 
     private int renderOverview(DrawContext context, int left, int y, int width) {

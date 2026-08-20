@@ -60,4 +60,60 @@ class ChatLogParsingTest {
     void ignoresAnEmptyMessageBody() {
         assertNull(ChatLog.parse("Rezorie:   "));
     }
+
+    @Test
+    void publicChatKeepsItsChannel() {
+        ChatLog.Line line = ChatLog.parse("Rezorie: siema");
+        assertNotNull(line);
+        assertEquals(ChatChannel.PUBLIC, line.channel());
+    }
+
+    @Test
+    void remembersWhichChannelTheColourIdentified() {
+        ChatLog.Line town = ChatLog.parse("Rezorie: bronimy zamku", ChatChannel.TOWN);
+        assertNotNull(town);
+        assertEquals(ChatChannel.TOWN, town.channel());
+        assertEquals("Rezorie", town.sender());
+        assertEquals("bronimy zamku", town.message());
+
+        ChatLog.Line alliance = ChatLog.parse("Ghuraa: kto na fighta", ChatChannel.ALLIANCE);
+        assertNotNull(alliance);
+        assertEquals(ChatChannel.ALLIANCE, alliance.channel());
+    }
+
+    @Test
+    void readsTeamChatWrittenWithAnArrowInsteadOfAColon() {
+        ChatLog.Line line = ChatLog.parse("Rezorie » wchodzimy", ChatChannel.TOWN);
+        assertNotNull(line);
+        assertEquals("Rezorie", line.sender());
+        assertEquals("wchodzimy", line.message());
+    }
+
+    @Test
+    void doesNotTreatAnArrowInPublicChatAsASeparator() {
+        assertNull(ChatLog.parse("Rezorie » wchodzimy"),
+                "in public chat an arrow is far more likely to be part of what was said");
+    }
+
+    @Test
+    void readsAChannelTagAndTakesItOffTheMessage() {
+        ChatLog.Line town = ChatLog.parse("[TC] Rezorie: idziemy");
+        assertNotNull(town);
+        assertEquals(ChatChannel.TOWN, town.channel());
+        assertEquals("Rezorie", town.sender());
+        assertEquals("idziemy", town.message());
+
+        ChatLog.Line alliance = ChatLog.parse("[Alliance] Ghuraa: idziemy");
+        assertNotNull(alliance);
+        assertEquals(ChatChannel.ALLIANCE, alliance.channel());
+        assertEquals("Ghuraa", alliance.sender());
+    }
+
+    @Test
+    void doesNotMistakeATownTagForAChannelTag() {
+        ChatLog.Line line = ChatLog.parse("[New Silverhand] Ghuraa: anyone up for a fight");
+        assertNotNull(line);
+        assertEquals(ChatChannel.PUBLIC, line.channel());
+        assertEquals("Ghuraa", line.sender());
+    }
 }

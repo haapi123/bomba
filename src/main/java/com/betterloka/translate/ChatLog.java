@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,6 +19,10 @@ import java.util.regex.Pattern;
  * <p>Only actual chat is kept. Servers push a great deal of other text through the same channel —
  * join notices, territory announcements, command output — and translating all of it buries the
  * conversation and wastes requests, so anything that does not parse as somebody speaking is dropped.
+ *
+ * <p>Town and alliance chat are kept too, and remembered as such: they are written in a looser
+ * format than public chat, so they are parsed more permissively once their colour has identified
+ * them.
  */
 public final class ChatLog {
     /** How many messages to keep. Enough to catch up on a fight call without holding a session. */
@@ -36,17 +41,33 @@ public final class ChatLog {
     private static final Pattern COLON_FORM = Pattern.compile("^(.{0,48}?)\\s*:\\s+(.+)$", Pattern.DOTALL);
     private static final Pattern LAST_NAME = Pattern.compile("(" + NAME + ")\\s*$");
 
+    /**
+     * {@code Nick » message} — team chats often drop the colon for an arrow. Only tried on town and
+     * alliance messages: in public chat an arrow is far more likely to be part of what was said.
+     */
+    private static final Pattern ARROW_FORM =
+            Pattern.compile("^(.{0,48}?)\\s*[»›→>]+\\s+(.+)$", Pattern.DOTALL);
+
+    /**
+     * A leading channel marker, where the server writes one. Colour is the reliable signal on Loka,
+     * but a tag both confirms it and has to come off before the sender can be read.
+     */
+    private static final Pattern CHANNEL_TAG = Pattern.compile(
+            "^\\[\\s*(TC|AC|T|A|TOWN|ALLIANCE|ALLY|NATION)\\s*\\]\\s*", Pattern.CASE_INSENSITIVE);
+
     /** One captured chat message. {@code translated} fills in once the request comes back. */
     public static final class Line {
         private final String sender;
         private final String message;
+        private final ChatChannel channel;
         private final long receivedAt;
         private volatile String translated;
         private volatile boolean failed;
 
-        Line(String sender, String message) {
+        Line(String sender, String message, ChatChannel channel) {
             this.sender = sender;
             this.message = message;
+            this.channel = channel;
             this.receivedAt = System.currentTimeMillis();
         }
 
@@ -57,6 +78,11 @@ public final class ChatLog {
         /** What they said, without the name or any rank decoration. */
         public String message() {
             return message;
+        }
+
+        /** Which conversation this came from — public chat, your town, or your alliance. */
+        public ChatChannel channel() {
+            return channel;
         }
 
         public long receivedAt() {
@@ -90,9 +116,11 @@ public final class ChatLog {
     /**
      * Records a chat message and, when incoming translation is on, starts translating it.
      * Anything that is not somebody speaking is ignored.
+     *
+     * @param channel the channel its colour identified it as
      */
-    public void record(String raw) {
-        Line line = parse(raw);
+    public void record(String raw, ChatChannel channel) {
+        Line line = parse(raw, channel);
         if (line == null) {
             return;
         }
@@ -109,6 +137,11 @@ public final class ChatLog {
 
     /** @return the parsed message, or {@code null} if the text is not player chat. */
     static Line parse(String raw) {
+        return parse(raw, ChatChannel.PUBLIC);
+    }
+
+    /** @return the parsed message, or {@code null} if the text is not player chat. */
+    static Line parse(String raw, ChatChannel colorChannel) {
         if (raw == null) {
             return null;
         }
@@ -117,24 +150,55 @@ public final class ChatLog {
             return null;
         }
 
+        ChatChannel channel = colorChannel == null ? ChatChannel.PUBLIC : colorChannel;
+        Matcher tag = CHANNEL_TAG.matcher(text);
+        if (tag.find()) {
+            if (channel == ChatChannel.PUBLIC) {
+                channel = channelOfTag(tag.group(1));
+            }
+            text = text.substring(tag.end()).strip();
+            if (text.isEmpty()) {
+                return null;
+            }
+        }
+
         Matcher angle = ANGLE_FORM.matcher(text);
         if (angle.matches()) {
-            return lineOf(angle.group(1), angle.group(2));
+            return lineOf(angle.group(1), angle.group(2), channel);
         }
 
         Matcher colon = COLON_FORM.matcher(text);
         if (colon.matches()) {
             Matcher name = LAST_NAME.matcher(colon.group(1));
             if (name.find()) {
-                return lineOf(name.group(1), colon.group(2));
+                return lineOf(name.group(1), colon.group(2), channel);
+            }
+        }
+
+        if (channel.isTeamChannel()) {
+            Matcher arrow = ARROW_FORM.matcher(text);
+            if (arrow.matches()) {
+                Matcher name = LAST_NAME.matcher(arrow.group(1));
+                if (name.find()) {
+                    return lineOf(name.group(1), arrow.group(2), channel);
+                }
             }
         }
         return null;
     }
 
-    private static Line lineOf(String sender, String message) {
+    private static ChatChannel channelOfTag(String tag) {
+        String upper = tag.toUpperCase(Locale.ROOT);
+        return switch (upper) {
+            case "T", "TC", "TOWN" -> ChatChannel.TOWN;
+            case "A", "AC", "ALLIANCE", "ALLY", "NATION" -> ChatChannel.ALLIANCE;
+            default -> ChatChannel.PUBLIC;
+        };
+    }
+
+    private static Line lineOf(String sender, String message, ChatChannel channel) {
         String body = message.strip();
-        return body.isEmpty() ? null : new Line(sender, body);
+        return body.isEmpty() ? null : new Line(sender, body, channel);
     }
 
     /** Starts (or restarts) the translation of one message. */

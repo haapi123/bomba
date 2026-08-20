@@ -1,5 +1,6 @@
 package com.betterloka.gui;
 
+import com.betterloka.translate.ChatChannel;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
@@ -11,6 +12,13 @@ public final class GuiTheme {
     public static final int GOOD = 0xFF7BD88F;
     public static final int BAD = 0xFFE06C75;
     public static final int LIVE = 0xFFFFB454;
+
+    /** Enchantments, in the violet the game already associates with them. */
+    public static final int ENCHANT = 0xFFB9A0FF;
+
+    /** Town and alliance chat, kept close to the colours the server already uses for them. */
+    public static final int TOWN_CHAT = 0xFF6FDC7C;
+    public static final int ALLIANCE_CHAT = 0xFF62D8E8;
 
     private static final int PANEL_FILL = 0xB0101015;
     private static final int PANEL_BORDER = 0xFF2C2C38;
@@ -65,5 +73,14 @@ public final class GuiTheme {
     /** The same K/D colour as {@link #nameplateRatioColor}, opaque, for drawing into a screen. */
     public static int ratioColor(double ratio) {
         return 0xFF000000 | nameplateRatioColor(ratio);
+    }
+
+    /** The colour a chat channel is drawn in. */
+    public static int channelColor(ChatChannel channel) {
+        return switch (channel) {
+            case TOWN -> TOWN_CHAT;
+            case ALLIANCE -> ALLIANCE_CHAT;
+            case PUBLIC -> ACCENT;
+        };
     }
 }

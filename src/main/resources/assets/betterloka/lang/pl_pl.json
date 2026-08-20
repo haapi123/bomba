@@ -57,6 +57,8 @@
   "betterloka.translator.copied": "Skopiowano — wklej na czat.",
   "betterloka.translator.failed": "Nie udało się przetłumaczyć.",
   "betterloka.translator.output_hint": "Tutaj pojawi się tłumaczenie.",
+  "betterloka.translator.channel.town": "[Town]",
+  "betterloka.translator.channel.alliance": "[Alliance]",
   "betterloka.translator.no_chat": "Brak wiadomości. Pojawią się tu, gdy ktoś napisze na czacie.",
   "betterloka.market.tab.search": "Szukaj",
   "betterloka.market.tab.special": "Specjalne",
@@ -79,6 +81,7 @@
   "betterloka.market.total_listings": "Ofert",
   "betterloka.market.total_items": "Przedmiotów w sprzedaży",
   "betterloka.market.sellers": "Sprzedających",
+  "betterloka.market.more_enchants": "+%s więcej",
   "betterloka.market.special_count": "Przedmiotów z nazwą / lorem",
   "betterloka.market.no_supply_1": "To wartość wystawionych ofert, nie ilość waluty na serwerze.",
   "betterloka.market.no_supply_2": "API Loki nie udostępnia sumy waluty w obiegu."
