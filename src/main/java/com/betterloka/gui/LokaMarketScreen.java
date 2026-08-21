@@ -28,15 +28,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * Browses Loka's market: what is on sale, from whom and for how much.
  *
  * <p>Three views. <em>Search</em> looks one item type up and lists its offers cheapest first.
- * <em>Special</em> sweeps the whole market for named and lore-bearing gear — the one-off swords and
- * armour rather than stacks of cobblestone. <em>Overview</em> totals what is listed.
+ * <em>Deals</em> sweeps the whole market for listings priced under the going rate for their item.
+ * <em>Special</em> picks out the named gear — the one-off swords and armour rather than stacks of
+ * cobblestone.
  */
 public class LokaMarketScreen extends Screen {
     private enum Tab {
         SEARCH("betterloka.market.tab.search"),
         DEALS("betterloka.market.tab.deals"),
-        SPECIAL("betterloka.market.tab.special"),
-        OVERVIEW("betterloka.market.tab.overview");
+        SPECIAL("betterloka.market.tab.special");
 
         private final String key;
 
@@ -124,11 +124,11 @@ public class LokaMarketScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        int tabWidth = (width - 12) / 4;
+        int tabWidth = (width - 8) / 3;
         int x = left;
         for (Tab value : Tab.values()) {
             Tab target = value;
-            int thisWidth = value == Tab.OVERVIEW ? left + width - x : tabWidth;
+            int thisWidth = value == Tab.SPECIAL ? left + width - x : tabWidth;
             addDrawableChild(ButtonWidget.builder(tabLabel(value), button -> selectTab(target))
                     .dimensions(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
             x += tabWidth + 4;
@@ -382,7 +382,6 @@ public class LokaMarketScreen extends Screen {
                 case SEARCH -> renderListings(context, left, y, cardWidth, results, resolvedType);
                 case DEALS -> renderDeals(context, left, y, cardWidth);
                 case SPECIAL -> renderListings(context, left, y, cardWidth, specialRows(), null);
-                case OVERVIEW -> renderOverview(context, left, y, cardWidth);
             } - y;
         }
         context.disableScissor();
@@ -625,50 +624,6 @@ public class LokaMarketScreen extends Screen {
         shown.add(Text.translatable("betterloka.market.more_enchants",
                 enchantments.size() - (MAX_ENCHANT_ROWS - 1)).getString());
         return shown;
-    }
-
-    private int renderOverview(DrawContext context, int left, int y, int width) {
-        if (snapshot == null) {
-            context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.market.hint"),
-                    left, y + 4, GuiTheme.MUTED);
-            return y + 20;
-        }
-
-        int inner = width - CARD_PADDING * 2;
-        int height = CARD_PADDING * 2 + ROW_HEIGHT * 5;
-        GuiTheme.panel(context, left, y, width, height);
-        int textX = left + CARD_PADDING;
-        int textY = y + CARD_PADDING;
-
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                Text.translatable("betterloka.market.total_value").getString(),
-                money(snapshot.totalValue()), GuiTheme.GOOD);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
-                Text.translatable("betterloka.market.total_listings").getString(),
-                String.valueOf(snapshot.listings().size()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
-                Text.translatable("betterloka.market.total_items").getString(),
-                String.valueOf(snapshot.totalItems()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
-                Text.translatable("betterloka.market.sellers").getString(),
-                String.valueOf(snapshot.distinctSellers()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, inner,
-                Text.translatable("betterloka.market.special_count").getString(),
-                String.valueOf(specialListings().size()), GuiTheme.ACCENT);
-
-        y += height + CARD_GAP;
-
-        // The API publishes what is on sale, not how much currency exists; saying so beats implying
-        // the figure above is the server's money supply.
-        int noteHeight = CARD_PADDING * 2 + ROW_HEIGHT * 2;
-        GuiTheme.panel(context, left, y, width, noteHeight);
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(Text.translatable("betterloka.market.no_supply_1").getString(), inner),
-                left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(Text.translatable("betterloka.market.no_supply_2").getString(), inner),
-                left + CARD_PADDING, y + CARD_PADDING + ROW_HEIGHT, GuiTheme.MUTED);
-        return y + noteHeight;
     }
 
     private String sellerOf(MarketListing listing) {

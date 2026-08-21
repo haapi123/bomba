@@ -24,3 +24,8 @@ bin/
 
 # Minecraft client logs written into the project root by dev runs
 logs/
+
+# Bot secrets and state — never commit a token or a webhook URL
+bot/betterloka-bot.json
+betterloka-bot.json
+betterloka-bot-state.json

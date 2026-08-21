@@ -1,0 +1,76 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = project.maven_group
+version = project.mod_version
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+}
+
+/*
+ * The bot reads Loka exactly the way the mod does, off the same source files. Everything under
+ * api/, data/ and towns/ is plain Java — no Minecraft, no Fabric — so it is compiled straight into
+ * the bot rather than duplicated, which is what keeps the two from drifting apart.
+ */
+sourceSets.main.java {
+    srcDir '../src/main/java'
+    include 'com/betterloka/BetterLoka.java'
+    include 'com/betterloka/api/**'
+    include 'com/betterloka/data/JsonStore.java'
+    include 'com/betterloka/towns/FallenTowns.java'
+    include 'com/betterloka/bot/**'
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+    // BetterLoka asks the loader for the mod version; outside the game that throws and is caught,
+    // but the class still has to be on the compile classpath.
+    compileOnly "net.fabricmc:fabric-loader:${project.loader_version}"
+}
+
+application {
+    mainClass = 'com.betterloka.bot.BetterLokaBot'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+/** One runnable jar, so deploying the bot is copying a file and running it. */
+tasks.register('botJar', Jar) {
+    archiveBaseName = 'betterloka-bot'
+    manifest {
+        attributes 'Main-Class': 'com.betterloka.bot.BetterLokaBot'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+}
+
+build.dependsOn botJar
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed'
+    }
+}

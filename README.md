@@ -170,7 +170,6 @@ Three views over Loka's market:
   Plain lore is not enough to qualify: on Loka every imbued item carries "Imbued in <town>" lore, so
   only a player-given name marks a piece of gear out.
 - **Deals** — every listing priced well under what its item usually goes for.
-- **Overview** — total value listed, how many listings, items and sellers.
 
 ![Deals](docs/market-deals.png)
 
@@ -190,11 +189,6 @@ down the middle, **what it costs** on the right. Enchantments are read out of th
 itself, so they show on search results as well — a bare Sharpness V book is as enchanted as a named
 sword. Past five enchantments the rest are counted rather than listed, so one fully kitted sword
 cannot fill the screen.
-
-![Market overview](docs/market-overview.png)
-
-Loka's API publishes what is on sale but **not how much currency exists on the server**, so the
-overview says what it is showing rather than implying a money supply figure.
 
 ## Town Finder
 
@@ -226,6 +220,31 @@ else publishes one either — so this is the one thing here that cannot be answe
 Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
 each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
 then it says so rather than showing nothing.
+
+## Discord bot
+
+[`bot/`](bot/README.md) is a separate program that watches for towns falling and **pings a Discord
+role** when one does, with the continent, the territory number and the beacon coordinates — so people
+can get to the territory while it is still open.
+
+It is not part of the mod on purpose: the mod runs only while somebody's game is open, and on every
+player's machine, so the channel would get one ping per player per town and nothing overnight. The
+bot is one process watching on everyone's behalf.
+
+It shares the mod's data layer rather than reimplementing it — `FallenTowns`, `LokaApi` and the
+models compile straight out of `src/main/java` into the bot, so the two cannot disagree about what
+counts as a fallen town.
+
+On first run it records the standing backlog **quietly** rather than announcing it: there are usually
+a dozen long-dead towns still holding ground, and pinging a role with all of them is how a bot gets
+muted.
+
+```bash
+./gradlew :bot:botJar
+java -jar bot/build/libs/betterloka-bot-<version>.jar
+```
+
+See [bot/README.md](bot/README.md) for the webhook setup.
 
 ## Fight Manager
 

@@ -159,14 +159,10 @@ public final class TownLogger {
      */
     private List<TownLogEvent> fallenTowns(Map<String, Territory> now) {
         List<TownLogEvent> events = new ArrayList<>();
-        for (Territory territory : now.values()) {
-            if (!territory.isOwned()) {
-                continue;
-            }
-            LokaTown dead = deletedTowns.get(territory.townId());
-            if (dead != null) {
+        for (FallenTowns.Fallen fallen : FallenTowns.detect(now.values(), deletedTowns)) {
+            for (Territory territory : fallen.territories()) {
                 events.add(TownLogEvent.of(TownLogEvent.Kind.TOWN_FELL, territory,
-                        territory.townId(), dead.name(), null));
+                        fallen.town().id(), fallen.town().name(), null));
             }
         }
         return events;
