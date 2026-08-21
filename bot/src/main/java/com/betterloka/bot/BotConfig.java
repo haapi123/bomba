@@ -69,6 +69,15 @@ public final class BotConfig {
      */
     public boolean announceBacklogOnFirstRun = false;
 
+    /**
+     * Post a test message on startup, then carry on watching.
+     *
+     * <p>For panels where the startup command is awkward or locked to edit: the config file is
+     * reachable in any file manager, so the setup can be confirmed without needing to pass
+     * {@code --test} on the command line and then take it off again.
+     */
+    public boolean testOnStart = false;
+
     /** Where the bot remembers what it has already announced. */
     public String stateFile = "betterloka-bot-state.json";
 
@@ -98,15 +107,19 @@ public final class BotConfig {
 
         checkIntervalSeconds = envInt("BETTERLOKA_CHECK_SECONDS", checkIntervalSeconds);
         fullSweepIntervalMinutes = envInt("BETTERLOKA_FULL_SWEEP_MINUTES", fullSweepIntervalMinutes);
-        String backlog = System.getenv("BETTERLOKA_ANNOUNCE_BACKLOG");
-        if (backlog != null && !backlog.isBlank()) {
-            announceBacklogOnFirstRun = Boolean.parseBoolean(backlog.trim());
-        }
+        announceBacklogOnFirstRun =
+                envBool("BETTERLOKA_ANNOUNCE_BACKLOG", announceBacklogOnFirstRun);
+        testOnStart = envBool("BETTERLOKA_TEST_ON_START", testOnStart);
     }
 
     private static String envOr(String key, String fallback) {
         String value = System.getenv(key);
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static boolean envBool(String key, boolean fallback) {
+        String value = System.getenv(key);
+        return value == null || value.isBlank() ? fallback : Boolean.parseBoolean(value.trim());
     }
 
     private static int envInt(String key, int fallback) {

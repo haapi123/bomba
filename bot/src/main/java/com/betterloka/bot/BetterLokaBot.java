@@ -76,6 +76,11 @@ public final class BetterLokaBot {
                 postTestMessage(poster, config);
                 return;
             }
+            if (config.testOnStart) {
+                // Set in the config rather than on the command line, for panels where the startup
+                // command is awkward to edit. It does not stop the watch.
+                postTestMessage(poster, config);
+            }
 
             LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
                             + "{} territory record(s) already announced",

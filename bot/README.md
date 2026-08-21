@@ -54,6 +54,9 @@ Then start it and leave it running:
 java -jar betterloka-bot-<version>.jar
 ```
 
+Setting `"testOnStart": true` in the config does the same thing at startup and then carries on
+watching, which is easier on a hosting panel where the startup command is awkward to edit.
+
 `--test` posts one clearly-labelled test message, so you can confirm the webhook works and the role
 actually gets notified without waiting for a town to fall. `--list` prints the towns currently
 standing as fallen and exits. `--once` runs a single check.
@@ -72,7 +75,17 @@ Everything else is the same.
 Every setting can be given as an environment variable instead, which is the better way to hand a
 host a token: `BETTERLOKA_WEBHOOK_URL`, `BETTERLOKA_BOT_TOKEN`, `BETTERLOKA_CHANNEL_ID`,
 `BETTERLOKA_ROLE_ID`, `BETTERLOKA_CHECK_SECONDS`, `BETTERLOKA_FULL_SWEEP_MINUTES`,
-`BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_STATE_FILE`. They win over the file.
+`BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_TEST_ON_START`, `BETTERLOKA_STATE_FILE`. They win over
+the file.
+
+### On a hosting panel (Pterodactyl and friends)
+
+Pick a **Java 21** docker image and set the startup command to `java -jar bot.jar`. Give the jar a
+name that will not change between versions — the startup command points at it by name, so uploading
+`betterloka-bot-0.9.0.jar` over `betterloka-bot-0.8.3.jar` would break it.
+
+The first start writes the config and exits, which the panel reports as the server stopping. That is
+expected: fill the config in and start it again.
 
 ## What it does on the first run
 
