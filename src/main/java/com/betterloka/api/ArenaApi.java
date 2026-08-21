@@ -76,7 +76,7 @@ public final class ArenaApi {
      */
     public List<ArenaEntry> fetchHistory(Ladder ladder, int season, int week) throws ApiException {
         return readLadder(BASE_URL + "/arena/history/" + ladder.path + "/1v1/players?season=" + season
-                + "&week=" + week, ladder);
+                + "&week=" + week, ladder, true);
     }
 
     /** Every season that has published standings, ascending. */
@@ -90,9 +90,13 @@ public final class ArenaApi {
     }
 
     private List<ArenaEntry> readLadder(String url, Ladder ladder) throws ApiException {
+        return readLadder(url, ladder, false);
+    }
+
+    private List<ArenaEntry> readLadder(String url, Ladder ladder, boolean background) throws ApiException {
         List<ArenaEntry> entries = new ArrayList<>();
         int position = 0;
-        for (JsonElement element : readArray(url)) {
+        for (JsonElement element : readArray(url, background)) {
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -106,7 +110,8 @@ public final class ArenaApi {
 
     private List<Integer> readNumbers(String url) throws ApiException {
         List<Integer> numbers = new ArrayList<>();
-        for (JsonElement element : readArray(url)) {
+        // Always part of building the history index, which nobody is waiting on.
+        for (JsonElement element : readArray(url, true)) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
                 numbers.add(element.getAsInt());
             }
@@ -114,8 +119,8 @@ public final class ArenaApi {
         return numbers;
     }
 
-    private JsonArray readArray(String url) throws ApiException {
-        String body = transport.get(url);
+    private JsonArray readArray(String url, boolean background) throws ApiException {
+        String body = transport.get(url, background);
         try {
             JsonElement parsed = JsonParser.parseString(body);
             if (!parsed.isJsonArray()) {

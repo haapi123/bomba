@@ -58,7 +58,9 @@ public final class HttpTransport implements AutoCloseable {
 
     public HttpTransport(int bulkWorkers, double permitsPerSecond) {
         this.permitsPerSecond = permitsPerSecond;
-        this.executor = Executors.newFixedThreadPool(2, daemonFactory("BetterLoka-API-"));
+        // Four, not two: the modules are independent screens, and two means opening one while
+        // another is still loading queues the second behind the first for no reason.
+        this.executor = Executors.newFixedThreadPool(4, daemonFactory("BetterLoka-API-"));
         // Interactive lookups get their own pool. Sharing one with bulk work means a search queues
         // behind every background task and appears to hang.
         this.bulkExecutor = Executors.newFixedThreadPool(bulkWorkers, daemonFactory("BetterLoka-Bulk-"));
@@ -108,6 +110,14 @@ public final class HttpTransport implements AutoCloseable {
      *                      requested resource, or when the host stays unreachable.
      */
     public String get(String url) throws ApiException {
+        return get(url, false);
+    }
+
+    /**
+     * @param background true for a sweep or an index build — work nobody is watching, which then
+     *                   yields its place in the queue to anything a player is waiting on
+     */
+    public String get(String url, boolean background) throws ApiException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .header("Accept", "application/json, text/html;q=0.9")
                 .header("User-Agent", "BetterLoka/" + BetterLoka.VERSION + " (Minecraft mod)")
@@ -121,7 +131,7 @@ public final class HttpTransport implements AutoCloseable {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             long backoffMillis;
             try {
-                limiter.acquire();
+                limiter.acquire(background);
                 requestCount.incrementAndGet();
                 HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 int status = response.statusCode();

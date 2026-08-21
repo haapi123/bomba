@@ -268,10 +268,12 @@ and survives restarts, so the baseline is not lost between sessions.
 
 ### What it costs to leave running
 
-A sweep is three requests — one per continent — and about 850 KB, and runs every **10 minutes** by
-default. The deleted-town roster is forty small requests and is refreshed at most once an hour, since
-it only changes when a town dies. That is roughly **6 MB an hour**; the interval button offers 2, 5,
-10, 30 and 60 minutes, **Check now** forces a sweep, and the whole thing can be switched off.
+A sweep is three requests — one per continent — and about 850 KB, and runs every **30 minutes** by
+default, the first one 5 minutes after launch. The deleted-town roster is forty small requests and is
+refreshed at most once an hour, since it only changes when a town dies. That is roughly **2.4 MB an
+hour**, and none of it competes with a screen you are looking at — background requests yield their
+place in the queue. The interval button offers 2, 5, 10, 30 and 60 minutes, **Check now** forces a
+sweep, and the whole thing can be switched off.
 
 ## Installing
 
@@ -300,12 +302,38 @@ the mod reads them directly rather than scraping the page around them.
 A full profile is about ten requests and lands in roughly a second. The card appears as soon as the
 career totals arrive; the fight rows fill in behind it.
 
-Two things are done deliberately in the HTTP layer, both measured against the live services:
+Several things are done deliberately in the HTTP layer, all measured against the live services:
 
 - Requests are paced by a token bucket, one per host, and a 429 backs every thread off at once.
 - The client speaks **HTTP/1.1 on purpose**. Over HTTP/2 the JDK client multiplexes every request
   onto one connection per host and parallel work serialises behind it — the same sweep measured 8x
   slower, with rate-limit backoff on top.
+- **Background work yields.** A sweep or an index build hangs back before taking its permit, so a
+  search never queues behind traffic nobody asked for.
+
+## What it costs a connection
+
+Three of the things the mod reads are large and barely change, and re-fetching them every session was
+most of what it cost — enough that on a home connection the Player Finder and Town Finder could look
+like they were not loading at all. They are cached to disk in `config/betterloka/`:
+
+| Cached | Size | Kept for | Why that is safe |
+| --- | --- | --- | --- |
+| `towns.json` | 968 KB → 48 KB | 12 hours | Loka ships every town with its full member list; the mod uses a dozen fields, so only those are stored. |
+| `fights.json` | ~110 KB per fight | 30 days | A finished fight's numbers never change again. |
+| `arena-history.json` | ~1.8 MB | 24 hours | A finished season's final table never changes again. |
+
+Measured end to end, opening the Player Finder and then the Town Finder:
+
+| | Before | After (cold) | After (cached) |
+| --- | --- | --- | --- |
+| Town Finder roster | 6755 ms | 99 ms | **99 ms** |
+| Player Finder, complete | 2750 ms | 2153 ms | **1894 ms** |
+| Downloaded | ~4 MB | ~1.2 MB | **~0.2 MB** |
+
+The territory sweep also went from every 10 minutes to **every 30**, with the first one 5 minutes
+after launch rather than 1 — starting the game already saturates a connection, and a sweep on top of
+that is exactly when somebody opens the first screen.
 
 ### What is not shown
 

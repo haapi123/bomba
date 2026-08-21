@@ -4,7 +4,11 @@ import com.betterloka.BetterLoka;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaTown;
+import com.google.gson.reflect.TypeToken;
 
+import java.lang.reflect.Type;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,18 +23,42 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class TownCache {
     private static final long BULK_TTL_MILLIS = 10 * 60 * 1000L;
 
+    /**
+     * How long the roster stays good on disk.
+     *
+     * <p>Loka ships every town with its full member list, so the roster is close to a megabyte for
+     * eighty-odd towns — by a distance the most expensive thing the mod fetches. It changes when
+     * somebody founds, disbands or renames a town, which is not something that needs noticing within
+     * the hour, so it is kept overnight and re-read from disk on the next launch.
+     */
+    private static final long DISK_TTL_MILLIS = 12 * 60 * 60 * 1000L;
+
+    private static final Type SAVED_TYPE =
+            JsonStore.envelopeOf(new TypeToken<List<LokaTown.Saved>>() {
+            }.getType());
+
     private final LokaApi api;
     private final Map<String, LokaTown> byId = new ConcurrentHashMap<>();
     private final Set<String> unknown = ConcurrentHashMap.newKeySet();
+    private final JsonStore<List<LokaTown.Saved>> disk;
     private volatile long lastBulkLoad;
 
     public TownCache(LokaApi api) {
+        this(api, null);
+    }
+
+    /** @param cacheFile where to keep the roster between sessions, or {@code null} not to. */
+    public TownCache(LokaApi api, Path cacheFile) {
         this.api = api;
+        this.disk = cacheFile == null ? null : new JsonStore<>(cacheFile, SAVED_TYPE, DISK_TTL_MILLIS);
     }
 
     /** Pulls every living town. Cheap enough to call before each search; it self-throttles. */
-    public void ensureLoaded() {
+    public synchronized void ensureLoaded() {
         if (System.currentTimeMillis() - lastBulkLoad < BULK_TTL_MILLIS && !byId.isEmpty()) {
+            return;
+        }
+        if (loadFromDisk()) {
             return;
         }
         try {
@@ -41,9 +69,42 @@ public final class TownCache {
             }
             lastBulkLoad = System.currentTimeMillis();
             unknown.clear();
+            saveToDisk();
         } catch (ApiException e) {
             BetterLoka.LOGGER.debug("Could not refresh the town list", e);
         }
+    }
+
+    /** @return true when a fresh enough roster was on disk and no request is needed. */
+    private boolean loadFromDisk() {
+        if (disk == null) {
+            return false;
+        }
+        List<LokaTown.Saved> saved = disk.read();
+        if (saved == null || saved.isEmpty()) {
+            return false;
+        }
+        for (LokaTown.Saved town : saved) {
+            if (town.id() != null) {
+                byId.put(town.id(), LokaTown.fromSaved(town));
+            }
+        }
+        lastBulkLoad = System.currentTimeMillis();
+        BetterLoka.LOGGER.debug("Loaded {} towns from the saved roster", saved.size());
+        return true;
+    }
+
+    private void saveToDisk() {
+        if (disk == null) {
+            return;
+        }
+        List<LokaTown.Saved> saved = new java.util.ArrayList<>();
+        for (LokaTown town : byId.values()) {
+            if (!town.deleted()) {
+                saved.add(town.toSaved());
+            }
+        }
+        disk.write(saved);
     }
 
     private void store(LokaApi.TownPage page) {
@@ -104,9 +165,9 @@ public final class TownCache {
     }
 
     /** Every living town, loading the roster first if it is stale. */
-    public java.util.List<LokaTown> all() {
+    public List<LokaTown> all() {
         ensureLoaded();
-        java.util.List<LokaTown> towns = new java.util.ArrayList<>();
+        List<LokaTown> towns = new java.util.ArrayList<>();
         for (LokaTown town : byId.values()) {
             if (!town.deleted()) {
                 towns.add(town);

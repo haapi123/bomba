@@ -43,6 +43,29 @@ public final class LokaTown {
     }
 
     /**
+     * The town reduced to what the mod actually reads, for saving to disk.
+     *
+     * <p>Loka's roster ships every town with its full member map — a megabyte for eighty-odd towns,
+     * of which the mod uses a dozen fields. Only those are kept.
+     */
+    public record Saved(String id, String name, String world, String slogan, double townLevel,
+                        double strength, boolean recruiting, int memberCount, int vulnerabilityWindow,
+                        String territoryNum, String ownerId, List<String> subOwnerIds) {
+    }
+
+    public Saved toSaved() {
+        return new Saved(id, name, world, slogan, townLevel, strength, recruiting, memberCount,
+                vulnerabilityWindow, territoryNum, ownerId, subOwnerIds);
+    }
+
+    public static LokaTown fromSaved(Saved saved) {
+        return new LokaTown(saved.id(), saved.name(), saved.world(), saved.slogan(), saved.townLevel(),
+                saved.strength(), saved.recruiting(), false, saved.memberCount(),
+                saved.vulnerabilityWindow(), saved.territoryNum(), saved.ownerId(),
+                saved.subOwnerIds() == null ? List.of() : saved.subOwnerIds());
+    }
+
+    /**
      * A town that only exists as a name any more — restored from the saved log, where nothing is
      * kept but what a deleted town can no longer be asked for.
      */

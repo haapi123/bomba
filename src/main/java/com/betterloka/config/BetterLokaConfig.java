@@ -34,9 +34,10 @@ public final class BetterLokaConfig {
 
     /**
      * Minutes between territory sweeps. Each one is three requests and roughly 850 KB, so this is
-     * the setting that decides what the Town Logger costs to leave running.
+     * the setting that decides what the Town Logger costs to leave running. Town deletions are rare
+     * enough that half an hour loses nothing, and it is a quarter of the traffic ten minutes was.
      */
-    private int townLogIntervalMinutes = 10;
+    private int townLogIntervalMinutes = 30;
 
     private transient Path file;
 
@@ -122,7 +123,7 @@ public final class BetterLokaConfig {
     public static final int[] TOWN_LOG_INTERVALS = {2, 5, 10, 30, 60};
 
     public int townLogIntervalMinutes() {
-        return townLogIntervalMinutes < 1 ? 10 : townLogIntervalMinutes;
+        return townLogIntervalMinutes < 1 ? 30 : townLogIntervalMinutes;
     }
 
     public void setTownLogIntervalMinutes(int minutes) {

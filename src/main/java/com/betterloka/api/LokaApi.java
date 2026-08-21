@@ -183,7 +183,7 @@ public final class LokaApi {
     /** Every territory on one continent, in a single request. */
     public List<Territory> fetchTerritories(String world) throws ApiException {
         List<Territory> territories = new ArrayList<>();
-        JsonObject json = getObject(BASE_URL + "/territories/search/findByWorld?world=" + encode(world));
+        JsonObject json = getObject(BASE_URL + "/territories/search/findByWorld?world=" + encode(world), true);
         for (JsonElement element : embeddedArray(json, "territories")) {
             if (element.isJsonObject()) {
                 territories.add(Territory.fromJson(element.getAsJsonObject()));
@@ -199,7 +199,7 @@ public final class LokaApi {
      * the id a fallen town leaves behind on its territories.
      */
     public TownPage fetchDeletedTownPage(int page) throws ApiException {
-        JsonObject json = getObject(BASE_URL + "/towns/search/findDeleted?size=" + PAGE_SIZE + "&page=" + page);
+        JsonObject json = getObject(BASE_URL + "/towns/search/findDeleted?size=" + PAGE_SIZE + "&page=" + page, true);
         List<LokaTown> towns = new ArrayList<>();
         for (JsonElement element : embeddedArray(json, "towns")) {
             if (element.isJsonObject()) {
@@ -273,7 +273,11 @@ public final class LokaApi {
     }
 
     private JsonObject getObject(String url) throws ApiException {
-        String body = transport.get(url);
+        return getObject(url, false);
+    }
+
+    private JsonObject getObject(String url, boolean background) throws ApiException {
+        String body = transport.get(url, background);
         try {
             JsonElement parsed = JsonParser.parseString(body);
             if (!parsed.isJsonObject()) {

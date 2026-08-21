@@ -83,8 +83,10 @@ public final class TownLogger {
         deletedTownsLoadedAt = store.deletedTownsLoadedAt();
         state = config.townLogEnabled() ? State.IDLE : State.OFF;
 
-        // A minute's grace before the first sweep so it does not compete with the game starting up.
-        scheduler.scheduleWithFixedDelay(this::tick, 60, 60, TimeUnit.SECONDS);
+        // Five minutes' grace before the first sweep. Launching the game already saturates a
+        // connection, and a sweep on top of that is what makes the first screen anybody opens look
+        // broken; nothing here is urgent enough to justify it.
+        scheduler.scheduleWithFixedDelay(this::tick, 5 * 60, 60, TimeUnit.SECONDS);
     }
 
     private void tick() {

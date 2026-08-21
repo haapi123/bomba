@@ -6,6 +6,11 @@ import com.betterloka.api.ArenaApi;
 import com.betterloka.api.ArenaApi.Ladder;
 import com.betterloka.api.model.ArenaEntry;
 import com.betterloka.api.model.ArenaRank;
+import com.betterloka.data.JsonStore;
+import com.google.gson.reflect.TypeToken;
+
+import java.lang.reflect.Type;
+import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -31,6 +36,24 @@ import java.util.concurrent.CompletableFuture;
 public final class ArenaService {
     private static final long CURRENT_TTL_MILLIS = 5 * 60 * 1000L;
 
+    /**
+     * How long the best-rank index stays good on disk.
+     *
+     * <p>It is every past season's final table on both ladders — forty requests and about two
+     * megabytes — and a finished season's result never changes again. Rebuilding it once a session
+     * was most of what a first search cost; a day is well inside how often a season ends.
+     */
+    private static final long HISTORY_TTL_MILLIS = 24 * 60 * 60 * 1000L;
+
+    /** The index in the shape it is saved as: ladder name to key to the best entry. */
+    private record SavedBest(int season, String name, String uuid, int wins, int losses,
+                             String rank, int position) {
+    }
+
+    private static final Type SAVED_TYPE = JsonStore.envelopeOf(
+            new TypeToken<Map<String, Map<String, SavedBest>>>() {
+            }.getType());
+
     /** The best rank a player reached, and the season they reached it in. */
     public record Best(int season, ArenaEntry entry) {
     }
@@ -43,6 +66,7 @@ public final class ArenaService {
     }
 
     private final ArenaApi api;
+    private final JsonStore<Map<String, Map<String, SavedBest>>> disk;
 
     private final Map<Ladder, List<ArenaEntry>> current = new EnumMap<>(Ladder.class);
     private volatile long currentLoadedAt;
@@ -51,7 +75,13 @@ public final class ArenaService {
     private volatile CompletableFuture<Map<Ladder, Map<String, Best>>> history;
 
     public ArenaService(ArenaApi api) {
+        this(api, null);
+    }
+
+    /** @param cacheFile where to keep the best-rank index between sessions, or {@code null} not to. */
+    public ArenaService(ArenaApi api, Path cacheFile) {
         this.api = api;
+        this.disk = cacheFile == null ? null : new JsonStore<>(cacheFile, SAVED_TYPE, HISTORY_TTL_MILLIS);
     }
 
     /**
@@ -168,6 +198,11 @@ public final class ArenaService {
      * forty requests and several hundred.
      */
     private Map<Ladder, Map<String, Best>> buildHistory() {
+        Map<Ladder, Map<String, Best>> fromDisk = readIndex();
+        if (fromDisk != null) {
+            return fromDisk;
+        }
+
         Map<Ladder, Map<String, Best>> index = new EnumMap<>(Ladder.class);
         for (Ladder ladder : Ladder.values()) {
             index.put(ladder, new HashMap<>());
@@ -201,7 +236,54 @@ public final class ArenaService {
                 }
             }
         }
+        writeIndex(index);
         return index;
+    }
+
+    /** @return the saved index if one is still fresh, otherwise {@code null}. */
+    private Map<Ladder, Map<String, Best>> readIndex() {
+        if (disk == null) {
+            return null;
+        }
+        Map<String, Map<String, SavedBest>> saved = disk.read();
+        if (saved == null || saved.isEmpty()) {
+            return null;
+        }
+        Map<Ladder, Map<String, Best>> index = new EnumMap<>(Ladder.class);
+        for (Ladder ladder : Ladder.values()) {
+            Map<String, Best> restored = new HashMap<>();
+            Map<String, SavedBest> rows = saved.get(ladder.name());
+            if (rows != null) {
+                for (Map.Entry<String, SavedBest> row : rows.entrySet()) {
+                    SavedBest value = row.getValue();
+                    restored.put(row.getKey(), new Best(value.season(), new ArenaEntry(value.name(),
+                            value.uuid() == null ? null : UUID.fromString(value.uuid()),
+                            value.wins(), value.losses(), ArenaRank.parse(value.rank()), 0, 0,
+                            value.position())));
+                }
+            }
+            index.put(ladder, restored);
+        }
+        BetterLoka.LOGGER.debug("Loaded the arena history index from disk");
+        return index;
+    }
+
+    private void writeIndex(Map<Ladder, Map<String, Best>> index) {
+        if (disk == null) {
+            return;
+        }
+        Map<String, Map<String, SavedBest>> saved = new HashMap<>();
+        for (Map.Entry<Ladder, Map<String, Best>> ladder : index.entrySet()) {
+            Map<String, SavedBest> rows = new HashMap<>();
+            for (Map.Entry<String, Best> entry : ladder.getValue().entrySet()) {
+                ArenaEntry best = entry.getValue().entry();
+                rows.put(entry.getKey(), new SavedBest(entry.getValue().season(), best.name(),
+                        best.uuid() == null ? null : best.uuid().toString(), best.wins(), best.losses(),
+                        best.rank() == null ? null : best.rank().label(), best.position()));
+            }
+            saved.put(ladder.getKey().name(), rows);
+        }
+        disk.write(saved);
     }
 
     private static void record(Map<String, Best> index, int season, List<ArenaEntry> rows) {

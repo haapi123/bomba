@@ -10,7 +10,15 @@ import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.FightDetail;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.data.JsonStore;
 import com.betterloka.data.TownCache;
+import com.google.gson.reflect.TypeToken;
+
+import java.lang.reflect.Type;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -40,14 +48,89 @@ public final class PlayerStatsService {
      */
     public static final int FETCHED_FIGHT_COUNT = 9;
 
+    /**
+     * A finished fight never changes, so its breakdown is worth keeping for a long time.
+     *
+     * <p>Fight pages are the mod's heaviest remaining download — about 110 KB each, nine per profile.
+     * Caching them makes looking the same player up twice free, and costs nothing in staleness
+     * because the numbers are settled the moment the fight ends.
+     */
+    private static final long FIGHT_TTL_MILLIS = 30L * 24 * 60 * 60 * 1000L;
+
+    /** Enough for many profiles' worth of fights without the file growing without bound. */
+    private static final int MAX_CACHED_FIGHTS = 600;
+
+    private static final Type FIGHT_CACHE_TYPE =
+            JsonStore.envelopeOf(new TypeToken<Map<String, FightDetail>>() {
+            }.getType());
+
     private final LokaApi loka;
     private final EldritchApi eldritch;
     private final TownCache towns;
 
+    private final JsonStore<Map<String, FightDetail>> fightDisk;
+    private final Map<String, FightDetail> fightCache = new ConcurrentHashMap<>();
+    private final AtomicBoolean fightCacheDirty = new AtomicBoolean();
+
     public PlayerStatsService(LokaApi loka, EldritchApi eldritch, TownCache towns) {
+        this(loka, eldritch, towns, null);
+    }
+
+    /** @param fightCacheFile where to keep parsed fight breakdowns, or {@code null} not to. */
+    public PlayerStatsService(LokaApi loka, EldritchApi eldritch, TownCache towns, Path fightCacheFile) {
         this.loka = loka;
         this.eldritch = eldritch;
         this.towns = towns;
+        this.fightDisk = fightCacheFile == null
+                ? null
+                : new JsonStore<>(fightCacheFile, FIGHT_CACHE_TYPE, FIGHT_TTL_MILLIS);
+        if (fightDisk != null) {
+            Map<String, FightDetail> saved = fightDisk.read();
+            if (saved != null) {
+                fightCache.putAll(saved);
+            }
+        }
+    }
+
+    /** One player's line in one fight; both halves are needed, since the breakdown is per player. */
+    private static String fightKey(String fightId, String player) {
+        return fightId + "|" + player.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Reads a fight's breakdown, from disk if it has been seen before. */
+    private FightDetail fightDetail(String fightId, String player) throws ApiException {
+        String key = fightKey(fightId, player);
+        FightDetail cached = fightCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        FightDetail detail = eldritch.fetchFight(fightId, player);
+        if (detail != null) {
+            fightCache.put(key, detail);
+            fightCacheDirty.set(true);
+        }
+        return detail;
+    }
+
+    /** Writes the fight cache back out, trimmed, once a profile has finished loading. */
+    private void saveFightCache() {
+        if (fightDisk == null || !fightCacheDirty.getAndSet(false)) {
+            return;
+        }
+        Map<String, FightDetail> toSave = fightCache;
+        if (toSave.size() > MAX_CACHED_FIGHTS) {
+            // No access order to work from, so drop an arbitrary half rather than grow forever.
+            Map<String, FightDetail> trimmed = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, FightDetail> entry : toSave.entrySet()) {
+                if (trimmed.size() >= MAX_CACHED_FIGHTS / 2) {
+                    break;
+                }
+                trimmed.put(entry.getKey(), entry.getValue());
+            }
+            fightCache.keySet().retainAll(trimmed.keySet());
+            toSave = trimmed;
+        }
+        fightDisk.write(new java.util.LinkedHashMap<>(toSave));
     }
 
     /**
@@ -146,7 +229,7 @@ public final class PlayerStatsService {
         for (FightSummary row : rows) {
             tasks.add(CompletableFuture.supplyAsync(() -> {
                 try {
-                    FightDetail detail = eldritch.fetchFight(row.ref().id(), profile.name());
+                    FightDetail detail = fightDetail(row.ref().id(), profile.name());
                     return detail == null ? row : new FightSummary(row.ref(), detail);
                 } catch (ApiException e) {
                     BetterLoka.LOGGER.debug("Could not load fight {}", row.ref().id(), e);
@@ -172,6 +255,8 @@ public final class PlayerStatsService {
                 break;
             }
         }
+
+        saveFightCache();
 
         return new PlayerProfile(profile.name(), profile.rank(), profile.uuid(), profile.firstSeen(),
                 townLookup.join(), profile.townName(), profile.stats(), fightingFor, fighting.join(),

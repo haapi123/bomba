@@ -74,7 +74,9 @@ public final class EldritchApi {
      * @return the summary, or {@code null} if EldritchBot has never seen that player.
      */
     public EldritchStats fetchQuickStats(String name) throws ApiException {
-        String body = transport.get(BASE_URL + "/api/player/" + encode(name));
+        // Background: the nameplate overlay fills in as players come into view, so it must never
+        // delay a lookup somebody is sitting in front of.
+        String body = transport.get(BASE_URL + "/api/player/" + encode(name), true);
         try {
             JsonElement parsed = JsonParser.parseString(body);
             if (!parsed.isJsonObject()) {

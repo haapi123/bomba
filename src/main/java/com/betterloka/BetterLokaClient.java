@@ -66,9 +66,9 @@ public class BetterLokaClient implements ClientModInitializer {
         eldritch = new EldritchApi(transport);
         market = new MarketApi(transport);
         arena = new ArenaApi(transport);
-        towns = new TownCache(loka);
-        stats = new PlayerStatsService(loka, eldritch, towns);
-        arenaStats = new ArenaService(arena);
+        towns = new TownCache(loka, configDir().resolve("towns.json"));
+        stats = new PlayerStatsService(loka, eldritch, towns, configDir().resolve("fights.json"));
+        arenaStats = new ArenaService(arena, configDir().resolve("arena-history.json"));
         nameplateKd = new NameplateKdService(eldritch);
         translations = new TranslationService(transport);
         chatLog = new ChatLog(translations, config);

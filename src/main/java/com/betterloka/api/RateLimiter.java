@@ -13,6 +13,10 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Permits may be reserved into the future, which turns concurrent callers into an orderly queue
  * instead of a thundering herd.
+ *
+ * <p>Background work yields to what a player is waiting on. The Town Logger's sweep and the ranked
+ * history are tens of requests and megabytes apiece; without this they sit in the same queue as a
+ * search and the screen looks broken while a sweep nobody asked for finishes.
  */
 public final class RateLimiter {
     private final double permitsPerSecond;
@@ -31,8 +35,24 @@ public final class RateLimiter {
         this.resumeAtNanos = System.nanoTime();
     }
 
+    /** How long a background caller waits at the back of the queue before taking its permit. */
+    private static final long BACKGROUND_YIELD_MILLIS = 120;
+
     /** Blocks until this caller is allowed to send one request. */
     public void acquire() throws InterruptedException {
+        acquire(false);
+    }
+
+    /**
+     * @param background true for work nobody is watching, which then hangs back so an interactive
+     *                   request arriving at the same moment goes first
+     */
+    public void acquire(boolean background) throws InterruptedException {
+        if (background) {
+            // Deliberately outside the lock: the point is to leave the bucket alone for a moment,
+            // not to hold every other caller off while waiting.
+            TimeUnit.MILLISECONDS.sleep(BACKGROUND_YIELD_MILLIS);
+        }
         long sleepNanos;
         synchronized (this) {
             long now = System.nanoTime();
