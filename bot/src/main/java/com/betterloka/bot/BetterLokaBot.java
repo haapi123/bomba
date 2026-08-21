@@ -37,6 +37,7 @@ public final class BetterLokaBot {
     public static void main(String[] args) throws Exception {
         boolean once = List.of(args).contains("--once");
         boolean list = List.of(args).contains("--list");
+        boolean test = List.of(args).contains("--test");
 
         if (!Files.exists(CONFIG_FILE)) {
             new BotConfig().writeTemplate(CONFIG_FILE);
@@ -71,6 +72,11 @@ public final class BetterLokaBot {
                 return;
             }
 
+            if (test) {
+                postTestMessage(poster, config);
+                return;
+            }
+
             LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
                             + "{} territory record(s) already announced",
                     config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
@@ -98,6 +104,35 @@ public final class BetterLokaBot {
                 }
                 TimeUnit.SECONDS.sleep(config.intervalSeconds());
             }
+        }
+    }
+
+    /**
+     * Posts one obviously-labelled test message.
+     *
+     * <p>So somebody setting the bot up can confirm the webhook works and the role actually gets
+     * notified, without waiting for a town to fall or announcing the backlog to find out. It says
+     * plainly that it is a test rather than inventing a town, and it touches no saved state.
+     */
+    private static void postTestMessage(DiscordPoster poster, BotConfig config) {
+        JsonObject embed = new JsonObject();
+        embed.addProperty("title", "Test message");
+        embed.addProperty("color", 0x5FD37A);
+        embed.addProperty("description",
+                "No town has fallen — this is BetterLoka checking that it can post here.\n\n"
+                        + "If the role above was notified, the setup is finished. If it appears as "
+                        + "plain text instead, make the role mentionable in Server Settings → Roles.");
+        JsonObject footer = new JsonObject();
+        footer.addProperty("text", "BetterLoka · --test");
+        embed.add("footer", footer);
+
+        String ping = config.roleId.isBlank() ? "" : "<@&" + config.roleId + "> ";
+        try {
+            poster.post(ping + "**BetterLoka is connected.**", List.of(embed));
+            LOG.info("Test message posted. Check the channel — and whether the role was notified.");
+        } catch (Exception e) {
+            LOG.error("Could not post the test message: {}", describe(e), e);
+            LOG.error("Check webhookUrl (or botToken and channelId) in the config.");
         }
     }
 

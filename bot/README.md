@@ -54,7 +54,12 @@ Then start it and leave it running:
 java -jar betterloka-bot-<version>.jar
 ```
 
-`--list` prints the towns currently standing as fallen and exits. `--once` runs a single sweep.
+`--test` posts one clearly-labelled test message, so you can confirm the webhook works and the role
+actually gets notified without waiting for a town to fall. `--list` prints the towns currently
+standing as fallen and exits. `--once` runs a single check.
+
+If the role appears as plain text rather than a notification, make it mentionable:
+Server Settings → Roles → the role → **Allow anyone to @mention this role**.
 
 ### As a bot user instead of a webhook
 
