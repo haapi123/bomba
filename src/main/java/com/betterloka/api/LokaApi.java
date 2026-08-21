@@ -193,6 +193,18 @@ public final class LokaApi {
     }
 
     /**
+     * How many towns Loka has deleted, in one small request.
+     *
+     * <p>A town falling changes nothing in the territory list — its claims keep the same id — so this
+     * count going up is the actual signal that one has. Reading it costs a kilobyte, against the
+     * eight hundred a territory sweep costs, which is what makes watching every half minute sensible.
+     */
+    public int countDeletedTowns() throws ApiException {
+        JsonObject json = getObject(BASE_URL + "/towns/search/findDeleted?size=1&page=0", true);
+        return Json.integer(Json.object(json, "page"), "totalElements", -1);
+    }
+
+    /**
      * One page of towns that have been deleted.
      *
      * <p>A deleted town 404s on {@code findById}, so this listing is the only way to put a name to

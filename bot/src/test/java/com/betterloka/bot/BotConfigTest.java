@@ -42,21 +42,32 @@ class BotConfigTest {
         Path file = dir.resolve("betterloka-bot.json");
         BotConfig template = new BotConfig();
         template.roleId = "999";
-        template.checkIntervalMinutes = 7;
+        template.checkIntervalSeconds = 45;
         template.writeTemplate(file);
 
         BotConfig loaded = BotConfig.load(file);
         assertEquals("999", loaded.roleId);
-        assertEquals(7, loaded.intervalMinutes());
+        assertEquals(45, loaded.intervalSeconds());
         assertTrue(loaded.validate() != null, "a template still has no destination filled in");
     }
 
     @Test
-    void neverSweepsFasterThanOnceAMinute() {
+    void watchesEveryThirtySecondsByDefault() {
+        assertEquals(30, new BotConfig().intervalSeconds(),
+                "getting to a fallen town first is the point, and a check costs about a kilobyte");
+    }
+
+    @Test
+    void refusesToPollFasterThanTheFloor() {
         BotConfig config = new BotConfig();
-        config.checkIntervalMinutes = 0;
-        assertEquals(1, config.intervalMinutes(), "zero would hammer Loka in a tight loop");
-        config.checkIntervalMinutes = -5;
-        assertEquals(1, config.intervalMinutes());
+        config.checkIntervalSeconds = 0;
+        assertEquals(BotConfig.MINIMUM_CHECK_SECONDS, config.intervalSeconds(),
+                "zero would hammer somebody else's server in a tight loop");
+        config.checkIntervalSeconds = -5;
+        assertEquals(BotConfig.MINIMUM_CHECK_SECONDS, config.intervalSeconds());
+
+        config.webhookUrl = "https://discord.com/api/webhooks/1/abc";
+        config.checkIntervalSeconds = 1;
+        assertNotNull(config.validate(), "and it says so rather than silently correcting the file");
     }
 }

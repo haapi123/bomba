@@ -235,6 +235,11 @@ It shares the mod's data layer rather than reimplementing it — `FallenTowns`, 
 models compile straight out of `src/main/java` into the bot, so the two cannot disagree about what
 counts as a fallen town.
 
+It checks **every 30 seconds** and still costs about 1.6 MB an hour, because a town falling changes
+nothing in the territory list — it changes the size of Loka's deleted-town list. Asking for that
+count is one 1.2 KB request; the megabyte-sized sweep behind it runs only when the count moves.
+Polling the territory list directly at that rate would have been ~100 MB an hour.
+
 On first run it records the standing backlog **quietly** rather than announcing it: there are usually
 a dozen long-dead towns still holding ground, and pinging a role with all of them is how a bot gets
 muted.

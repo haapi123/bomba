@@ -37,7 +37,8 @@ Fill in `betterloka-bot.json`:
 {
   "webhookUrl": "https://discord.com/api/webhooks/…",
   "roleId": "123456789012345678",
-  "checkIntervalMinutes": 5,
+  "checkIntervalSeconds": 30,
+  "fullSweepIntervalMinutes": 60,
   "announceBacklogOnFirstRun": false
 }
 ```
@@ -65,8 +66,8 @@ Everything else is the same.
 
 Every setting can be given as an environment variable instead, which is the better way to hand a
 host a token: `BETTERLOKA_WEBHOOK_URL`, `BETTERLOKA_BOT_TOKEN`, `BETTERLOKA_CHANNEL_ID`,
-`BETTERLOKA_ROLE_ID`, `BETTERLOKA_CHECK_MINUTES`, `BETTERLOKA_ANNOUNCE_BACKLOG`,
-`BETTERLOKA_STATE_FILE`. They win over the file.
+`BETTERLOKA_ROLE_ID`, `BETTERLOKA_CHECK_SECONDS`, `BETTERLOKA_FULL_SWEEP_MINUTES`,
+`BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_STATE_FILE`. They win over the file.
 
 ## What it does on the first run
 
@@ -78,11 +79,32 @@ everything after that is news. Set `announceBacklogOnFirstRun` to `true` if you 
 What has been announced is kept in `betterloka-bot-state.json`, so a restart does not repeat itself.
 A town that later loses *more* ground is announced again for the new territory.
 
-## What it costs
+## How it watches every 30 seconds without downloading a megabyte
 
-Three requests every sweep (one per continent, about 850 KB), plus the deleted-town listing — forty
-small requests — at most every half hour. At the default five-minute interval that is roughly 10 MB
-an hour. Raise `checkIntervalMinutes` if that matters; a fallen town stays fallen for a while.
+A town falling **changes nothing in the territory list** — its claims keep pointing at the same id.
+What changes is that the town joins Loka's deleted list. So the thing worth watching is the *size of
+that list*, and asking for it costs one request of about **1.2 KB**:
+
+```
+GET /towns/search/findDeleted?size=1&page=0   ->  page.totalElements
+```
+
+That is the 30-second check. Only when the count moves — or once an hour as a backstop — does the
+bot do the full job: the three territory requests (~850 KB) and the whole deleted-town listing
+(~650 KB) needed to say *which* town fell and *where* its ground is.
+
+| | Requests | Bandwidth |
+| --- | --- | --- |
+| Check, every 30s | 1 | ~1.2 KB |
+| Full sweep, on a change or hourly | 44 | ~1.5 MB |
+| **Total, idle hour** | ~164 | **~1.6 MB** |
+
+Polling the territory list itself every 30 seconds would have been about 100 MB an hour for the same
+answer. Loka sends no `ETag` or `Last-Modified` on that endpoint and no compression, so there is no
+cheaper way to ask it directly — hence asking a different question instead.
+
+`checkIntervalSeconds` has a floor of 10, and `fullSweepIntervalMinutes` is what actually decides the
+bandwidth if you want to lower it.
 
 ## Why it is not part of the mod
 

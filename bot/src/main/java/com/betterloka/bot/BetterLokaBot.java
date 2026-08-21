@@ -71,8 +71,9 @@ public final class BetterLokaBot {
                 return;
             }
 
-            LOG.info("Watching Loka every {} minute(s); {} town(s) already announced",
-                    config.intervalMinutes(), state.announcedCount());
+            LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
+                            + "{} territory record(s) already announced",
+                    config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
             if (state.isFirstRun() && !config.announceBacklogOnFirstRun) {
                 LOG.info("First run: the towns that have already fallen will be recorded quietly, "
                         + "and only new ones announced from here.");
@@ -80,16 +81,22 @@ public final class BetterLokaBot {
 
             while (true) {
                 try {
-                    announce(watcher.check(config.announceBacklogOnFirstRun), poster, config);
+                    FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
+                            config.fullSweepIntervalMillis());
+                    if (result.sweptFully()) {
+                        LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
+                                result.deletedCount(), result.announce().size());
+                    }
+                    announce(result.announce(), poster, config);
                 } catch (ApiException e) {
-                    LOG.warn("Could not sweep Loka: {}", e.getMessage());
+                    LOG.warn("Could not check Loka: {}", e.getMessage());
                 } catch (RuntimeException e) {
-                    LOG.warn("Sweep failed", e);
+                    LOG.warn("Check failed", e);
                 }
                 if (once) {
                     return;
                 }
-                TimeUnit.MINUTES.sleep(config.intervalMinutes());
+                TimeUnit.SECONDS.sleep(config.intervalSeconds());
             }
         }
     }
