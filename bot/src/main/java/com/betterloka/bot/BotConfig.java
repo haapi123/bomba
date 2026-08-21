@@ -31,7 +31,12 @@ public final class BotConfig {
      */
     public String botToken = "";
 
-    /** The channel to post in. Only used with {@link #botToken}. */
+    /**
+     * The channel to post in. Only used with {@link #botToken}.
+     *
+     * <p>A webhook carries its channel in the URL and cannot be pointed at another one, so this is
+     * ignored entirely when {@link #webhookUrl} is set.
+     */
     public String channelId = "";
 
     /**

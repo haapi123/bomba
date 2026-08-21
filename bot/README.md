@@ -43,8 +43,13 @@ Fill in `betterloka-bot.json`:
 }
 ```
 
-- **`webhookUrl`** — Discord → the channel → Edit Channel → Integrations → Webhooks → New Webhook →
-  Copy Webhook URL. Nothing else to set up.
+- **`webhookUrl`** — Discord → **the channel you want the messages in** → Edit Channel →
+  Integrations → Webhooks → New Webhook → Copy Webhook URL. Nothing else to set up, and no
+  permissions to grant: a webhook *is* permission to post, scoped to one channel.
+
+  A webhook is bound to the channel it was created on and carries it in the URL. `channelId` does
+  not override that — it applies to the bot-token setup only. To post somewhere else, make the
+  webhook on that channel.
 - **`roleId`** — turn on Settings → Advanced → Developer Mode, then right-click the role → Copy Role
   ID. Leave it empty to post without pinging.
 

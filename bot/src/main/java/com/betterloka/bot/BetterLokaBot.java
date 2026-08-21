@@ -57,6 +57,13 @@ public final class BetterLokaBot {
             return;
         }
 
+        // A webhook is bound to the channel it was created on, so channelId next to one does
+        // nothing — and looks exactly like it should, which is worth saying out loud.
+        if (config.usesWebhook() && !config.channelId.isBlank()) {
+            LOG.warn("channelId is ignored: a webhook always posts to the channel it was created on. "
+                    + "To post somewhere else, make a new webhook on that channel.");
+        }
+
         try (HttpTransport transport = new HttpTransport()) {
             LokaApi api = new LokaApi(transport);
             BotState state = new BotState(Path.of(config.stateFile));
