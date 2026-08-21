@@ -228,6 +228,11 @@ public final class TownLogger {
         }
     }
 
+    /** Every alliance as of the last sweep. */
+    public List<LokaAlliance> alliances() {
+        return alliances;
+    }
+
     /** The alliance a town is currently in, or {@code null} if it is in none. */
     public LokaAlliance allianceOf(String townId) {
         for (LokaAlliance alliance : alliances) {

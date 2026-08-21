@@ -3,6 +3,7 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.MarketApi;
+import com.betterloka.api.model.MarketDeal;
 import com.betterloka.api.model.MarketListing;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -33,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LokaMarketScreen extends Screen {
     private enum Tab {
         SEARCH("betterloka.market.tab.search"),
+        DEALS("betterloka.market.tab.deals"),
         SPECIAL("betterloka.market.tab.special"),
         OVERVIEW("betterloka.market.tab.overview");
 
@@ -58,6 +60,9 @@ public class LokaMarketScreen extends Screen {
     /** Loading every listing is around fifty requests, so the special view is capped for sanity. */
     private static final int MAX_SPECIAL_ROWS = 120;
 
+    /** How many type names to offer under the search field. */
+    private static final int MAX_SUGGESTIONS = 6;
+
     /** Gap between the three columns of a listing card. */
     private static final int COLUMN_GAP = 8;
 
@@ -82,6 +87,15 @@ public class LokaMarketScreen extends Screen {
 
     private MarketApi.Snapshot snapshot;
     private int snapshotPages;
+    /** Worked out once per snapshot: a sweep of every listing is not something to redo each frame. */
+    private List<MarketDeal> cachedDeals;
+
+    /** Type names matching what has been typed, offered under the field. */
+    private List<String> suggestions = List.of();
+    private String suggestedFor = "";
+    private final List<int[]> suggestionBounds = new ArrayList<>();
+    private int lastMouseX;
+    private int lastMouseY;
 
     /** Seller names arrive after the listings; render reads whatever has landed. */
     private final Map<String, String> sellers = new ConcurrentHashMap<>();
@@ -110,7 +124,7 @@ public class LokaMarketScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        int tabWidth = (width - 8) / 3;
+        int tabWidth = (width - 12) / 4;
         int x = left;
         for (Tab value : Tab.values()) {
             Tab target = value;
@@ -153,6 +167,7 @@ public class LokaMarketScreen extends Screen {
         tab = target;
         scrollPanel.reset();
         message = null;
+        suggestions = List.of();
         clearAndInit();
         if (target != Tab.SEARCH) {
             loadSnapshot();
@@ -168,6 +183,7 @@ public class LokaMarketScreen extends Screen {
             return;
         }
         tab = Tab.SEARCH;
+        suggestions = List.of();
         loading = true;
         message = null;
         results = List.of();
@@ -220,8 +236,25 @@ public class LokaMarketScreen extends Screen {
                         return;
                     }
                     snapshot = loaded;
+                    cachedDeals = null;
                     resolveSellers(specialRows());
+                    resolveSellers(dealListings());
                 }));
+    }
+
+    /**
+     * The underpriced listings across the whole market.
+     *
+     * <p>Off the same snapshot the Special tab uses, so switching between them costs nothing.
+     */
+    private List<MarketDeal> deals() {
+        if (snapshot == null) {
+            return List.of();
+        }
+        if (cachedDeals == null) {
+            cachedDeals = MarketDeal.find(snapshot.listings());
+        }
+        return cachedDeals;
     }
 
     /** Every named item on sale, dearest first — the gear worth looking at. */
@@ -291,6 +324,18 @@ public class LokaMarketScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
+        for (int i = 0; i < suggestionBounds.size(); i++) {
+            int[] bounds = suggestionBounds.get(i);
+            if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
+                    && click.y() >= bounds[1] && click.y() < bounds[1] + bounds[3]) {
+                queryField.setText(suggestions.get(i));
+                // Marked as already suggested for, or the list would reopen on the text just chosen.
+                suggestedFor = queryField.getText().trim();
+                suggestions = List.of();
+                search();
+                return true;
+            }
+        }
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
@@ -309,6 +354,9 @@ public class LokaMarketScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         searchButton.active = !loading && !queryField.getText().trim().isEmpty();
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+        refreshSuggestions();
 
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
@@ -332,6 +380,7 @@ public class LokaMarketScreen extends Screen {
         } else {
             used = switch (tab) {
                 case SEARCH -> renderListings(context, left, y, cardWidth, results, resolvedType);
+                case DEALS -> renderDeals(context, left, y, cardWidth);
                 case SPECIAL -> renderListings(context, left, y, cardWidth, specialRows(), null);
                 case OVERVIEW -> renderOverview(context, left, y, cardWidth);
             } - y;
@@ -340,6 +389,148 @@ public class LokaMarketScreen extends Screen {
 
         scrollPanel.setContentHeight(used);
         scrollPanel.render(context, mouseX, mouseY);
+
+        // Drawn after the content so the list sits over it rather than under.
+        renderSuggestions(context, left, width);
+    }
+
+    /** The listings behind the deals, so their sellers can be resolved with everything else. */
+    private List<MarketListing> dealListings() {
+        List<MarketListing> listings = new ArrayList<>();
+        for (MarketDeal deal : deals()) {
+            listings.add(deal.listing());
+        }
+        return listings;
+    }
+
+    /**
+     * The bargains: one card each, with how far under the going rate it is.
+     *
+     * @return the y just past the last card
+     */
+    private int renderDeals(DrawContext context, int left, int y, int width) {
+        List<MarketDeal> deals = deals();
+        if (deals.isEmpty()) {
+            GuiTheme.panel(context, left, y, width, CARD_PADDING * 2 + ROW_HEIGHT);
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable(snapshot == null ? "betterloka.market.hint" : "betterloka.market.no_deals"),
+                    left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
+            return y + CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
+        }
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.market.deals_count", deals.size()), left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
+
+        int inner = width - CARD_PADDING * 2;
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * 2;
+        for (MarketDeal deal : deals) {
+            MarketListing listing = deal.listing();
+            GuiTheme.panel(context, left, y, width, height);
+            context.fill(left, y, left + 2, y + height, GuiTheme.GOOD);
+
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(listing.displayName(), inner - 90), textX, textY,
+                    GuiTheme.TEXT);
+
+            String discount = deal.discountText();
+            context.drawTextWithShadow(this.textRenderer, discount,
+                    left + width - CARD_PADDING - this.textRenderer.getWidth(discount), textY, GuiTheme.GOOD);
+
+            String seller = Text.translatable("betterloka.market.seller", sellerOf(listing)).getString();
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(seller, inner / 2), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+
+            // Both prices, because the discount only means something next to what it is measured on.
+            String prices = Text.translatable("betterloka.market.deal_price",
+                    money(listing.pricePerUnit()), money(deal.typicalPricePerUnit()),
+                    listing.quantity()).getString();
+            context.drawTextWithShadow(this.textRenderer, prices,
+                    left + width - CARD_PADDING - this.textRenderer.getWidth(prices), textY + ROW_HEIGHT,
+                    GuiTheme.MUTED);
+
+            y += height + CARD_GAP;
+        }
+        return y;
+    }
+
+    /**
+     * Type names matching what has been typed so far.
+     *
+     * <p>Recomputed only when the text changes: the type list is cached in the API, but scanning
+     * hundreds of names every frame is still work worth not doing.
+     */
+    private void refreshSuggestions() {
+        String query = queryField.getText().trim();
+        if (query.equals(suggestedFor)) {
+            return;
+        }
+        suggestedFor = query;
+        if (query.length() < 2 || !queryField.isFocused()) {
+            suggestions = List.of();
+            return;
+        }
+        MarketApi market = BetterLokaClient.market();
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return market.matchTypes(query, MAX_SUGGESTIONS);
+            } catch (ApiException e) {
+                return List.<String>of();
+            }
+        }, market.executor()).thenAccept(found -> {
+            if (this.client != null) {
+                this.client.execute(() -> {
+                    if (this.client.currentScreen == this && query.equals(suggestedFor)) {
+                        suggestions = found;
+                    }
+                });
+            }
+        });
+    }
+
+    /** Draws the suggestion list over the content, and remembers where each row landed. */
+    private void renderSuggestions(DrawContext context, int left, int width) {
+        suggestionBounds.clear();
+        if (suggestions.isEmpty()) {
+            return;
+        }
+        int rowHeight = ROW_HEIGHT + 2;
+        int y = SEARCH_ROW_Y + SEARCH_ROW_HEIGHT + 1;
+        int panelWidth = width - SEARCH_BUTTON_WIDTH - 4;
+        int height = suggestions.size() * rowHeight + 2;
+        // Opaque, because the list floats over whatever the tab is drawing underneath it.
+        context.fill(left, y, left + panelWidth, y + height, 0xFF121218);
+        GuiTheme.panel(context, left, y, panelWidth, height);
+
+        for (int i = 0; i < suggestions.size(); i++) {
+            int rowY = y + 1 + i * rowHeight;
+            boolean hovered = lastMouseX >= left && lastMouseX < left + panelWidth
+                    && lastMouseY >= rowY && lastMouseY < rowY + rowHeight;
+            if (hovered) {
+                context.fill(left + 1, rowY, left + panelWidth - 1, rowY + rowHeight, 0x40FFFFFF);
+            }
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(prettify(suggestions.get(i)), panelWidth - 10),
+                    left + 5, rowY + 2, hovered ? GuiTheme.ACCENT : GuiTheme.TEXT);
+            suggestionBounds.add(new int[]{left, rowY, panelWidth, rowHeight});
+        }
+    }
+
+    /** {@code DIAMOND_SWORD} reads better as {@code Diamond Sword} in a suggestion list. */
+    private static String prettify(String type) {
+        StringBuilder out = new StringBuilder(type.length());
+        for (String word : type.toLowerCase(Locale.ROOT).split("_")) {
+            if (!word.isEmpty()) {
+                if (out.length() > 0) {
+                    out.append(' ');
+                }
+                out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+            }
+        }
+        return out.toString();
     }
 
     /** @return the y just past the last row. */

@@ -29,8 +29,16 @@ import java.util.function.Consumer;
  * in behind it.
  */
 public final class PlayerStatsService {
-    /** How many recent fights the Player Finder lists. */
+    /** How many recent fights the Player Finder lists as rows. */
     public static final int RECENT_FIGHT_COUNT = 5;
+
+    /**
+     * How many are actually fetched.
+     *
+     * <p>EldritchBot lists nine and stops, and the RIVI split and the month totals are only as good
+     * as the number of fights behind them, so all nine are downloaded even though five are shown.
+     */
+    public static final int FETCHED_FIGHT_COUNT = 9;
 
     private final LokaApi loka;
     private final EldritchApi eldritch;
@@ -86,7 +94,7 @@ public final class PlayerStatsService {
 
         List<FightSummary> pending = new ArrayList<>();
         for (EldritchStats.RecentFight ref : stats.recentFights()) {
-            if (pending.size() >= RECENT_FIGHT_COUNT) {
+            if (pending.size() >= FETCHED_FIGHT_COUNT) {
                 break;
             }
             pending.add(FightSummary.pending(ref));

@@ -7,6 +7,7 @@ import com.betterloka.api.model.ArenaEntry;
 import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.stats.ArenaService;
+import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
@@ -36,6 +37,18 @@ import java.util.concurrent.CompletionException;
  * network allows; the per-fight breakdown at the bottom arrives a moment later.
  */
 public class PlayerFinderScreen extends Screen {
+    /** Which view of the same loaded profile is showing. */
+    private enum Tab {
+        PROFILE("betterloka.finder.tab.profile"),
+        MONTH("betterloka.finder.tab.month");
+
+        private final String key;
+
+        Tab(String key) {
+            this.key = key;
+        }
+    }
+
     private static final int MAX_CONTENT_WIDTH = 320;
     private static final int SEARCH_BUTTON_WIDTH = 54;
     private static final int ROW_HEIGHT = 11;
@@ -53,7 +66,9 @@ public class PlayerFinderScreen extends Screen {
     private static final int SEARCH_ROW_HEIGHT = 20;
     private static final int TOGGLE_ROW_Y = SEARCH_ROW_Y + SEARCH_ROW_HEIGHT + 4;
     private static final int TOGGLE_ROW_HEIGHT = 16;
-    private static final int VIEWPORT_TOP = TOGGLE_ROW_Y + TOGGLE_ROW_HEIGHT + 6;
+    private static final int TAB_ROW_Y = TOGGLE_ROW_Y + TOGGLE_ROW_HEIGHT + 4;
+    private static final int TAB_ROW_HEIGHT = 16;
+    private static final int VIEWPORT_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 6;
 
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
@@ -62,6 +77,7 @@ public class PlayerFinderScreen extends Screen {
     private ButtonWidget searchButton;
 
     private PlayerProfile profile;
+    private Tab tab = Tab.PROFILE;
     private Text error;
     private boolean searching;
 
@@ -123,10 +139,34 @@ public class PlayerFinderScreen extends Screen {
                 .dimensions(left, TOGGLE_ROW_Y, width, TOGGLE_ROW_HEIGHT)
                 .build());
 
+        int half = (width - 4) / 2;
+        int tabX = left;
+        for (Tab value : Tab.values()) {
+            Tab target = value;
+            int thisWidth = value == Tab.MONTH ? left + width - tabX : half;
+            addDrawableChild(ButtonWidget.builder(tabLabel(value), button -> selectTab(target))
+                    .dimensions(tabX, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+            tabX += half + 4;
+        }
+
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
                 .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
 
         setInitialFocus(nameField);
+    }
+
+    private Text tabLabel(Tab value) {
+        Text label = Text.translatable(value.key);
+        return value == tab ? label.copy().formatted(Formatting.YELLOW) : label;
+    }
+
+    private void selectTab(Tab target) {
+        if (tab == target) {
+            return;
+        }
+        tab = target;
+        scrollPanel.reset();
+        clearAndInit();
     }
 
     private Text kdToggleLabel() {
@@ -265,7 +305,9 @@ public class PlayerFinderScreen extends Screen {
             context.drawTextWithShadow(this.textRenderer, error, left, y + 4, GuiTheme.BAD);
             used = 20;
         } else if (profile != null) {
-            used = renderProfile(context, left, y, cardWidth) - y;
+            used = (tab == Tab.MONTH
+                    ? renderMonth(context, left, y, cardWidth)
+                    : renderProfile(context, left, y, cardWidth)) - y;
         } else {
             context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.hint"),
                     left, y + 4, GuiTheme.MUTED);
@@ -334,6 +376,7 @@ public class PlayerFinderScreen extends Screen {
         });
 
         y = renderTownCard(context, left, y, width, inner);
+        y = renderFormatSplit(context, left, y, width, inner);
         y = renderRankedCards(context, left, y, width, inner);
 
         if (stats.nemesisName() != null) {
@@ -495,11 +538,11 @@ public class PlayerFinderScreen extends Screen {
         }
 
         context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.recent", profile.recentFights().size()),
+                Text.translatable("betterloka.finder.recent", shownFights().size()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
-        for (FightSummary fight : profile.recentFights()) {
+        for (FightSummary fight : shownFights()) {
             int height = CARD_PADDING * 2 + ROW_HEIGHT * 2;
             GuiTheme.panel(context, left, y, width, height);
 
@@ -539,6 +582,144 @@ public class PlayerFinderScreen extends Screen {
             y += height + CARD_GAP;
         }
         return y;
+    }
+
+    /** The fights shown as rows; the rest are fetched but only counted. */
+    private List<FightSummary> shownFights() {
+        List<FightSummary> fights = profile.recentFights();
+        return fights.size() > PlayerStatsService.RECENT_FIGHT_COUNT
+                ? fights.subList(0, PlayerStatsService.RECENT_FIGHT_COUNT)
+                : fights;
+    }
+
+    /**
+     * RIVI against ordinary Conquest, over the fights EldritchBot lists.
+     *
+     * <p>Career totals cannot be split — they are published as one number and the map a fight was on
+     * lives on the fight's own page — so this is a sample, and the header says how many fights it is
+     * over rather than letting the numbers pass for a career.
+     */
+    private int renderFormatSplit(DrawContext context, int left, int y, int width, int inner) {
+        List<FightSummary> fights = profile.recentFights();
+        if (fights.isEmpty()) {
+            return y;
+        }
+        FightBreakdown rivi = FightBreakdown.of(FightBreakdown.select(fights, true));
+        FightBreakdown conquest = FightBreakdown.of(FightBreakdown.select(fights, false));
+        if (rivi.isEmpty() && conquest.isEmpty()) {
+            return y;
+        }
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.split", rivi.fights() + conquest.fights()),
+                left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
+
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * 5;
+        GuiTheme.panel(context, left, y, width, height);
+        int textX = left + CARD_PADDING;
+        int textY = y + CARD_PADDING;
+        int column = (inner - 10) / 2;
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.rivi", rivi.fights()).copy().formatted(Formatting.BOLD),
+                textX, textY, GuiTheme.ACCENT);
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.conquest", conquest.fights()).copy().formatted(Formatting.BOLD),
+                textX + column + 10, textY, GuiTheme.TEXT);
+
+        splitRow(context, textX, textY + ROW_HEIGHT, column, "betterloka.finder.stat.kills",
+                rivi.isEmpty() ? "—" : String.valueOf(rivi.kills()),
+                conquest.isEmpty() ? "—" : String.valueOf(conquest.kills()), GuiTheme.GOOD);
+        splitRow(context, textX, textY + ROW_HEIGHT * 2, column, "betterloka.finder.stat.deaths",
+                rivi.isEmpty() ? "—" : String.valueOf(rivi.deaths()),
+                conquest.isEmpty() ? "—" : String.valueOf(conquest.deaths()), GuiTheme.BAD);
+        splitRow(context, textX, textY + ROW_HEIGHT * 3, column, "betterloka.finder.stat.assists",
+                rivi.isEmpty() ? "—" : String.valueOf(rivi.assists()),
+                conquest.isEmpty() ? "—" : String.valueOf(conquest.assists()), GuiTheme.TEXT);
+
+        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, column,
+                label("betterloka.finder.stat.kd"), rivi.isEmpty() ? "—" : rivi.killDeathText(),
+                rivi.isEmpty() ? GuiTheme.MUTED : GuiTheme.ratioColor(rivi.killDeathRatio()));
+        GuiTheme.statRow(context, this.textRenderer, textX + column + 10, textY + ROW_HEIGHT * 4, column,
+                label("betterloka.finder.stat.kd"), conquest.isEmpty() ? "—" : conquest.killDeathText(),
+                conquest.isEmpty() ? GuiTheme.MUTED : GuiTheme.ratioColor(conquest.killDeathRatio()));
+
+        return y + height + CARD_GAP;
+    }
+
+    private void splitRow(DrawContext context, int x, int y, int column, String key,
+                          String leftValue, String rightValue, int color) {
+        GuiTheme.statRow(context, this.textRenderer, x, y, column, label(key), leftValue, color);
+        GuiTheme.statRow(context, this.textRenderer, x + column + 10, y, column, label(key), rightValue, color);
+    }
+
+    /**
+     * This calendar month, from the fights EldritchBot lists.
+     *
+     * <p>Same cap as everywhere else: nine fights are all it publishes, so a busy month shows the
+     * nine most recent of it and the header says so.
+     */
+    private int renderMonth(DrawContext context, int left, int top, int width) {
+        int inner = width - CARD_PADDING * 2;
+        int y = top;
+        List<FightSummary> month = FightBreakdown.thisMonth(profile.recentFights(), LocalDate.now());
+        FightBreakdown totals = FightBreakdown.of(month);
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.month_of", monthName()), left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
+
+        if (totals.isEmpty()) {
+            int height = CARD_PADDING * 2 + ROW_HEIGHT;
+            GuiTheme.panel(context, left, y, width, height);
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable(profile.fightsState() == PlayerProfile.FightsState.LOADING
+                            ? "betterloka.finder.loading" : "betterloka.finder.no_month_fights"),
+                    left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
+            return y + height + CARD_GAP;
+        }
+
+        FightBreakdown rivi = FightBreakdown.of(FightBreakdown.select(month, true));
+        FightBreakdown conquest = FightBreakdown.of(FightBreakdown.select(month, false));
+
+        y = card(context, left, y, width, 3, (x, rowY) -> {
+            twoColumns(context, x, rowY, inner,
+                    label("betterloka.finder.stat.fights"), String.valueOf(totals.fights()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.winrate"), totals.winRateText(), GuiTheme.TEXT);
+            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
+                    label("betterloka.finder.stat.wins"), String.valueOf(totals.wins()), GuiTheme.GOOD,
+                    label("betterloka.finder.stat.losses"), String.valueOf(totals.losses()), GuiTheme.BAD);
+            twoColumns(context, x, rowY + ROW_HEIGHT * 2, inner,
+                    label("betterloka.finder.stat.kd"), totals.killDeathText(),
+                    GuiTheme.ratioColor(totals.killDeathRatio()),
+                    label("betterloka.finder.stat.assists"), String.valueOf(totals.assists()), GuiTheme.TEXT);
+        });
+
+        y = card(context, left, y, width, 2, (x, rowY) -> {
+            twoColumns(context, x, rowY, inner,
+                    label("betterloka.finder.stat.kills"), String.valueOf(totals.kills()), GuiTheme.GOOD,
+                    label("betterloka.finder.stat.deaths"), String.valueOf(totals.deaths()), GuiTheme.BAD);
+            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
+                    label("betterloka.finder.stat.golems"), String.valueOf(totals.golems()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.lamps"), String.valueOf(totals.lamps()), GuiTheme.TEXT);
+        });
+
+        y = card(context, left, y, width, 2, (x, rowY) -> {
+            twoColumns(context, x, rowY, inner,
+                    label("betterloka.finder.stat.potions"), String.valueOf(totals.potions()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.pearls"), String.valueOf(totals.pearls()), GuiTheme.TEXT);
+            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
+                    label("betterloka.finder.rivi_short"), String.valueOf(rivi.fights()), GuiTheme.ACCENT,
+                    label("betterloka.finder.conquest_short"), String.valueOf(conquest.fights()), GuiTheme.TEXT);
+        });
+
+        return y;
+    }
+
+    private static String monthName() {
+        return LocalDate.now().getMonth()
+                .getDisplayName(java.time.format.TextStyle.FULL_STANDALONE, Locale.getDefault());
     }
 
     /**

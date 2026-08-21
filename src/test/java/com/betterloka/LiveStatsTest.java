@@ -112,7 +112,8 @@ class LiveStatsTest {
 
             assertEquals(PLAYER, profile.name());
             assertEquals(PlayerProfile.FightsState.READY, profile.fightsState());
-            assertEquals(PlayerStatsService.RECENT_FIGHT_COUNT, profile.recentFights().size());
+            assertEquals(PlayerStatsService.FETCHED_FIGHT_COUNT, profile.recentFights().size(),
+                    "all the listed fights are fetched, not just the five shown as rows");
             assertNotNull(profile.displayTown());
             assertNotNull(profile.fightingFor());
 
@@ -122,7 +123,8 @@ class LiveStatsTest {
             }
 
             // The whole point of moving off Loka's paged battle history: this used to be ~410 requests.
-            assertTrue(transport.requestCount() <= 15,
+            // One page per listed fight, plus the career page, the two Loka lookups and the battle check.
+            assertTrue(transport.requestCount() <= 20,
                     "a profile should cost a handful of requests, took " + transport.requestCount());
             assertTrue(total < 20_000, "a profile should land in seconds, took " + total + "ms");
 
@@ -362,6 +364,80 @@ class LiveStatsTest {
             }
             assertTrue(traits.stream().noneMatch(t -> t.kind() == com.betterloka.stats.PlayerTrait.Kind.DUELS),
                     "no ladder was passed in, so there must be no duel chip rather than a bad one");
+        }
+    }
+
+    /**
+     * The RIVI split rests on EldritchBot naming RIVI maps {@code the_*} and Conquest territories
+     * after the biome. If that ever stops holding, the split silently files fights under the wrong
+     * format, so it is checked against real fights rather than assumed.
+     */
+    @Test
+    void tellsRiviMapsApartFromConquestTerritories() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            EldritchApi eldritch = new EldritchApi(transport);
+            LokaApi loka = new LokaApi(transport);
+
+            java.util.Set<String> biomes = new java.util.HashSet<>();
+            for (String world : LokaApi.CONQUEST_WORLDS) {
+                for (var territory : loka.fetchTerritories(world)) {
+                    if (territory.areaName() != null) {
+                        biomes.add(territory.areaName().replace("_", "").toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+
+            int rivi = 0;
+            int conquest = 0;
+            for (var ref : eldritch.fetchStats(PLAYER).recentFights()) {
+                var detail = eldritch.fetchFight(ref.id(), PLAYER);
+                if (detail == null || detail.location() == null) {
+                    continue;
+                }
+                boolean isRivi = com.betterloka.stats.FightBreakdown.isRivi(detail);
+                boolean isTerritory = biomes.contains(detail.location().replace("_", "").toLowerCase(Locale.ROOT));
+                int players = detail.attackerCount() + detail.defenderCount();
+
+                System.out.printf("  %-22s %3d players  %s%n", detail.location(), players,
+                        isRivi ? "RIVI" : "conquest");
+
+                if (isRivi) {
+                    rivi++;
+                    assertTrue(!isTerritory,
+                            detail.location() + " is a real Conquest territory but was filed as RIVI");
+                    assertTrue(players <= 40,
+                            "a RIVI fight of " + players + " players would break the premise of the split");
+                } else {
+                    conquest++;
+                }
+            }
+            assertTrue(rivi + conquest > 0, "the player has recent fights to classify");
+            System.out.printf("split: %d RIVI, %d conquest%n", rivi, conquest);
+        }
+    }
+
+    /** The Fight Manager reads the battles Loka has on its books. */
+    @Test
+    void readsTheBattlesOnTheBooks() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            LokaApi api = new LokaApi(transport);
+            var fights = api.fetchScheduledFights();
+
+            System.out.printf("battles on the books: %d%n", fights.size());
+            for (var fight : fights) {
+                var attacker = api.findTownById(fight.attackerTownId());
+                var defender = api.findTownById(fight.defenderTownId());
+                System.out.printf("  %-10s #%-4s %s -> %s  %dv%d  reins=%s started=%s  vuln=%s%n",
+                        fight.continent(), fight.territoryNumber(),
+                        attacker == null ? "?" : attacker.name(),
+                        defender == null ? "?" : defender.name(),
+                        fight.attackerCount(), fight.defenderCount(),
+                        fight.reinforcementsAllowed(), fight.started(),
+                        defender == null ? "?" : defender.vulnerabilityWindow());
+
+                assertNotNull(fight.world(), "a battle must say which world it is on");
+                // Not asserted non-empty: outside Conquest hours Loka legitimately has none on.
+            }
         }
     }
 

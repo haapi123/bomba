@@ -17,10 +17,10 @@ never talks to the game server and sends nothing about you anywhere.
 | **Loka Market** | Working |
 | **Town Finder** | Working |
 | **Town Logger** | Working |
-| Fight Manager | Planned |
+| **Fight Manager** | Working |
 | Loka Helper | Planned |
 
-The planned modules are listed in the menu but open a placeholder screen for now.
+Loka Helper is listed in the menu but opens a placeholder screen for now.
 
 ## Player Finder
 
@@ -68,6 +68,30 @@ Two of these are not quite what was asked for, because the data does not go that
 - **Active** was meant to be "more than 10 fights in 30 days". EldritchBot lists nine recent fights
   and stops, so past nine there is nothing to count. Green therefore means *every listed fight was
   inside the window* — at least nine, and the list ran out — which the tooltip says outright.
+
+### RIVI vs Conquest
+
+![RIVI split](docs/player-finder-rivi.png)
+
+The two formats side by side — kills, deaths, assists and K/D each.
+
+A fight is RIVI when EldritchBot names its map `the_*`: the_rivi_shores, the_jade_highlands,
+the_verdant_hollows. Across every fight sampled those run about twenty players, against fifty to two
+hundred and seventy on the Conquest territories, whose maps are named after the biome exactly as
+Loka's own territory list has them. A live test re-checks that on every run, because if the naming
+ever changes the split would quietly file fights under the wrong format.
+
+**This is a sample, not a career.** EldritchBot publishes career totals as one lump and lists only
+the nine most recent fights per player, and which map a fight was on is on that fight's own page —
+so the split can only cover those nine, and the header says how many it is over.
+
+### Month
+
+![Month tab](docs/player-finder-month.png)
+
+The current calendar month: fights, wins, losses, win rate, K/D, kills, deaths, assists, golems,
+lamps, potions, pearls, and how many of the month's fights were RIVI. Same nine-fight ceiling, same
+caveat in the header.
 
 ### Ranked 1v1
 
@@ -145,7 +169,21 @@ Three views over Loka's market:
 - **Special** — every *named* item on sale, dearest first. This is where the one-off swords live.
   Plain lore is not enough to qualify: on Loka every imbued item carries "Imbued in <town>" lore, so
   only a player-given name marks a piece of gear out.
+- **Deals** — every listing priced well under what its item usually goes for.
 - **Overview** — total value listed, how many listings, items and sellers.
+
+![Deals](docs/market-deals.png)
+
+A deal is measured against the **going rate** for that item — its median price per unit — not against
+the cheapest listing, since the cheapest cannot undercut itself. Anything 20% or more below the
+median is listed, deepest discount first, with both prices so the number means something. Items with
+fewer than three listings are skipped: two offers make each other look like a bargain or a ripoff
+depending on the order.
+
+![Suggestions](docs/market-suggestions.png)
+
+The search field suggests item types as you type — `diamond_sw` offers **Diamond Sword**; click one
+to search it.
 
 Every card is three columns: **what it is and who is selling it** on the left, **its enchantments**
 down the middle, **what it costs** on the right. Enchantments are read out of the listed item stack
@@ -170,10 +208,11 @@ vulnerability hour and slogan. Click any of them to open it.
 A town, whether searched for or clicked:
 
 - **Level, strength, members, recruiting**
-- **Vulnerable from** — the hour its window opens. Loka publishes the start hour and nothing else, so
-  that is all this says: across the live roster the values run 09:00 to 20:00 and pile up at 09:00
-  and 19:00, the European and American prime times.
-- **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as
+- **Vulnerable from** — the eight hours it is attackable for. Loka publishes the opening hour; across
+  the live roster those run 09:00 to 20:00 and pile up at 09:00 and 19:00, the European and American
+  prime times.
+- **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as, one per
+  line so a town with five of them shows all five
 - **Alliance** it belongs to now, and **who it has been allied with, longest first**
 - Every **territory it holds**, with number and beacon coordinates
 
@@ -187,6 +226,25 @@ else publishes one either — so this is the one thing here that cannot be answe
 Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
 each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
 then it says so rather than showing nothing.
+
+## Fight Manager
+
+![Fight Manager](docs/fight-manager.png)
+
+Every battle Loka has on its books — declared and waiting, or already under way:
+
+- **Who is fighting whom**, town and alliance on each side
+- **Where** — continent and territory number
+- **How many are signed up** on each side
+- Whether **reinforcements** can be called
+- **When it can go off**
+
+That last one is derived, because Loka publishes no start time: the field stays zero until a fight
+actually begins. What decides it is the defending town's **vulnerability window**, so that is what is
+shown — the eight hours it is attackable for. Not a countdown: the hour comes without a time zone, so
+"starts in 3h" would be wrong for most people reading it where the window itself is exactly right.
+
+Battles under way sort first and carry an orange spine.
 
 ## Town Logger
 
@@ -285,7 +343,9 @@ Some of those live checks are load-bearing assumptions rather than parsing:
   so the test asserts a later week includes the earlier one;
 - the Town Logger only works because Loka **leaves a deleted town's id on its territories**, so the
   test sweeps every continent and resolves each dangling holder against the deleted-town roster;
-- the vulnerability window is only an hour of the day if it reads as one, so the test asserts it.
+- the vulnerability window is only an hour of the day if it reads as one, so the test asserts it;
+- the RIVI split rests on the map naming, so the test classifies a real player's recent fights and
+  asserts no Conquest territory is ever filed as RIVI and no RIVI fight is a hundred players.
 
 The offline suite covers the log's persistence too. Its baseline, its already-reported towns and its
 alliance history are all written as records, and a serialiser that could not read them back would

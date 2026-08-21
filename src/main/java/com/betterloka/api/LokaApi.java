@@ -5,6 +5,7 @@ import com.betterloka.api.model.Json;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.api.model.Territory;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -206,6 +207,22 @@ public final class LokaApi {
             }
         }
         return new TownPage(towns, Json.integer(Json.object(json, "page"), "totalPages", 0));
+    }
+
+    /**
+     * Every battle Loka currently has on its books — declared and waiting, or under way.
+     *
+     * <p>The same endpoint the in-fight check uses, read for its schedule rather than its rosters.
+     */
+    public List<ScheduledFight> fetchScheduledFights() throws ApiException {
+        List<ScheduledFight> fights = new ArrayList<>();
+        for (JsonElement element : embeddedArray(getObject(BASE_URL + "/battlezones/search/findBattles"),
+                "battlezones")) {
+            if (element.isJsonObject()) {
+                fights.add(ScheduledFight.fromJson(element.getAsJsonObject()));
+            }
+        }
+        return fights;
     }
 
     /**

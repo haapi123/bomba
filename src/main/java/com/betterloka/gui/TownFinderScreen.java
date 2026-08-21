@@ -51,6 +51,9 @@ public class TownFinderScreen extends Screen {
     /** How many past allies to name. Beyond a handful it stops being a summary. */
     private static final int MAX_PARTNERS = 5;
 
+    /** A Loka vulnerability window runs eight hours from the hour the API publishes. */
+    private static final int VULN_HOURS = 8;
+
     /** {@code null} means every continent. */
     private static final String[] CONTINENTS = {null, "north", "west", "south"};
 
@@ -497,20 +500,28 @@ public class TownFinderScreen extends Screen {
     }
 
     /**
-     * The vulnerability window.
+     * The vulnerability window, start to finish.
      *
-     * <p>Loka publishes only the hour it opens, so that is all this says — inventing a length or a
-     * time zone would be worse than the number on its own.
+     * <p>Loka publishes only the hour it opens; the eight-hour length is the server's rule, so the
+     * end is worked out from it and wraps past midnight.
      */
     private static String vulnText(LokaTown of) {
         int hour = of.vulnerabilityWindow();
-        return hour < 0 ? "—" : String.format(Locale.ROOT, "%02d:00", hour);
+        if (hour < 0) {
+            return "—";
+        }
+        return String.format(Locale.ROOT, "%02d:00 – %02d:00", hour, (hour + VULN_HOURS) % 24);
     }
 
+    /**
+     * Leader and sub-owners.
+     *
+     * <p>Every sub-owner gets a line of its own and the card grows to fit: a town with five of them
+     * used to lose the last name to a trim, which is the one thing a list of officers must not do.
+     */
     private int renderPeople(DrawContext context, int left, int y, int width, int inner) {
         List<String> subOwners = town.subOwnerIds();
-        int rows = 1 + (subOwners.isEmpty() ? 0 : 1);
-        int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * (1 + subOwners.size());
         GuiTheme.panel(context, left, y, width, height);
 
         int textX = left + CARD_PADDING;
@@ -519,15 +530,13 @@ public class TownFinderScreen extends Screen {
                 Text.translatable("betterloka.town_finder.leader").getString(),
                 nameOf(town.ownerId()), GuiTheme.TEXT);
 
-        if (!subOwners.isEmpty()) {
-            List<String> resolved = new ArrayList<>();
-            for (String identity : subOwners) {
-                resolved.add(nameOf(identity));
-            }
-            String joined = String.join(", ", resolved);
-            GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
-                    Text.translatable("betterloka.town_finder.subowners", subOwners.size()).getString(),
-                    this.textRenderer.trimToWidth(joined, inner / 2), GuiTheme.MUTED);
+        for (int i = 0; i < subOwners.size(); i++) {
+            textY += ROW_HEIGHT;
+            String label = i == 0
+                    ? Text.translatable("betterloka.town_finder.subowners", subOwners.size()).getString()
+                    : "";
+            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, label,
+                    nameOf(subOwners.get(i)), GuiTheme.MUTED);
         }
         return y + height + CARD_GAP;
     }
