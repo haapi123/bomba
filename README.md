@@ -18,6 +18,7 @@ never talks to the game server and sends nothing about you anywhere.
 | **Town Finder** | Working |
 | **Town Logger** | Working |
 | **Fight Manager** | Working |
+| **Loka Grinder** | Working |
 | Loka Helper | Planned |
 
 Loka Helper is listed in the menu but opens a placeholder screen for now.
@@ -109,6 +110,20 @@ the line fills in when it lands. Both are shared by every player you then look u
 A season's weekly snapshots are cumulative, which is what makes its **last published week** that
 season's result and keeps this to one table per season rather than one per week. Players are followed
 by UUID, not by name, because names change between seasons.
+
+### Possible alts and old names
+
+![Alts](docs/player-finder-alts.png)
+
+At the bottom of the profile: the other accounts this person plays on, and names they have gone by.
+
+The alts are Loka's own grouping — accounts sharing an `identityId` are the same person, which is the
+fact `/find` reports — so the mod reads it rather than sending a command as you.
+
+Old names come from past seasons' ladder tables, which record whatever a player was called at the
+time. Mojang stopped publishing name history in 2022 and Loka keeps only the current name, so that is
+the only source left: **it knows the old names of players who have been on a ranked ladder, and
+nobody else.** It costs nothing, since those tables are already downloaded and cached.
 
 ### K/D above nameplates
 
@@ -220,6 +235,26 @@ else publishes one either — so this is the one thing here that cannot be answe
 Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
 each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
 then it says so rather than showing nothing.
+
+## Loka Grinder
+
+![Shulker timer](docs/grinder-shulker.png)
+
+Countdowns for the things worth grinding. The timers live outside the screen, so they keep running
+with the menu shut — a seventeen-minute countdown that only advanced while you watched it would be no
+use at all.
+
+- **Shulker Timer** — 17 minutes, started by the box in the corner of the card. With **auto-start**
+  on it also starts by itself when a shulker you hit dies.
+- **Glowstone** — the same timer with a length you set, using the `-` and `+` buttons.
+
+Glowstone's length is a setting rather than a number baked in: nobody has said what Loka's glowstone
+cycle actually is, and a made-up figure shown as fact would be worse than one you set once.
+
+Auto-start is deliberately narrow. The client is never told who landed a killing blow, so it works
+from what it can see — which shulkers you swung at, and which of those then died. A shulker somebody
+else finishes off after you also hit it will start the timer, and one killed with a bow will not
+start it at all. The box stays the reliable way; auto-start only saves a click in the ordinary case.
 
 ## Discord bot
 

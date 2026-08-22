@@ -8,6 +8,7 @@ import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindTimers;
+import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.NameplateKdService;
@@ -78,6 +79,8 @@ public class BetterLokaClient implements ClientModInitializer {
                 new TownLogStore(configDir().resolve("town-log.json")));
         townLogger.start();
         grindTimers = new GrindTimers();
+        grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
+        new ShulkerWatcher(grindTimers, config).register();
 
         // Loka sends its chat as system messages; signed player chat is captured too so the
         // Translator also works on servers that use it. The whole Text is inspected rather than just

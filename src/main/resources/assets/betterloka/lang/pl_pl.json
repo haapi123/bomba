@@ -187,11 +187,13 @@
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",
   "betterloka.grind.shulker.title": "Respawn shulkera",
-  "betterloka.grind.shulker.idle": "nie wystartowany",
-  "betterloka.grind.shulker.counting": "odlicza",
-  "betterloka.grind.shulker.ready": "gotowe",
   "betterloka.grind.shulker.hint": "Kliknij kwadracik, gdy zabijesz shulkera.",
   "betterloka.grind.glowstone.title": "Glowstone",
-  "betterloka.grind.glowstone.todo": "Jeszcze nie zrobione — napisz, co ma robić, to dodam.",
-  "betterloka.grind.shulker.hint2": "17 minut; leci dalej po zamknięciu menu."
+  "betterloka.grind.shulker.hint2": "Leci dalej po zamknięciu menu.",
+  "betterloka.grind.idle": "nie wystartowany",
+  "betterloka.grind.counting": "odlicza",
+  "betterloka.grind.ready": "gotowe",
+  "betterloka.grind.reset": "Reset",
+  "betterloka.grind.shulker.auto": "Auto-start po zabiciu: ",
+  "betterloka.grind.glowstone.hint": "Kliknij kwadracik, żeby wystartować; - i + ustawiają czas."
 }

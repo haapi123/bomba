@@ -9,11 +9,16 @@ import java.util.Locale;
  * looking at it — a timer that only advances while its screen is open would be worse than none.
  */
 public final class GrindTimer {
-    private final long durationMillis;
+    private volatile long durationMillis;
     private volatile long endsAt;
 
     public GrindTimer(long durationMillis) {
         this.durationMillis = durationMillis;
+    }
+
+    /** Changes how long the countdown runs for. A running timer is left alone until restarted. */
+    public void setDurationMillis(long durationMillis) {
+        this.durationMillis = Math.max(1000L, durationMillis);
     }
 
     /** Starts, or restarts, the countdown from now. */
@@ -48,7 +53,16 @@ public final class GrindTimer {
 
     /** {@code 16:43}, or {@code 0:00} once it has run out. */
     public String remainingText() {
-        long seconds = (remainingMillis() + 999) / 1000;
+        return format(remainingMillis());
+    }
+
+    /** The full length, for showing what a fresh start would count down from. */
+    public String durationText() {
+        return format(durationMillis);
+    }
+
+    private static String format(long millis) {
+        long seconds = (millis + 999) / 1000;
         return String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);
     }
 

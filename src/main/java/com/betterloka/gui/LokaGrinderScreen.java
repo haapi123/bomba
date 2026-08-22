@@ -1,6 +1,7 @@
 package com.betterloka.gui;
 
 import com.betterloka.BetterLokaClient;
+import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.grind.GrindTimer;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -75,8 +76,43 @@ public class LokaGrinderScreen extends Screen {
             x += half + 4;
         }
 
+        int controlY = VIEWPORT_TOP + CARD_PADDING * 2 + ROW_HEIGHT * 5 + CARD_GAP;
+        if (tab == Tab.SHULKER) {
+            addDrawableChild(ButtonWidget.builder(autoStartLabel(), button -> {
+                        BetterLokaClient.config().setShulkerAutoStart(
+                                !BetterLokaClient.config().shulkerAutoStart());
+                        button.setMessage(autoStartLabel());
+                    })
+                    .dimensions(left, controlY, width, TAB_ROW_HEIGHT).build());
+        } else {
+            int third = (width - 8) / 3;
+            addDrawableChild(ButtonWidget.builder(Text.literal("-"), button -> changeGlowstone(-1))
+                    .dimensions(left, controlY, third, TAB_ROW_HEIGHT).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("+"), button -> changeGlowstone(1))
+                    .dimensions(left + third + 4, controlY, third, TAB_ROW_HEIGHT).build());
+            addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.grind.reset"),
+                            button -> glowstone().stop())
+                    .dimensions(left + (third + 4) * 2, controlY, width - (third + 4) * 2,
+                            TAB_ROW_HEIGHT).build());
+        }
+
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
                 .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
+    }
+
+    private static Text autoStartLabel() {
+        boolean on = BetterLokaClient.config().shulkerAutoStart();
+        return Text.translatable("betterloka.grind.shulker.auto")
+                .append(Text.translatable(on ? "betterloka.on" : "betterloka.off")
+                        .formatted(on ? Formatting.GREEN : Formatting.RED));
+    }
+
+    /** Changes the glowstone length and keeps the timer in step with it. */
+    private void changeGlowstone(int delta) {
+        BetterLokaConfig config = BetterLokaClient.config();
+        config.setGlowstoneMinutes(config.glowstoneMinutes() + delta);
+        glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
+        clearAndInit();
     }
 
     private Text tabLabel(Tab value) {
@@ -96,12 +132,19 @@ public class LokaGrinderScreen extends Screen {
         return BetterLokaClient.grindTimers().shulker();
     }
 
+    private static GrindTimer glowstone() {
+        return BetterLokaClient.grindTimers().glowstone();
+    }
+
+    private GrindTimer active() {
+        return tab == Tab.SHULKER ? shulker() : glowstone();
+    }
+
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        if (tab == Tab.SHULKER
-                && click.x() >= boxX && click.x() < boxX + BOX_SIZE
+        if (click.x() >= boxX && click.x() < boxX + BOX_SIZE
                 && click.y() >= boxY && click.y() < boxY + BOX_SIZE) {
-            GrindTimer timer = shulker();
+            GrindTimer timer = active();
             if (timer.running()) {
                 timer.stop();
             } else {
@@ -120,17 +163,16 @@ public class LokaGrinderScreen extends Screen {
         int left = contentLeft();
         int width = contentWidth();
 
-        if (tab == Tab.SHULKER) {
-            renderShulker(context, left, VIEWPORT_TOP, width, mouseX, mouseY);
-        } else {
-            renderGlowstone(context, left, VIEWPORT_TOP, width);
-        }
+        renderTimer(context, left, VIEWPORT_TOP, width, mouseX, mouseY,
+                tab == Tab.SHULKER ? shulker() : glowstone(),
+                tab == Tab.SHULKER ? "betterloka.grind.shulker.title" : "betterloka.grind.glowstone.title",
+                tab == Tab.SHULKER ? "betterloka.grind.shulker.hint" : "betterloka.grind.glowstone.hint");
     }
 
-    private void renderShulker(DrawContext context, int left, int y, int width, int mouseX, int mouseY) {
+    /** One card, whichever timer the tab is showing — they differ only in their labels. */
+    private void renderTimer(DrawContext context, int left, int y, int width, int mouseX, int mouseY,
+                             GrindTimer timer, String titleKey, String hintKey) {
         int inner = width - CARD_PADDING * 2;
-        GrindTimer timer = shulker();
-
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 5;
         GuiTheme.panel(context, left, y, width, height);
 
@@ -138,7 +180,7 @@ public class LokaGrinderScreen extends Screen {
         int textY = y + CARD_PADDING;
 
         context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.shulker.title").copy().formatted(Formatting.BOLD),
+                Text.translatable(titleKey).copy().formatted(Formatting.BOLD),
                 textX, textY, GuiTheme.ACCENT);
 
         // The square the player clicks to start it, in the corner they asked for.
@@ -153,18 +195,20 @@ public class LokaGrinderScreen extends Screen {
             context.fill(boxX + 3, boxY + 3, boxX + BOX_SIZE - 3, boxY + BOX_SIZE - 3, GuiTheme.GOOD);
         }
 
-        String remaining = timer.running() || timer.finished() ? timer.remainingText() : "17:00";
+        String remaining = timer.running() || timer.finished()
+                ? timer.remainingText()
+                : timer.durationText();
         int remainingColor = timer.finished() ? GuiTheme.GOOD
                 : (timer.running() ? GuiTheme.TEXT : GuiTheme.MUTED);
         context.drawTextWithShadow(this.textRenderer, remaining, textX, textY + ROW_HEIGHT, remainingColor);
 
         Text status;
         if (timer.finished()) {
-            status = Text.translatable("betterloka.grind.shulker.ready");
+            status = Text.translatable("betterloka.grind.ready");
         } else if (timer.running()) {
-            status = Text.translatable("betterloka.grind.shulker.counting");
+            status = Text.translatable("betterloka.grind.counting");
         } else {
-            status = Text.translatable("betterloka.grind.shulker.idle");
+            status = Text.translatable("betterloka.grind.idle");
         }
         context.drawTextWithShadow(this.textRenderer,
                 this.textRenderer.trimToWidth(status.getString(), inner - 40),
@@ -173,26 +217,11 @@ public class LokaGrinderScreen extends Screen {
 
         GuiTheme.progressBar(context, textX, textY + ROW_HEIGHT * 2 + 2, inner, 5, timer.progress());
 
-        // Two lines rather than one trimmed: the second half is the part worth knowing.
+        context.drawTextWithShadow(this.textRenderer, Text.translatable(hintKey),
+                textX, textY + ROW_HEIGHT * 3, GuiTheme.MUTED);
         context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.shulker.hint"), textX, textY + ROW_HEIGHT * 3,
-                GuiTheme.MUTED);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.shulker.hint2"), textX, textY + ROW_HEIGHT * 4,
-                GuiTheme.MUTED);
-    }
-
-    private void renderGlowstone(DrawContext context, int left, int y, int width) {
-        int inner = width - CARD_PADDING * 2;
-        int height = CARD_PADDING * 2 + ROW_HEIGHT * 2;
-        GuiTheme.panel(context, left, y, width, height);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.glowstone.title").copy().formatted(Formatting.BOLD),
-                left + CARD_PADDING, y + CARD_PADDING, GuiTheme.ACCENT);
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(
-                        Text.translatable("betterloka.grind.glowstone.todo").getString(), inner),
-                left + CARD_PADDING, y + CARD_PADDING + ROW_HEIGHT, GuiTheme.MUTED);
+                Text.translatable("betterloka.grind.shulker.hint2"),
+                textX, textY + ROW_HEIGHT * 4, GuiTheme.MUTED);
     }
 
     @Override

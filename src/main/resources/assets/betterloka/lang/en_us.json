@@ -187,11 +187,13 @@
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",
   "betterloka.grind.shulker.title": "Shulker respawn",
-  "betterloka.grind.shulker.idle": "not started",
-  "betterloka.grind.shulker.counting": "counting down",
-  "betterloka.grind.shulker.ready": "ready",
   "betterloka.grind.shulker.hint": "Click the box when you kill a shulker.",
   "betterloka.grind.glowstone.title": "Glowstone",
-  "betterloka.grind.glowstone.todo": "Not built yet — tell me what this should do and it goes in.",
-  "betterloka.grind.shulker.hint2": "17 minutes; it keeps running with the menu shut."
+  "betterloka.grind.shulker.hint2": "Keeps running with the menu shut.",
+  "betterloka.grind.idle": "not started",
+  "betterloka.grind.counting": "counting down",
+  "betterloka.grind.ready": "ready",
+  "betterloka.grind.reset": "Reset",
+  "betterloka.grind.shulker.auto": "Auto-start on kill: ",
+  "betterloka.grind.glowstone.hint": "Click the box to start; use - and + to set the length."
 }

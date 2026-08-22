@@ -11,8 +11,20 @@ public final class GrindTimers {
     public static final long SHULKER_MILLIS = 17 * 60 * 1000L;
 
     private final GrindTimer shulker = new GrindTimer(SHULKER_MILLIS);
+    private final GrindTimer glowstone = new GrindTimer(60_000L);
 
     public GrindTimer shulker() {
         return shulker;
+    }
+
+    /**
+     * The glowstone timer.
+     *
+     * <p>Its length is a setting rather than a constant: unlike the shulker's seventeen minutes,
+     * nobody has told this mod what Loka's glowstone cycle actually is, so guessing a number and
+     * presenting it as fact would be worse than letting it be set.
+     */
+    public GrindTimer glowstone() {
+        return glowstone;
     }
 }

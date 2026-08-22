@@ -39,6 +39,17 @@ public final class BetterLokaConfig {
      */
     private int townLogIntervalMinutes = 30;
 
+    /** Start the shulker timer by itself when a shulker the player hit dies. */
+    private boolean shulkerAutoStart = true;
+
+    /**
+     * How long the glowstone timer counts, in minutes.
+     *
+     * <p>A setting rather than a constant, because nobody has said what Loka's glowstone cycle is —
+     * a made-up number shown as fact would be worse than one the player sets.
+     */
+    private int glowstoneMinutes = 5;
+
     private transient Path file;
 
     public static BetterLokaConfig load(Path file) {
@@ -128,6 +139,25 @@ public final class BetterLokaConfig {
 
     public void setTownLogIntervalMinutes(int minutes) {
         this.townLogIntervalMinutes = Math.max(1, minutes);
+        save();
+    }
+
+    public boolean shulkerAutoStart() {
+        return shulkerAutoStart;
+    }
+
+    public void setShulkerAutoStart(boolean shulkerAutoStart) {
+        this.shulkerAutoStart = shulkerAutoStart;
+        save();
+    }
+
+    /** Clamped to something a person would actually set, so a bad edit cannot make it useless. */
+    public int glowstoneMinutes() {
+        return Math.max(1, Math.min(120, glowstoneMinutes));
+    }
+
+    public void setGlowstoneMinutes(int minutes) {
+        this.glowstoneMinutes = Math.max(1, Math.min(120, minutes));
         save();
     }
 }
