@@ -24,7 +24,7 @@ public class BetterLokaMenuScreen extends Screen {
     @Override
     protected void init() {
         int x = this.width / 2 - BUTTON_WIDTH / 2;
-        int y = Math.max(30, this.height / 2 - 91);
+        int y = Math.max(24, this.height / 2 - 103);
 
         y = addModule(x, y, "betterloka.module.player_finder", PlayerFinderScreen::new);
         y = addModule(x, y, "betterloka.module.translator", TranslatorScreen::new);
@@ -32,6 +32,7 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.town_finder", TownFinderScreen::new);
         y = addModule(x, y, "betterloka.module.town_logger", TownLoggerScreen::new);
         y = addModule(x, y, "betterloka.module.fight_manager", FightManagerScreen::new);
+        y = addModule(x, y, "betterloka.module.loka_grinder", LokaGrinderScreen::new);
         addModule(x, y, "betterloka.module.loka_helper", null);
 
         addDrawableChild(ButtonWidget.builder(ScreenTexts.DONE, button -> close())
@@ -55,7 +56,7 @@ public class BetterLokaMenuScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
-        int titleY = Math.max(8, this.height / 2 - 91 - 28);
+        int titleY = Math.max(6, this.height / 2 - 103 - 26);
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, titleY, GuiTheme.TEXT);
         context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("betterloka.menu.subtitle"),
                 this.width / 2, titleY + 12, GuiTheme.MUTED);

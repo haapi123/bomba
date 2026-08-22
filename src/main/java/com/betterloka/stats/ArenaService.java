@@ -74,6 +74,9 @@ public final class ArenaService {
 
     private volatile CompletableFuture<Map<Ladder, Map<String, Best>>> history;
 
+    /** Every name each UUID has appeared under across the snapshots, in the order they were read. */
+    private final Map<UUID, List<String>> seenNames = new HashMap<>();
+
     public ArenaService(ArenaApi api) {
         this(api, null);
     }
@@ -98,6 +101,31 @@ public final class ArenaService {
                         index == null ? null : lookup(index.get(ladder), name, uuid)));
             }
             return standings;
+        });
+    }
+
+    /**
+     * Names this UUID has gone by before, oldest first.
+     *
+     * <p>Read out of the past seasons' ladder tables, which record whatever the player was called at
+     * the time — Mojang stopped publishing name history in 2022 and Loka's own record keeps only the
+     * current name, so this is the only source left. It therefore only knows the names of players who
+     * have been on a ranked ladder.
+     */
+    public CompletableFuture<List<String>> previousNames(String currentName, UUID uuid) {
+        if (uuid == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return loadHistory().thenApply(ignored -> {
+            List<String> names = new ArrayList<>();
+            synchronized (seenNames) {
+                for (String name : seenNames.getOrDefault(uuid, List.of())) {
+                    if (!name.equalsIgnoreCase(currentName) && !names.contains(name)) {
+                        names.add(name);
+                    }
+                }
+            }
+            return List.copyOf(names);
         });
     }
 
@@ -159,6 +187,7 @@ public final class ArenaService {
             for (Ladder ladder : Ladder.values()) {
                 try {
                     List<ArenaEntry> rows = api.fetchCurrent(ladder);
+                    rememberNames(rows);
                     synchronized (current) {
                         current.put(ladder, rows);
                     }
@@ -200,6 +229,8 @@ public final class ArenaService {
     private Map<Ladder, Map<String, Best>> buildHistory() {
         Map<Ladder, Map<String, Best>> fromDisk = readIndex();
         if (fromDisk != null) {
+            // The names come back with it: rebuilding the index just to recover them would undo the
+            // whole point of caching it.
             return fromDisk;
         }
 
@@ -263,6 +294,9 @@ public final class ArenaService {
                 }
             }
             index.put(ladder, restored);
+            for (Best best : restored.values()) {
+                rememberNames(List.of(best.entry()));
+            }
         }
         BetterLoka.LOGGER.debug("Loaded the arena history index from disk");
         return index;
@@ -286,7 +320,8 @@ public final class ArenaService {
         disk.write(saved);
     }
 
-    private static void record(Map<String, Best> index, int season, List<ArenaEntry> rows) {
+    private void record(Map<String, Best> index, int season, List<ArenaEntry> rows) {
+        rememberNames(rows);
         for (ArenaEntry entry : rows) {
             if (entry.rank() == null) {
                 continue;
@@ -297,6 +332,21 @@ public final class ArenaService {
             }
             if (entry.name() != null) {
                 keepBetter(index, "n:" + entry.name().toLowerCase(Locale.ROOT), candidate);
+            }
+        }
+    }
+
+    /** Keeps whatever a UUID was called in this snapshot, which is where name history comes from. */
+    private void rememberNames(List<ArenaEntry> rows) {
+        synchronized (seenNames) {
+            for (ArenaEntry entry : rows) {
+                if (entry.uuid() == null || entry.name() == null) {
+                    continue;
+                }
+                List<String> names = seenNames.computeIfAbsent(entry.uuid(), key -> new ArrayList<>());
+                if (!names.contains(entry.name())) {
+                    names.add(entry.name());
+                }
             }
         }
     }

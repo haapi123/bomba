@@ -10,6 +10,7 @@ import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
+import com.betterloka.stats.PlayerIdentity;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.stats.PlayerTrait;
 import net.minecraft.client.gui.Click;
@@ -59,6 +60,9 @@ public class PlayerFinderScreen extends Screen {
     private static final int CHIP_PADDING = 5;
     private static final int CHIP_GAP = 4;
 
+    /** Beyond a handful, old names stop being a summary. */
+    private static final int MAX_PREVIOUS_NAMES = 6;
+
     /** How wide a chip's explanation is allowed to get before it wraps. */
     private static final int TOOLTIP_WIDTH = 190;
 
@@ -86,6 +90,11 @@ public class PlayerFinderScreen extends Screen {
     private List<ArenaService.Standing> arenaBest = List.of();
     private boolean arenaLoading;
     private boolean arenaHistoryLoading;
+
+    /** Other accounts this person plays on, and names they have gone by. */
+    private List<PlayerIdentity.Account> alts = List.of();
+    private List<String> previousNames = List.of();
+    private boolean identityLoading;
 
     /** The chip under the pointer this frame, and where the pointer is; both reset every frame. */
     private PlayerTrait hoveredTrait;
@@ -189,6 +198,9 @@ public class PlayerFinderScreen extends Screen {
         arenaBest = List.of();
         arenaLoading = true;
         arenaHistoryLoading = true;
+        alts = List.of();
+        previousNames = List.of();
+        identityLoading = true;
         scrollPanel.reset();
         int generation = ++searchGeneration;
 
@@ -201,6 +213,11 @@ public class PlayerFinderScreen extends Screen {
         }));
 
         PlayerStatsService stats = BetterLokaClient.stats();
+        stats.alts(name).whenComplete((found, throwable) -> applyOnClientThread(generation, () -> {
+            identityLoading = false;
+            alts = throwable != null || found == null ? List.of() : found;
+        }));
+
         stats.lookup(name, headline -> applyOnClientThread(generation, () -> {
             // Career totals are in; the fight rows below fill in as their pages land.
             searching = false;
@@ -208,6 +225,12 @@ public class PlayerFinderScreen extends Screen {
             profile = headline;
             // Names change between seasons, so the historical index is searched by UUID once Loka's
             // record of the account has supplied one.
+            arena.previousNames(headline.name(), headline.uuid())
+                    .whenComplete((names, throwable) -> applyOnClientThread(generation, () -> {
+                        if (throwable == null && names != null) {
+                            previousNames = names;
+                        }
+                    }));
             arena.best(headline.name(), headline.uuid())
                     .whenComplete((standings, throwable) -> applyOnClientThread(generation, () -> {
                         arenaHistoryLoading = false;
@@ -386,7 +409,65 @@ public class PlayerFinderScreen extends Screen {
                             stats.nemesisName() + " (" + stats.nemesisDeaths() + ")", GuiTheme.BAD));
         }
 
-        return renderFights(context, left, y, width, inner);
+        y = renderFights(context, left, y, width, inner);
+        return renderIdentity(context, left, y, width, inner);
+    }
+
+    /**
+     * Other accounts and older names, at the bottom of the profile.
+     *
+     * <p>The alts are Loka's own grouping — the same fact {@code /find} reports — so they are as
+     * good as that command. The old names are only as good as the ranked ladders: Mojang stopped
+     * publishing name history and Loka keeps only the current name, so a player who has never
+     * duelled has none to show, and the header says where they came from.
+     */
+    private int renderIdentity(DrawContext context, int left, int y, int width, int inner) {
+        if (alts.isEmpty() && previousNames.isEmpty()) {
+            if (!identityLoading) {
+                return y;
+            }
+            return card(context, left, y, width, 1, (x, rowY) ->
+                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                            label("betterloka.finder.alts"), label("betterloka.finder.loading"),
+                            GuiTheme.MUTED));
+        }
+
+        if (!alts.isEmpty()) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.finder.alts_count", alts.size()), left, y + 2, GuiTheme.MUTED);
+            y += ROW_HEIGHT + 3;
+
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * alts.size();
+            GuiTheme.panel(context, left, y, width, height);
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+            for (PlayerIdentity.Account account : alts) {
+                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, account.name(),
+                        account.rank() == null ? "" : account.rank().toUpperCase(Locale.ROOT),
+                        GuiTheme.MUTED);
+                textY += ROW_HEIGHT;
+            }
+            y += height + CARD_GAP;
+        }
+
+        if (!previousNames.isEmpty()) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.finder.previous_names"), left, y + 2, GuiTheme.MUTED);
+            y += ROW_HEIGHT + 3;
+
+            int rows = Math.min(previousNames.size(), MAX_PREVIOUS_NAMES);
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+            GuiTheme.panel(context, left, y, width, height);
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+            for (String name : previousNames.subList(0, rows)) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(name, inner), textX, textY, GuiTheme.TEXT);
+                textY += ROW_HEIGHT;
+            }
+            y += height + CARD_GAP;
+        }
+        return y;
     }
 
     /**

@@ -264,6 +264,35 @@ public final class PlayerStatsService {
                 anyDetail ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.UNAVAILABLE);
     }
 
+    /**
+     * The other accounts this person plays on.
+     *
+     * <p>Loka groups accounts under a shared identity, and that grouping is what its own
+     * {@code /find} reports. Two small requests, off the profile's critical path, and the searched
+     * account itself is left out of the result — it is not its own alt.
+     */
+    public CompletableFuture<List<PlayerIdentity.Account>> alts(String name) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                LokaPlayer player = loka.findPlayerByName(name);
+                if (player == null || player.identityId() == null) {
+                    return List.<PlayerIdentity.Account>of();
+                }
+                List<PlayerIdentity.Account> accounts = new ArrayList<>();
+                for (LokaPlayer account : loka.findAccountsByIdentity(player.identityId())) {
+                    if (account.name() != null && !account.name().equalsIgnoreCase(player.name())) {
+                        accounts.add(new PlayerIdentity.Account(
+                                account.name(), account.uuid(), account.rank()));
+                    }
+                }
+                return List.copyOf(accounts);
+            } catch (ApiException e) {
+                BetterLoka.LOGGER.debug("Could not resolve alts for {}", name, e);
+                return List.<PlayerIdentity.Account>of();
+            }
+        }, eldritch.bulkExecutor());
+    }
+
     /** EldritchBot only publishes finished fights, so a battle in progress has to come from Loka. */
     private boolean isInFightNow(String name, UUID uuid) {
         if (uuid == null) {

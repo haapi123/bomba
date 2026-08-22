@@ -150,6 +150,27 @@ public final class LokaApi {
     }
 
     /**
+     * Every account belonging to one identity.
+     *
+     * <p>Loka groups a person's accounts under a shared identity, which is what its own
+     * {@code /find} reports as somebody's alts. Reading it here means the mod never has to send a
+     * command as the player.
+     */
+    public List<LokaPlayer> findAccountsByIdentity(String identityId) throws ApiException {
+        List<LokaPlayer> accounts = new ArrayList<>();
+        if (identityId == null || identityId.isEmpty()) {
+            return accounts;
+        }
+        JsonObject json = getObject(BASE_URL + "/players/search/findByIdentityId?identityId=" + encode(identityId));
+        for (JsonElement element : embeddedArray(json, "players")) {
+            if (element.isJsonObject()) {
+                accounts.add(LokaPlayer.fromJson(element.getAsJsonObject()));
+            }
+        }
+        return accounts;
+    }
+
+    /**
      * The account name behind an identity ID.
      *
      * <p>Town owners and sub-owners are recorded by identity, and one identity can own several

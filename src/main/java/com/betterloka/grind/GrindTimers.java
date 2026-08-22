@@ -1,0 +1,18 @@
+package com.betterloka.grind;
+
+/**
+ * The timers the Loka Grinder module keeps.
+ *
+ * <p>Held here rather than on the screen so they keep running with the GUI shut — which is the only
+ * way a seventeen-minute timer is any use, since nobody stares at a menu for seventeen minutes.
+ */
+public final class GrindTimers {
+    /** A shulker takes seventeen minutes to come back. */
+    public static final long SHULKER_MILLIS = 17 * 60 * 1000L;
+
+    private final GrindTimer shulker = new GrindTimer(SHULKER_MILLIS);
+
+    public GrindTimer shulker() {
+        return shulker;
+    }
+}

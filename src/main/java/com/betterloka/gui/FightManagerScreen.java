@@ -5,6 +5,7 @@ import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.ScheduledFight;
+import com.betterloka.stats.PlayerTrait;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -39,6 +40,9 @@ public class FightManagerScreen extends Screen {
 
     /** A Loka vulnerability window runs eight hours from the hour the API publishes. */
     private static final int VULN_HOURS = 8;
+
+    private static final int CHIP_HEIGHT = 12;
+    private static final int CHIP_PADDING = 4;
 
     /** One battle with the names and windows its ids point at. */
     private record Row(ScheduledFight fight, String attacker, String defender,
@@ -233,11 +237,20 @@ public class FightManagerScreen extends Screen {
             int textY = y + CARD_PADDING;
 
             // Who is fighting whom, which is the first thing anybody wants off this screen.
-            String matchup = Text.translatable("betterloka.fights.matchup",
-                    row.attacker() == null ? "?" : row.attacker(),
-                    row.defender() == null ? "?" : row.defender()).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(matchup, inner - 54), textX, textY, GuiTheme.TEXT);
+            // Attacker red, defender green — which way round a fight is going is the first thing
+            // anybody reads off this screen, so it is carried by colour rather than word order.
+            Text attacker = Text.literal(row.attacker() == null ? "?" : row.attacker())
+                    .formatted(Formatting.BOLD);
+            Text defender = Text.literal(row.defender() == null ? "?" : row.defender())
+                    .formatted(Formatting.BOLD);
+            String arrow = "  ->  ";
+
+            int attackerX = textX;
+            context.drawTextWithShadow(this.textRenderer, attacker, attackerX, textY, GuiTheme.BAD);
+            int arrowX = attackerX + this.textRenderer.getWidth(attacker);
+            context.drawTextWithShadow(this.textRenderer, arrow, arrowX, textY, GuiTheme.MUTED);
+            int defenderX = arrowX + this.textRenderer.getWidth(arrow);
+            context.drawTextWithShadow(this.textRenderer, defender, defenderX, textY, GuiTheme.GOOD);
 
             Text when = fight.started()
                     ? Text.translatable("betterloka.fights.live")
@@ -246,11 +259,17 @@ public class FightManagerScreen extends Screen {
                     left + width - CARD_PADDING - this.textRenderer.getWidth(when), textY,
                     fight.started() ? GuiTheme.LIVE : GuiTheme.ACCENT);
 
-            String where = Text.translatable("betterloka.fights.where",
-                    fight.continent() == null ? "?" : fight.continent(),
-                    fight.territoryNumber() == null ? "?" : fight.territoryNumber()).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(where, inner - 70), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+            // Each town's alliance sits directly under its name, so the two never get mixed up.
+            if (row.attackerAlliance() != null) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(row.attackerAlliance(), defenderX - attackerX - 4),
+                        attackerX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+            }
+            if (row.defenderAlliance() != null) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(row.defenderAlliance(), inner / 3),
+                        defenderX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+            }
 
             String headcount = Text.translatable("betterloka.fights.headcount",
                     fight.attackerCount(), fight.defenderCount()).getString();
@@ -258,22 +277,24 @@ public class FightManagerScreen extends Screen {
                     left + width - CARD_PADDING - this.textRenderer.getWidth(headcount), textY + ROW_HEIGHT,
                     fight.total() == 0 ? GuiTheme.MUTED : GuiTheme.TEXT);
 
-            // Alliances decide whether the fight stays a two-town affair.
-            StringBuilder sides = new StringBuilder();
-            if (row.attackerAlliance() != null || row.defenderAlliance() != null) {
-                sides.append(row.attackerAlliance() == null ? "—" : row.attackerAlliance())
-                        .append("  vs  ")
-                        .append(row.defenderAlliance() == null ? "—" : row.defenderAlliance());
-            }
+            String where = Text.translatable("betterloka.fights.where",
+                    fight.continent() == null ? "?" : fight.continent(),
+                    fight.territoryNumber() == null ? "?" : fight.territoryNumber()).getString();
             context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(sides.toString(), inner - 80), textX, textY + ROW_HEIGHT * 2,
+                    this.textRenderer.trimToWidth(where, inner - 90), textX, textY + ROW_HEIGHT * 2,
                     GuiTheme.MUTED);
 
+            // Whether reinforcements can be called decides whether a fight stays the size it looks,
+            // so it gets a chip rather than a line of grey text.
             Text reins = Text.translatable(fight.reinforcementsAllowed()
-                    ? "betterloka.fights.reins_yes" : "betterloka.fights.reins_no");
-            context.drawTextWithShadow(this.textRenderer, reins,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(reins), textY + ROW_HEIGHT * 2,
-                    fight.reinforcementsAllowed() ? GuiTheme.GOOD : GuiTheme.MUTED);
+                    ? "betterloka.fights.reins_on" : "betterloka.fights.reins_off");
+            int reinsColor = fight.reinforcementsAllowed() ? GuiTheme.traitColor(PlayerTrait.Level.GOOD)
+                    : GuiTheme.traitColor(PlayerTrait.Level.POOR);
+            int chipWidth = this.textRenderer.getWidth(reins) + CHIP_PADDING * 2;
+            int chipX = left + width - CARD_PADDING - chipWidth;
+            GuiTheme.chip(context, chipX, textY + ROW_HEIGHT * 2 - 2, chipWidth, CHIP_HEIGHT, reinsColor);
+            context.drawTextWithShadow(this.textRenderer, reins, chipX + CHIP_PADDING,
+                    textY + ROW_HEIGHT * 2 + 1, reinsColor);
 
             y += height + CARD_GAP;
         }

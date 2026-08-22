@@ -7,6 +7,7 @@ import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
+import com.betterloka.grind.GrindTimers;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.NameplateKdService;
@@ -55,6 +56,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TranslationService translations;
     private static ChatLog chatLog;
     private static TownLogger townLogger;
+    private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
 
     @Override
@@ -75,6 +77,7 @@ public class BetterLokaClient implements ClientModInitializer {
         townLogger = new TownLogger(loka, towns, config,
                 new TownLogStore(configDir().resolve("town-log.json")));
         townLogger.start();
+        grindTimers = new GrindTimers();
 
         // Loka sends its chat as system messages; signed player chat is captured too so the
         // Translator also works on servers that use it. The whole Text is inspected rather than just
@@ -124,6 +127,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static ArenaService arenaStats() {
         return arenaStats;
+    }
+
+    public static GrindTimers grindTimers() {
+        return grindTimers;
     }
 
     public static TownLogger townLogger() {
