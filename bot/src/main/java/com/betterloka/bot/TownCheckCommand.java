@@ -187,8 +187,14 @@ public final class TownCheckCommand {
 
         if (report.sampled()) {
             description.append("_Checked the owner, every sub-owner, and an even spread of ")
-                    .append(report.members().size()).append(" of the ").append(report.rosterSize())
+                    .append(report.selected()).append(" of the ").append(report.rosterSize())
                     .append(" members. Raise `maxMembersChecked` in the config for more._\n");
+        }
+        if (report.unresolved() > 0) {
+            // Not a cap and not a limit to raise: Loka simply has no player record behind those
+            // identities any more, which is what a deleted or merged account looks like from here.
+            description.append("_").append(report.unresolved())
+                    .append(" member(s) have no player record on Loka any more._\n");
         }
         description.append('\n');
 

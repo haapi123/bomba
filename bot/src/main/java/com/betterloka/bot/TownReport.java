@@ -92,18 +92,31 @@ public final class TownReport {
     }
 
     /**
-     * @param members     the roster that was checked, owner first, then sub-owners, then the rest
-     * @param rosterSize  how many members the town has in total, checked or not
+     * @param members     the members that came back, owner first, then sub-owners, then the rest
+     * @param selected    how many were picked to look up, before any of them failed
+     * @param rosterSize  how many members the town has in total, picked or not
      */
-    public record Report(LokaTown town, List<Member> members, int rosterSize) {
+    public record Report(LokaTown town, List<Member> members, int selected, int rosterSize) {
 
-        /** How many of the roster were left out of the sample. */
+        /** How many of the roster the cap left out. */
         public int skipped() {
-            return Math.max(0, rosterSize - members.size());
+            return Math.max(0, rosterSize - selected);
         }
 
+        /** True when the cap actually cut the roster, rather than a lookup having failed. */
         public boolean sampled() {
             return skipped() > 0;
+        }
+
+        /**
+         * Members that were picked but could not be looked up.
+         *
+         * <p>Kept apart from {@link #skipped()}: an account Loka has no record of any more is not
+         * the same as one the cap excluded, and reporting it as one told people to raise a limit
+         * that was never reached.
+         */
+        public int unresolved() {
+            return Math.max(0, selected - members.size());
         }
 
         /** The newest activity anywhere in the town — the whole roster's clock. */
@@ -172,7 +185,7 @@ public final class TownReport {
                 .thenComparing(Member::lastSeen,
                         Comparator.nullsLast(Comparator.reverseOrder())));
 
-        return new Report(town, List.copyOf(members), town.memberIds().size());
+        return new Report(town, List.copyOf(members), ids.size(), town.memberIds().size());
     }
 
     /**

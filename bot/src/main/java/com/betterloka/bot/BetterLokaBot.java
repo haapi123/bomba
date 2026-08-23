@@ -168,7 +168,8 @@ public final class BetterLokaBot {
             LOG.info("Loka has no town called \"{}\"", townName);
             return;
         }
-        LOG.info("Checked {} of {} member(s)", report.members().size(), report.rosterSize());
+        LOG.info("Checked {} of {} member(s); {} had no player record",
+                report.selected(), report.rosterSize(), report.unresolved());
         LOG.info("{} - {}{}", report.town().name(),
                 report.town().foundedIsImport() ? "on record since " : "founded ",
                 report.town().founded());

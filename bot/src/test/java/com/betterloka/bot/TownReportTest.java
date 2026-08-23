@@ -115,6 +115,20 @@ class TownReportTest {
     }
 
     @Test
+    void aMemberWithNoPlayerRecordIsNotReportedAsOneTheCapSkipped() {
+        // Sixty-nine members, all sixty-nine picked, sixty-eight came back. Nothing was capped, so
+        // telling somebody to raise maxMembersChecked would send them after a limit never reached.
+        TownReport.Report report = new TownReport.Report(
+                LokaTown.deleted("68a6c30a0000000000000000", "Duskfall", "south"),
+                List.of(new TownReport.Member("a", null, true, false, null, null, null)),
+                69, 69);
+
+        assertFalse(report.sampled());
+        assertEquals(0, report.skipped());
+        assertEquals(68, report.unresolved());
+    }
+
+    @Test
     void lastSeenTakesWhicheverSignalIsNewer() {
         Instant older = Instant.parse("2026-01-01T00:00:00Z");
         Instant newer = Instant.parse("2026-08-01T00:00:00Z");
@@ -145,7 +159,7 @@ class TownReportTest {
                         new TownReport.Member("a", null, true, false, null, older, null),
                         new TownReport.Member("b", null, false, false, null, newer, null),
                         new TownReport.Member("c", null, false, false, null, null, null)),
-                3);
+                3, 3);
 
         assertEquals(newer, report.lastActive());
         // "a" and "c" have not been seen this month; "b" was seen within the window in these terms
