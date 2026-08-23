@@ -311,6 +311,8 @@ start it at all. The box stays the reliable way; auto-start only saves a click i
 
 ## Loka Map
 
+![Loka Map](docs/map-kalros.png)
+
 Loka's own map, drawn from Loka's own outlines, with all five continents: **Kalros, Ascalon, Garama,
 Rivina and Balak**.
 

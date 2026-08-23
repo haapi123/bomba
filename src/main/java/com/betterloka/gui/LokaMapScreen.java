@@ -23,7 +23,15 @@ import java.util.Locale;
  * on a map: mark it so it can be found in the world, or copy its coordinates.
  */
 public class LokaMapScreen extends Screen {
-    private static final int TAB_ROW_Y = 26;
+    /**
+     * Below the toast strip.
+     *
+     * <p>This screen's tab row runs the full width, so its last two tabs sit under the top right —
+     * where Minecraft draws toasts. At the usual 26 an advancement popping mid-look clips the tabs,
+     * which is exactly when somebody is reading the map. A toast is 32 tall, so the row starts under
+     * one.
+     */
+    private static final int TAB_ROW_Y = 36;
     private static final int TAB_ROW_HEIGHT = 16;
     private static final int MAP_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 6;
     private static final int MAP_MARGIN = 12;
