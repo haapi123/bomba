@@ -11,8 +11,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Handles {@code /sprawdz <town>}: answers with when the town was founded and how recently each of
@@ -34,10 +37,33 @@ public final class TownCheckCommand {
     /** Discord's own limit on an embed description, minus room for the header. */
     private static final int MAX_DESCRIPTION = 3800;
 
+    /**
+     * How long a report may take before the command gives up and says so.
+     *
+     * <p>A deferred interaction's token is only good for fifteen minutes. A report that runs past
+     * that cannot be answered at all: the reply is rejected and whoever typed the command is left
+     * with "thinking..." for ever. Twelve minutes leaves room to post the explanation instead —
+     * which is a worse answer than the report, and a far better one than silence.
+     */
+    private static final Duration REPLY_DEADLINE = Duration.ofMinutes(12);
+
     private final TownReport reports;
     private final SlashCommands api;
     private final ExecutorService workers = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "betterloka-command");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /**
+     * Where the lookups themselves run.
+     *
+     * <p>Separate from {@link #workers}, and growable: a report abandoned at the deadline keeps its
+     * thread until its outstanding requests drain, and on a fixed pool those stragglers would
+     * eventually starve every later command.
+     */
+    private final ExecutorService builders = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "betterloka-report");
         thread.setDaemon(true);
         return thread;
     });
@@ -75,17 +101,35 @@ public final class TownCheckCommand {
     private void answer(String applicationId, String interactionToken, String townName) {
         JsonObject payload = new JsonObject();
         try {
-            TownReport.Report report = reports.build(townName);
+            // Run on a second thread so the deadline can be enforced: build() blocks on hundreds of
+            // requests and cannot be interrupted halfway into a useful answer.
+            TownReport.Report report = CompletableFuture
+                    .supplyAsync(() -> buildQuietly(townName), builders)
+                    .get(REPLY_DEADLINE.toSeconds(), TimeUnit.SECONDS);
             payload.add("embeds", one(report == null ? notFound(townName) : embed(report)));
+        } catch (TimeoutException e) {
+            // The abandoned lookup finishes in the background and is thrown away; there is nothing
+            // useful to do with a half-built report, and the token is the thing running out.
+            LOG.warn("Gave up on /sprawdz {} after {} minutes", townName, REPLY_DEADLINE.toMinutes());
+            payload.addProperty("content", "**" + townName + "** has too many members to check in one"
+                    + " reply. Discord gives a command fifteen minutes to answer, and this one ran"
+                    + " out. Lower `maxMembersChecked` in the bot's config and try again.");
         } catch (Exception e) {
             LOG.warn("Could not build the report for {}", townName, e);
-            payload.addProperty("content",
-                    "Could not reach Loka just now. Try again in a moment.");
+            payload.addProperty("content", "Could not reach Loka just now. Try again in a moment.");
         }
         try {
             api.reply(applicationId, interactionToken, payload);
         } catch (Exception e) {
             LOG.warn("Could not answer /sprawdz {}: {}", townName, e.getMessage());
+        }
+    }
+
+    private TownReport.Report buildQuietly(String townName) {
+        try {
+            return reports.build(townName);
+        } catch (Exception e) {
+            throw new java.util.concurrent.CompletionException(e);
         }
     }
 
