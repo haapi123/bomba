@@ -69,6 +69,7 @@ public final class WaypointWorldRenderer {
                 : client.world.getRegistryKey().getValue().getPath();
 
         MatrixStack matrices = context.matrices();
+        boolean drewAny = false;
         if (DIAGNOSE && diagnosed++ < 3) {
             com.betterloka.BetterLoka.LOGGER.info(
                     "WAYPOINT-RENDER fired: {} waypoint(s), world={}, matrices={}, consumers={}",
@@ -79,6 +80,14 @@ public final class WaypointWorldRenderer {
                 continue;
             }
             draw(client, context, matrices, camera, eye, waypoint);
+            drewAny = true;
+        }
+
+        // Text goes into a buffer keyed by render layer, and the world renderer only empties the
+        // layers it knows it used. A see-through label submitted here would otherwise sit in that
+        // buffer until something else happened to flush it — which is why nothing appeared.
+        if (drewAny && context.consumers() instanceof net.minecraft.client.render.VertexConsumerProvider.Immediate immediate) {
+            immediate.draw();
         }
     }
 

@@ -75,9 +75,15 @@ public final class DevShots {
         step(5, () -> {
             var player = client().player;
             if (player != null) {
+                double dx = 26;
+                double dz = 10;
                 com.betterloka.BetterLokaClient.map().toggle(new com.betterloka.map.Waypoint(
                         "Ice Wastes 119", "lilboi",
-                        player.getX() + 26, player.getY(), player.getZ() + 10, 0x3AB3DA));
+                        player.getX() + dx, player.getY(), player.getZ() + dz, 0x3AB3DA));
+                // Look at it, so "the label did not render" cannot be confused with "it was behind
+                // the camera".
+                player.setYaw((float) (-Math.toDegrees(Math.atan2(dx, dz))));
+                player.setPitch(0);
             }
             client().setScreen(null);
         });
