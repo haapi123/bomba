@@ -26,6 +26,16 @@ public final class WaypointHud {
     /** Below the grind timers, which own the top right. */
     private static final int TOP_OFFSET = 26;
 
+    /**
+     * Only listed once there is more than one.
+     *
+     * <p>A single waypoint is already drawn over the place itself, with its name and range, so a
+     * corner line repeating it is clutter. Several at once is the case the list earns its space in:
+     * the marker for one behind you is pinned to an edge, and the list is what says how far each of
+     * them is without turning round.
+     */
+    private static final int LIST_FROM = 2;
+
     private final MapService map;
 
     public WaypointHud(MapService map) {
@@ -44,7 +54,7 @@ public final class WaypointHud {
         }
 
         List<Waypoint> waypoints = map.waypoints();
-        if (waypoints.isEmpty()) {
+        if (waypoints.size() < LIST_FROM) {
             return;
         }
 
