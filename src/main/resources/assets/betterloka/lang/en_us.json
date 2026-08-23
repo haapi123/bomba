@@ -183,6 +183,10 @@
   "betterloka.finder.alts": "Possible alts",
   "betterloka.finder.alts_count": "Possible alts (%s)",
   "betterloka.finder.previous_names": "Previously known as",
+  "betterloka.finder.alts_none": "None on Loka's record",
+  "betterloka.finder.previous_none": "None on record",
+  "betterloka.town_finder.founded": "Founded",
+  "betterloka.town_finder.on_record_since": "On record since",
   "betterloka.module.loka_grinder": "Loka Grinder",
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",
@@ -195,5 +199,13 @@
   "betterloka.grind.ready": "ready",
   "betterloka.grind.reset": "Reset",
   "betterloka.grind.shulker.auto": "Auto-start on kill: ",
-  "betterloka.grind.glowstone.hint": "Click the box to start; use - and + to set the length."
+  "betterloka.grind.glowstone.hint": "Click the box to start; use - and + to set the length.",
+  "betterloka.grind.keybind.hint": "Keybind: %s (change it in Options → Controls).",
+  "betterloka.grind.hud.toggle": "On-screen countdown: ",
+  "betterloka.grind.hud.shulker": "Shulker %s",
+  "betterloka.grind.hud.glowstone": "Glowstone %s",
+  "betterloka.grind.started": "%s timer started — %s",
+  "betterloka.grind.stopped": "%s timer cleared",
+  "key.betterloka.shulker_timer": "Start shulker timer",
+  "key.betterloka.glowstone_timer": "Start glowstone timer"
 }

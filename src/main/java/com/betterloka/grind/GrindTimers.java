@@ -10,20 +10,17 @@ public final class GrindTimers {
     /** A shulker takes seventeen minutes to come back. */
     public static final long SHULKER_MILLIS = 17 * 60 * 1000L;
 
+    /** Glowstone runs three hours. */
+    public static final long GLOWSTONE_MILLIS = 3 * 60 * 60 * 1000L;
+
     private final GrindTimer shulker = new GrindTimer(SHULKER_MILLIS);
-    private final GrindTimer glowstone = new GrindTimer(60_000L);
+    private final GrindTimer glowstone = new GrindTimer(GLOWSTONE_MILLIS);
 
     public GrindTimer shulker() {
         return shulker;
     }
 
-    /**
-     * The glowstone timer.
-     *
-     * <p>Its length is a setting rather than a constant: unlike the shulker's seventeen minutes,
-     * nobody has told this mod what Loka's glowstone cycle actually is, so guessing a number and
-     * presenting it as fact would be worse than letting it be set.
-     */
+    /** The glowstone timer: three hours by default, adjustable from the screen. */
     public GrindTimer glowstone() {
         return glowstone;
     }

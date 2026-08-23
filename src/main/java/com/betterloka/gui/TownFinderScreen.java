@@ -472,7 +472,7 @@ public class TownFinderScreen extends Screen {
             return renderTerritories(context, left, y, width, inner);
         }
 
-        int statsHeight = CARD_PADDING * 2 + ROW_HEIGHT * 5;
+        int statsHeight = CARD_PADDING * 2 + ROW_HEIGHT * 6;
         GuiTheme.panel(context, left, y, width, statsHeight);
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
@@ -492,6 +492,12 @@ public class TownFinderScreen extends Screen {
         GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, inner,
                 Text.translatable("betterloka.town_finder.vuln").getString(),
                 vulnText(town), GuiTheme.LIVE);
+        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 5, inner,
+                Text.translatable(town.foundedIsImport()
+                        ? "betterloka.town_finder.on_record_since"
+                        : "betterloka.town_finder.founded").getString(),
+                TimeFormat.dateTime(town.founded()),
+                town.foundedIsImport() ? GuiTheme.MUTED : GuiTheme.TEXT);
         y += statsHeight + CARD_GAP;
 
         y = renderPeople(context, left, y, width, inner);

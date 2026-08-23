@@ -10,6 +10,12 @@ import java.util.UUID;
 /** Everything the Player Finder shows about one player. */
 public record PlayerProfile(
         String name,
+        /**
+         * The name EldritchBot files the career under, which is whatever they were called at their
+         * last fight. Differs from {@link #name} exactly when they have renamed since — which makes
+         * it a former name, and the only one available for a player who has never duelled.
+         */
+        String careerName,
         /** Loka rank, e.g. {@code sentry}. Null when Loka has no record of the account. */
         String rank,
         UUID uuid,
@@ -45,6 +51,14 @@ public record PlayerProfile(
             return town.name();
         }
         return townName;
+    }
+
+    /** @return the career name when it is an older one, or {@code null} when it is just the name. */
+    public String formerName() {
+        if (careerName == null || careerName.isBlank() || careerName.equalsIgnoreCase(name)) {
+            return null;
+        }
+        return careerName;
     }
 
     public boolean hasFights() {

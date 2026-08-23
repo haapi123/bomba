@@ -10,11 +10,19 @@ public final class TimeFormat {
     private static final DateTimeFormatter DATE =
             DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.systemDefault());
 
+    /** Local time, because "at what hour" is only a useful answer in the reader's own clock. */
+    private static final DateTimeFormatter DATE_TIME =
+            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(ZoneId.systemDefault());
+
     private TimeFormat() {
     }
 
     public static String date(Instant instant) {
         return instant == null ? "—" : DATE.format(instant);
+    }
+
+    public static String dateTime(Instant instant) {
+        return instant == null ? "—" : DATE_TIME.format(instant);
     }
 
     /** Compact age of a timestamp, e.g. {@code 3d ago}. */

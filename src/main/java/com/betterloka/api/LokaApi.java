@@ -5,6 +5,7 @@ import com.betterloka.api.model.Json;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.api.model.ObjectIds;
 import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.api.model.Territory;
 import com.google.gson.JsonElement;
@@ -13,6 +14,7 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 
 import java.net.URLEncoder;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -168,6 +170,60 @@ public final class LokaApi {
             }
         }
         return accounts;
+    }
+
+    /**
+     * The player behind an identity ID.
+     *
+     * <p>An identity can own several accounts; the first is taken, which for a main account with
+     * alts is the main. Town rosters are keyed by identity, so this is how a member becomes a name.
+     *
+     * @return the player, or {@code null} if the identity is unknown
+     */
+    public LokaPlayer findPlayerByIdentity(String identityId) throws ApiException {
+        if (identityId == null || identityId.isEmpty()) {
+            return null;
+        }
+        for (LokaPlayer player : findAccountsByIdentity(identityId)) {
+            if (player.name() != null && !player.name().isBlank()) {
+                return player;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * When this player last put something on the market, from their live listings.
+     *
+     * <p>Loka publishes no last-login anywhere, so this is the closest thing to one that its API
+     * will answer: a listing exists because somebody stood at a market stall and made it, and its
+     * ObjectID says when. It is a lower bound — a player with nothing for sale gets {@code null},
+     * which is not the same as "has not played".
+     *
+     * <p>Only current listings are read. The completed-order history would be a better signal, but
+     * its search endpoint ignores {@code size} and {@code sort} and returns a player's whole career
+     * — a third of a megabyte for one person — which is not something to do per town member.
+     *
+     * @param identityId the player's identity ID
+     * @return the newest listing's creation time, or {@code null} if they have none
+     */
+    public Instant lastMarketListing(String identityId) throws ApiException {
+        if (identityId == null || identityId.isEmpty()) {
+            return null;
+        }
+        JsonObject json =
+                getObject(BASE_URL + "/market_sales/search/findByOwnerId?id=" + encode(identityId));
+        Instant newest = null;
+        for (JsonElement element : embeddedArray(json, "market_sales")) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            Instant listed = ObjectIds.timestamp(Json.string(element.getAsJsonObject(), "id"));
+            if (listed != null && (newest == null || listed.isAfter(newest))) {
+                newest = listed;
+            }
+        }
+        return newest;
     }
 
     /**

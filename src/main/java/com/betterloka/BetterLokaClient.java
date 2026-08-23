@@ -7,6 +7,8 @@ import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
+import com.betterloka.grind.GrindHud;
+import com.betterloka.grind.GrindTimer;
 import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
@@ -45,6 +47,8 @@ public class BetterLokaClient implements ClientModInitializer {
             KeyBinding.Category.create(Identifier.of(BetterLoka.MOD_ID, "main"));
 
     private static KeyBinding openMenuKey;
+    private static KeyBinding shulkerTimerKey;
+    private static KeyBinding glowstoneTimerKey;
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
@@ -81,6 +85,7 @@ public class BetterLokaClient implements ClientModInitializer {
         grindTimers = new GrindTimers();
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
         new ShulkerWatcher(grindTimers, config).register();
+        new GrindHud(grindTimers, config).register();
 
         // Loka sends its chat as system messages; signed player chat is captured too so the
         // Translator also works on servers that use it. The whole Text is inspected rather than just
@@ -95,6 +100,11 @@ public class BetterLokaClient implements ClientModInitializer {
 
         openMenuKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.betterloka.open_menu", GLFW.GLFW_KEY_L, KEY_CATEGORY));
+        // G and H are free in vanilla, and both are rebindable from Options -> Controls.
+        shulkerTimerKey = KeyBindingHelper.registerKeyBinding(
+                new KeyBinding("key.betterloka.shulker_timer", GLFW.GLFW_KEY_G, KEY_CATEGORY));
+        glowstoneTimerKey = KeyBindingHelper.registerKeyBinding(
+                new KeyBinding("key.betterloka.glowstone_timer", GLFW.GLFW_KEY_H, KEY_CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMenuKey.wasPressed()) {
@@ -102,9 +112,41 @@ public class BetterLokaClient implements ClientModInitializer {
                     client.setScreen(new BetterLokaMenuScreen(null));
                 }
             }
+            while (shulkerTimerKey.wasPressed()) {
+                toggleTimer(grindTimers.shulker(), "betterloka.grind.tab.shulker");
+            }
+            while (glowstoneTimerKey.wasPressed()) {
+                toggleTimer(grindTimers.glowstone(), "betterloka.grind.tab.glowstone");
+            }
         });
 
+        if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
+            DevShots.register();
+        }
+
         BetterLoka.LOGGER.info("BetterLoka {} ready — press the BetterLoka key to open the menu", BetterLoka.VERSION);
+    }
+
+    /**
+     * The keybind starts a timer, restarts one that is already counting, and stops one that has run
+     * out. Restarting matters more than stopping: the key gets pressed on a kill, and the second kill
+     * of the night should not be ignored because the first timer is still going.
+     */
+    private static void toggleTimer(GrindTimer timer, String nameKey) {
+        String action;
+        if (timer.running() || !timer.finished()) {
+            timer.start();
+            action = "betterloka.grind.started";
+        } else {
+            timer.stop();
+            action = "betterloka.grind.stopped";
+        }
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            // The action bar, not chat: this fires while grinding, and it should not build a log.
+            client.player.sendMessage(net.minecraft.text.Text.translatable(action,
+                    net.minecraft.text.Text.translatable(nameKey), timer.durationText()), true);
+        }
     }
 
     private static Path configDir() {
@@ -134,6 +176,14 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static GrindTimers grindTimers() {
         return grindTimers;
+    }
+
+    public static KeyBinding shulkerTimerKey() {
+        return shulkerTimerKey;
+    }
+
+    public static KeyBinding glowstoneTimerKey() {
+        return glowstoneTimerKey;
     }
 
     public static TownLogger townLogger() {

@@ -1,6 +1,7 @@
 package com.betterloka.bot;
 
 import com.betterloka.api.ApiException;
+import com.betterloka.api.EldritchApi;
 import com.betterloka.api.HttpTransport;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.model.Territory;
@@ -38,6 +39,17 @@ public final class BetterLokaBot {
         boolean once = List.of(args).contains("--once");
         boolean list = List.of(args).contains("--list");
         boolean test = List.of(args).contains("--test");
+        String check = valueAfter(args, "--check");
+
+        // Runs the /sprawdz report on the console. No Discord involved, which makes it the way to
+        // see what the command would answer without a bot application — and the way to check the
+        // report itself when something looks wrong.
+        if (check != null) {
+            try (HttpTransport transport = new HttpTransport()) {
+                printReport(new TownReport(new LokaApi(transport), new EldritchApi(transport)), check);
+            }
+            return;
+        }
 
         if (!Files.exists(CONFIG_FILE)) {
             new BotConfig().writeTemplate(CONFIG_FILE);
@@ -89,6 +101,8 @@ public final class BetterLokaBot {
                 postTestMessage(poster, config);
             }
 
+            DiscordGateway gateway = startCommands(config, api, transport);
+
             LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
                             + "{} territory record(s) already announced",
                     config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
@@ -112,11 +126,117 @@ public final class BetterLokaBot {
                     LOG.warn("Check failed", e);
                 }
                 if (once) {
+                    if (gateway != null) {
+                        gateway.stop();
+                    }
                     return;
                 }
                 TimeUnit.SECONDS.sleep(config.intervalSeconds());
             }
         }
+    }
+
+    private static String valueAfter(String[] args, String flag) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if (flag.equals(args[i])) {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    /** The console form of {@code /sprawdz}. */
+    private static void printReport(TownReport reports, String townName) throws Exception {
+        TownReport.Report report = reports.build(townName);
+        if (report == null) {
+            LOG.info("Loka has no town called \"{}\"", townName);
+            return;
+        }
+        LOG.info("{} - {}{}", report.town().name(),
+                report.town().foundedIsImport() ? "on record since " : "founded ",
+                report.town().founded());
+        LOG.info("Continent {}, level {}, {} members; town last seen active {}",
+                report.town().continentName(), (long) report.town().townLevel(),
+                report.town().memberCount(),
+                report.lastActive() == null ? "never" : TownCheckCommand.ago(report.lastActive()));
+        for (TownReport.Member member : report.members()) {
+            LOG.info("  {}{} - last seen {}{}",
+                    member.owner() ? "[owner] " : (member.subOwner() ? "[sub] " : ""),
+                    member.name(),
+                    member.lastSeen() == null ? "no record" : TownCheckCommand.ago(member.lastSeen()),
+                    member.lastSeenSource() == null ? "" : " (" + member.lastSeenSource() + ")");
+        }
+        if (report.skipped() > 0) {
+            LOG.info("  ... {} member(s) not checked", report.skipped());
+        }
+    }
+
+    /**
+     * Connects to the gateway and registers {@code /sprawdz}, if a bot token is configured.
+     *
+     * <p>Optional on purpose: the fallen-town watch is the bot's job and works over a webhook alone.
+     * Somebody who has not made a bot application gets a line saying what {@code /sprawdz} would
+     * need, not a bot that refuses to start.
+     *
+     * @return the connection, or {@code null} if commands are not being served
+     */
+    private static DiscordGateway startCommands(BotConfig config, LokaApi api, HttpTransport transport) {
+        if (!config.servesCommands()) {
+            if (config.enableCommands) {
+                LOG.info("/sprawdz is off: it needs botToken (a webhook can only post, not listen). "
+                        + "The fallen-town watch does not need one.");
+            }
+            return null;
+        }
+
+        SlashCommands commands = new SlashCommands(config.botToken);
+        TownCheckCommand check =
+                new TownCheckCommand(new TownReport(api, new EldritchApi(transport)), commands);
+
+        // The application ID arrives with READY, so registration waits for the connection rather
+        // than guessing it: it is not the same number as the bot token's prefix on every account.
+        DiscordGateway gateway = new DiscordGateway(config.botToken, interaction -> {
+            String applicationId = interactionApplicationId(interaction);
+            if (applicationId != null) {
+                check.handle(interaction, applicationId);
+            }
+        });
+        gateway.start();
+
+        Thread registrar = new Thread(() -> registerWhenReady(gateway, commands, config),
+                "betterloka-register");
+        registrar.setDaemon(true);
+        registrar.start();
+        return gateway;
+    }
+
+    /** Every interaction carries the application it was sent to, which is who has to answer it. */
+    private static String interactionApplicationId(JsonObject interaction) {
+        return interaction.has("application_id") && !interaction.get("application_id").isJsonNull()
+                ? interaction.get("application_id").getAsString()
+                : null;
+    }
+
+    private static void registerWhenReady(DiscordGateway gateway, SlashCommands commands,
+                                          BotConfig config) {
+        for (int attempt = 0; attempt < 60; attempt++) {
+            String applicationId = gateway.applicationId();
+            if (applicationId != null) {
+                try {
+                    commands.register(applicationId, config.guildId);
+                } catch (Exception e) {
+                    LOG.error("Could not register /sprawdz: {}", describe(e));
+                }
+                return;
+            }
+            try {
+                TimeUnit.SECONDS.sleep(1);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        LOG.warn("The gateway never reported ready, so /sprawdz was not registered.");
     }
 
     /**

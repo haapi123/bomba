@@ -40,6 +40,23 @@ public final class BotConfig {
     public String channelId = "";
 
     /**
+     * The server to register {@code /sprawdz} in.
+     *
+     * <p>Optional. With it the command appears in that server straight away; without it the command
+     * is registered globally, which works everywhere the bot is but can take Discord up to an hour
+     * to publish. Right-click the server with Developer Mode on to copy the id.
+     */
+    public String guildId = "";
+
+    /**
+     * Whether to connect to Discord's gateway and serve {@code /sprawdz}.
+     *
+     * <p>Needs {@link #botToken}: a webhook can only speak, and a slash command has to be listened
+     * for. The fallen-town watch runs either way.
+     */
+    public boolean enableCommands = true;
+
+    /**
      * The role to ping. Just the numeric id — right-click the role with Developer Mode on.
      * Leave empty to post without pinging anyone.
      */
@@ -107,6 +124,7 @@ public final class BotConfig {
         webhookUrl = envOr("BETTERLOKA_WEBHOOK_URL", webhookUrl);
         botToken = envOr("BETTERLOKA_BOT_TOKEN", botToken);
         channelId = envOr("BETTERLOKA_CHANNEL_ID", channelId);
+        guildId = envOr("BETTERLOKA_GUILD_ID", guildId);
         roleId = envOr("BETTERLOKA_ROLE_ID", roleId);
         stateFile = envOr("BETTERLOKA_STATE_FILE", stateFile);
 
@@ -115,6 +133,7 @@ public final class BotConfig {
         announceBacklogOnFirstRun =
                 envBool("BETTERLOKA_ANNOUNCE_BACKLOG", announceBacklogOnFirstRun);
         testOnStart = envBool("BETTERLOKA_TEST_ON_START", testOnStart);
+        enableCommands = envBool("BETTERLOKA_ENABLE_COMMANDS", enableCommands);
     }
 
     private static String envOr(String key, String fallback) {
@@ -158,6 +177,11 @@ public final class BotConfig {
 
     public boolean usesBotToken() {
         return !botToken.isBlank() && !channelId.isBlank();
+    }
+
+    /** Slash commands need a token; the channel is not involved, since a reply goes where asked. */
+    public boolean servesCommands() {
+        return enableCommands && !botToken.isBlank();
     }
 
     /** @return what is wrong with this configuration, or {@code null} if it can run. */

@@ -42,13 +42,14 @@ public final class BetterLokaConfig {
     /** Start the shulker timer by itself when a shulker the player hit dies. */
     private boolean shulkerAutoStart = true;
 
-    /**
-     * How long the glowstone timer counts, in minutes.
-     *
-     * <p>A setting rather than a constant, because nobody has said what Loka's glowstone cycle is —
-     * a made-up number shown as fact would be worse than one the player sets.
-     */
-    private int glowstoneMinutes = 5;
+    /** How long the glowstone timer counts, in minutes. Three hours, adjustable from the screen. */
+    private int glowstoneMinutes = 180;
+
+    /** Draw the shulker countdown in the corner of the screen while it runs. */
+    private boolean shulkerHudEnabled = true;
+
+    /** Draw the glowstone countdown in the corner of the screen while it runs. */
+    private boolean glowstoneHudEnabled = true;
 
     private transient Path file;
 
@@ -153,11 +154,29 @@ public final class BetterLokaConfig {
 
     /** Clamped to something a person would actually set, so a bad edit cannot make it useless. */
     public int glowstoneMinutes() {
-        return Math.max(1, Math.min(120, glowstoneMinutes));
+        return Math.max(1, Math.min(720, glowstoneMinutes));
     }
 
     public void setGlowstoneMinutes(int minutes) {
-        this.glowstoneMinutes = Math.max(1, Math.min(120, minutes));
+        this.glowstoneMinutes = Math.max(1, Math.min(720, minutes));
+        save();
+    }
+
+    public boolean shulkerHudEnabled() {
+        return shulkerHudEnabled;
+    }
+
+    public void setShulkerHudEnabled(boolean shulkerHudEnabled) {
+        this.shulkerHudEnabled = shulkerHudEnabled;
+        save();
+    }
+
+    public boolean glowstoneHudEnabled() {
+        return glowstoneHudEnabled;
+    }
+
+    public void setGlowstoneHudEnabled(boolean glowstoneHudEnabled) {
+        this.glowstoneHudEnabled = glowstoneHudEnabled;
         save();
     }
 }

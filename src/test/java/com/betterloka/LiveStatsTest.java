@@ -35,6 +35,9 @@ class LiveStatsTest {
     /** A long-standing Loka fighter with a deep record, so the assertions have something to bite on. */
     private static final String PLAYER = "Rezorie";
 
+    /** Renamed recently enough that EldritchBot still has them under the old name. */
+    private static final String RENAMED_PLAYER = "xPabloFights_YT";
+
     @Test
     void readsACareerFromEldritchBot() throws Exception {
         try (HttpTransport transport = new HttpTransport()) {
@@ -351,7 +354,8 @@ class LiveStatsTest {
             EldritchApi api = new EldritchApi(transport);
             var stats = api.fetchStats(PLAYER);
 
-            var profile = new PlayerProfile(stats.name(), null, null, null, null, stats.town(), stats,
+            var profile = new PlayerProfile(stats.name(), stats.name(), null, null, null, null,
+                    stats.town(), stats,
                     null, false, java.util.List.of(), PlayerProfile.FightsState.READY);
             var traits = com.betterloka.stats.PlayerTrait.of(profile, java.util.List.of(),
                     java.time.LocalDate.now());
@@ -438,6 +442,45 @@ class LiveStatsTest {
                 assertNotNull(fight.world(), "a battle must say which world it is on");
                 // Not asserted non-empty: outside Conquest hours Loka legitimately has none on.
             }
+        }
+    }
+
+    /**
+     * A player who has renamed since their last fight.
+     *
+     * <p>EldritchBot keys players on the name they last fought under and redirects away from a new
+     * one, which made somebody standing on the server right now come back as "no such player". Loka
+     * knows the new name, so the UUID it holds is what finds them.
+     */
+    @Test
+    void findsAPlayerWhoHasRenamedSinceTheirLastFight() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            LokaApi loka = new LokaApi(transport);
+            EldritchApi eldritch = new EldritchApi(transport);
+
+            // Loka knows this name; EldritchBot does not, because the last fight predates the rename.
+            var player = loka.findPlayerByName(RENAMED_PLAYER);
+            assertNotNull(player, RENAMED_PLAYER + " should still be a Loka account");
+            assertNotNull(player.uuid());
+
+            assertThrows(ApiException.class, () -> eldritch.fetchStats(RENAMED_PLAYER),
+                    "if EldritchBot starts answering to the new name this test has outlived its point");
+
+            String undashed = player.uuid().toString().replace("-", "");
+            var stats = eldritch.fetchStats(undashed);
+            assertNotNull(stats);
+            assertTrue(stats.kills() > 0 || stats.deaths() > 0,
+                    "the UUID lookup has to come back with a real career");
+
+            // And the service itself must now get there without the caller knowing any of that.
+            PlayerStatsService service =
+                    new PlayerStatsService(loka, eldritch, new TownCache(loka));
+            PlayerProfile profile = service.lookup(RENAMED_PLAYER, first -> {
+            }).get();
+            assertNotNull(profile);
+            assertTrue(profile.stats().kills() > 0 || profile.stats().deaths() > 0);
+            System.out.printf("renamed: %s -> career under %s, %d kills%n",
+                    RENAMED_PLAYER, stats.name(), stats.kills());
         }
     }
 

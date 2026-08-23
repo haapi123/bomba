@@ -225,10 +225,13 @@ public class PlayerFinderScreen extends Screen {
             profile = headline;
             // Names change between seasons, so the historical index is searched by UUID once Loka's
             // record of the account has supplied one.
+            // The career name is a former name whenever Loka reports a newer one, and it is the only
+            // source for a player who has never duelled — the ladders index nobody else.
+            previousNames = merge(headline.formerName(), previousNames);
             arena.previousNames(headline.name(), headline.uuid())
                     .whenComplete((names, throwable) -> applyOnClientThread(generation, () -> {
                         if (throwable == null && names != null) {
-                            previousNames = names;
+                            previousNames = merge(headline.formerName(), names);
                         }
                     }));
             arena.best(headline.name(), headline.uuid())
@@ -422,21 +425,21 @@ public class PlayerFinderScreen extends Screen {
      * duelled has none to show, and the header says where they came from.
      */
     private int renderIdentity(DrawContext context, int left, int y, int width, int inner) {
-        if (alts.isEmpty() && previousNames.isEmpty()) {
-            if (!identityLoading) {
-                return y;
-            }
-            return card(context, left, y, width, 1, (x, rowY) ->
-                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
-                            label("betterloka.finder.alts"), label("betterloka.finder.loading"),
-                            GuiTheme.MUTED));
-        }
+        // Both sections are always drawn, empty or not. Most players have no alts and no rename on
+        // record, and a section that vanishes in that case looks exactly like a section that is
+        // broken — which is how this read the first time round.
+        context.drawTextWithShadow(this.textRenderer,
+                alts.isEmpty() ? Text.translatable("betterloka.finder.alts")
+                        : Text.translatable("betterloka.finder.alts_count", alts.size()),
+                left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
 
-        if (!alts.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.finder.alts_count", alts.size()), left, y + 2, GuiTheme.MUTED);
-            y += ROW_HEIGHT + 3;
-
+        if (alts.isEmpty()) {
+            y = card(context, left, y, width, 1, (x, rowY) ->
+                    context.drawTextWithShadow(this.textRenderer,
+                            label(identityLoading ? "betterloka.finder.loading" : "betterloka.finder.alts_none"),
+                            x, rowY, GuiTheme.MUTED));
+        } else {
             int height = CARD_PADDING * 2 + ROW_HEIGHT * alts.size();
             GuiTheme.panel(context, left, y, width, height);
             int textX = left + CARD_PADDING;
@@ -450,24 +453,42 @@ public class PlayerFinderScreen extends Screen {
             y += height + CARD_GAP;
         }
 
-        if (!previousNames.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.finder.previous_names"), left, y + 2, GuiTheme.MUTED);
-            y += ROW_HEIGHT + 3;
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.previous_names"), left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
 
-            int rows = Math.min(previousNames.size(), MAX_PREVIOUS_NAMES);
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
-            GuiTheme.panel(context, left, y, width, height);
-            int textX = left + CARD_PADDING;
-            int textY = y + CARD_PADDING;
-            for (String name : previousNames.subList(0, rows)) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(name, inner), textX, textY, GuiTheme.TEXT);
-                textY += ROW_HEIGHT;
-            }
-            y += height + CARD_GAP;
+        if (previousNames.isEmpty()) {
+            return card(context, left, y, width, 1, (x, rowY) ->
+                    context.drawTextWithShadow(this.textRenderer,
+                            label("betterloka.finder.previous_none"), x, rowY, GuiTheme.MUTED));
         }
-        return y;
+
+        int rows = Math.min(previousNames.size(), MAX_PREVIOUS_NAMES);
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+        GuiTheme.panel(context, left, y, width, height);
+        int textX = left + CARD_PADDING;
+        int textY = y + CARD_PADDING;
+        for (String name : previousNames.subList(0, rows)) {
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(name, inner), textX, textY, GuiTheme.TEXT);
+            textY += ROW_HEIGHT;
+        }
+        return y + height + CARD_GAP;
+    }
+
+    /** Puts the career name at the head of the ladder's older names, without repeating it. */
+    private static List<String> merge(String first, List<String> rest) {
+        if (first == null) {
+            return rest;
+        }
+        List<String> names = new java.util.ArrayList<>();
+        names.add(first);
+        for (String name : rest) {
+            if (!name.equalsIgnoreCase(first)) {
+                names.add(name);
+            }
+        }
+        return List.copyOf(names);
     }
 
     /**

@@ -62,6 +62,7 @@ java -jar betterloka-bot-<version>.jar
 Setting `"testOnStart": true` in the config does the same thing at startup and then carries on
 watching, which is easier on a hosting panel where the startup command is awkward to edit.
 
+`--check <town>` prints the `/sprawdz` report on the console and exits, with no Discord involved.
 `--test` posts one clearly-labelled test message, so you can confirm the webhook works and the role
 actually gets notified without waiting for a town to fall. `--list` prints the towns currently
 standing as fallen and exits. `--once` runs a single check.
@@ -75,13 +76,57 @@ If you would rather it posted under its own bot account, set `botToken` and `cha
 `webhookUrl`. The application needs to be in the server with permission to post in that channel.
 Everything else is the same.
 
+## `/sprawdz <town>`
+
+Answers with **when a town was founded and how recently each of its members has been seen**, so you
+can guess which towns are close to being deleted.
+
+This one needs a **bot token**. A webhook can only speak; a slash command has to be listened for, and
+that means a connection to Discord's gateway. With `botToken` set the bot opens one on startup and
+registers the command itself; without it, the fallen-town watch runs exactly as before and the log
+says so.
+
+1. https://discord.com/developers/applications → **New Application** → **Bot** → **Reset Token** →
+   copy it into `botToken`. No privileged intents are needed — the bot asks for none.
+2. **OAuth2 → URL Generator** → scopes `bot` and `applications.commands` → open the URL and add it to
+   your server.
+3. Optionally set `guildId` to that server's id (Developer Mode → right-click the server → Copy
+   Server ID). With it the command appears immediately; without it, it is registered globally and
+   Discord can take up to an hour to publish it.
+
+Set `"enableCommands": false` to keep the watch and skip the gateway connection entirely.
+
+### What "last seen" means, and what it does not
+
+**Loka publishes no login times.** There is no `lastSeen` field on a player record, and no
+online-players endpoint. So the report uses the newest of the two things that only happen while
+somebody is actually playing:
+
+- their most recent **Conquest fight**, from EldritchBot;
+- the newest **market listing** they have up, whose ObjectID says when it was posted.
+
+That is a **lower bound**, not a login time, and the reply says so under every report. Somebody who
+logs in daily but neither fights nor trades shows as "no record" — which means "nothing published",
+not "has not played".
+
+The roster is capped at 40 members per report: each member is three requests, one of them a 30 KB
+page, and the reply says how many it left out.
+
+### Trying it without Discord
+
+The same report runs on the console, which needs no bot application and no config:
+
+```bash
+java -jar betterloka-bot-<version>.jar --check "Hilo"
+```
+
 ### Environment variables
 
 Every setting can be given as an environment variable instead, which is the better way to hand a
 host a token: `BETTERLOKA_WEBHOOK_URL`, `BETTERLOKA_BOT_TOKEN`, `BETTERLOKA_CHANNEL_ID`,
-`BETTERLOKA_ROLE_ID`, `BETTERLOKA_CHECK_SECONDS`, `BETTERLOKA_FULL_SWEEP_MINUTES`,
-`BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_TEST_ON_START`, `BETTERLOKA_STATE_FILE`. They win over
-the file.
+`BETTERLOKA_ROLE_ID`, `BETTERLOKA_GUILD_ID`, `BETTERLOKA_CHECK_SECONDS`,
+`BETTERLOKA_FULL_SWEEP_MINUTES`, `BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_TEST_ON_START`,
+`BETTERLOKA_ENABLE_COMMANDS`, `BETTERLOKA_STATE_FILE`. They win over the file.
 
 ### On a hosting panel (Pterodactyl and friends)
 

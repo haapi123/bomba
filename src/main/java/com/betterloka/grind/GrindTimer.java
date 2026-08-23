@@ -61,8 +61,13 @@ public final class GrindTimer {
         return format(durationMillis);
     }
 
+    /** {@code 2:59:41} past an hour, {@code 16:43} below it — three hours as 179:41 reads as noise. */
     private static String format(long millis) {
         long seconds = (millis + 999) / 1000;
+        long hours = seconds / 3600;
+        if (hours > 0) {
+            return String.format(Locale.ROOT, "%d:%02d:%02d", hours, (seconds % 3600) / 60, seconds % 60);
+        }
         return String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);
     }
 

@@ -120,10 +120,24 @@ At the bottom of the profile: the other accounts this person plays on, and names
 The alts are Loka's own grouping — accounts sharing an `identityId` are the same person, which is the
 fact `/find` reports — so the mod reads it rather than sending a command as you.
 
-Old names come from past seasons' ladder tables, which record whatever a player was called at the
-time. Mojang stopped publishing name history in 2022 and Loka keeps only the current name, so that is
-the only source left: **it knows the old names of players who have been on a ranked ladder, and
-nobody else.** It costs nothing, since those tables are already downloaded and cached.
+Old names come from two places. **EldritchBot files a career under whatever the player was called at
+their last fight**, so when Loka reports a newer name, the one on the career page is a former one —
+which is the case that matters, because it is the same mismatch that used to make a renamed player
+look like no player at all (below). Past seasons' ladder tables fill in the rest: they record
+whatever a player was called at the time, and cost nothing since they are already cached.
+
+Mojang stopped publishing name history in 2022 and Loka keeps only the current name, so those two are
+the only sources left. Both sections are **always shown**, saying "None on record" when there is
+nothing — most players have neither an alt nor a rename on file, and a panel that vanishes in that
+case is indistinguishable from one that is broken.
+
+### A player who has renamed
+
+EldritchBot answers by name, so somebody who renamed yesterday 302s away from their new one and comes
+back as "no such player" — even while they are standing on the server. Loka tracks renames, so when
+the name misses, the mod looks the career up by **UUID** instead, which EldritchBot answers to
+whatever they are called today. The card then shows Loka's current name, with the career's older one
+listed under "Previously known as".
 
 ### K/D above nameplates
 
@@ -216,6 +230,12 @@ vulnerability hour and slogan. Click any of them to open it.
 
 A town, whether searched for or clicked:
 
+- **Founded** — the date and time the town was made. Loka publishes no founding date, but every
+  town's ID is a MongoDB ObjectID, which begins with the second the record was created. Sixteen of
+  the eighty-odd live towns carry IDs stamped inside the same five seconds in May 2021 — Loka's
+  oldest towns, given new records when the database they live in was built — so those read **"On
+  record since"** rather than "Founded". Presenting an import as a founding would be inventing a
+  fact.
 - **Level, strength, members, recruiting**
 - **Vulnerable from** — the eight hours it is attackable for. Loka publishes the opening hour; across
   the live roster those run 09:00 to 20:00 and pile up at 09:00 and 19:00, the European and American
@@ -246,10 +266,20 @@ use at all.
 
 - **Shulker Timer** — 17 minutes, started by the box in the corner of the card. With **auto-start**
   on it also starts by itself when a shulker you hit dies.
-- **Glowstone** — the same timer with a length you set, using the `-` and `+` buttons.
+- **Glowstone** — 3 hours, adjustable in five-minute steps with the `-` and `+` buttons.
 
-Glowstone's length is a setting rather than a number baked in: nobody has said what Loka's glowstone
-cycle actually is, and a made-up figure shown as fact would be worse than one you set once.
+Both have a **keybind** (`G` and `H` by default, rebindable in Options → Controls) that starts the
+timer without opening anything, which is the point of it while you are grinding. Pressing it again
+restarts the countdown — the second kill of the night should not be ignored because the first timer
+is still running — and pressing it on a timer that has already run out clears it.
+
+### On-screen countdown
+
+![Countdown](docs/grinder-hud.png)
+
+A running timer counts down in the **top right of the screen**: shulkers in purple, glowstone in
+gold. It draws nothing until a timer is started, disappears when the timer is cleared, and each one
+can be switched off from its own tab in the Loka Grinder screen.
 
 Auto-start is deliberately narrow. The client is never told who landed a killing blow, so it works
 from what it can see — which shulkers you swung at, and which of those then died. A shulker somebody
@@ -284,7 +314,31 @@ muted.
 java -jar bot/build/libs/betterloka-bot-<version>.jar
 ```
 
-See [bot/README.md](bot/README.md) for the webhook setup.
+### `/sprawdz <town>`
+
+The bot also answers a slash command: **when a town was founded, and how recently each of its members
+has been seen doing anything.** It exists to guess which towns are close to being deleted.
+
+It needs a **bot token**, not a webhook — a webhook can only speak, and a slash command has to be
+listened for. With one set, the bot opens a gateway connection (about 200 lines of `java.net.http`,
+no Discord library) and registers the command itself. Without one, the fallen-town watch runs exactly
+as before and the log says what `/sprawdz` would need.
+
+**"Last seen" is not a login time, and the reply says so every time.** Loka publishes no last-login
+field anywhere — there is no `lastSeen` on a player record and no online-players endpoint — so the
+report uses the newest of two things that only happen while somebody is actually playing: their most
+recent Conquest fight, per EldritchBot, and the newest item they have listed on the market, whose
+ObjectID says when it was posted. It is a **lower bound**: a player who logs in daily but neither
+fights nor trades leaves no trace in anything Loka publishes, and shows as "no record".
+
+The same report runs on the console without any Discord setup at all, which is the way to see what it
+answers:
+
+```bash
+java -jar bot/build/libs/betterloka-bot-<version>.jar --check "Hilo"
+```
+
+See [bot/README.md](bot/README.md) for the webhook and bot-token setup.
 
 ## Fight Manager
 
@@ -437,6 +491,19 @@ Some of those live checks are load-bearing assumptions rather than parsing:
 The offline suite covers the log's persistence too. Its baseline, its already-reported towns and its
 alliance history are all written as records, and a serialiser that could not read them back would
 look exactly like a logger that forgets everything on restart.
+
+### Screenshots
+
+The pictures in this README are taken by a real client, not mocked up. `BETTERLOKA_SHOTS=1` turns on
+a driver that creates a flat world, walks the screens and saves each shot to `run/screenshots`:
+
+```bash
+BETTERLOKA_SHOTS=1 xvfb-run -a ./gradlew runClient
+```
+
+It is how the on-screen countdown is checked at all — a HUD element only renders in a loaded world,
+so nothing about it can be verified from a title screen. Without the variable the driver is never
+constructed.
 
 ## License
 

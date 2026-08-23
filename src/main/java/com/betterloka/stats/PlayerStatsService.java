@@ -168,8 +168,25 @@ public final class PlayerStatsService {
             }
         }, eldritch.bulkExecutor());
 
-        EldritchStats stats = eldritch.fetchStats(name);
-        LokaPlayer lokaPlayer = lokaLookup.join();
+        // EldritchBot is keyed on whatever a player was called when they last fought, so a rename
+        // makes it 302 away from the new name — which is how somebody who is standing on the server
+        // right now came back as "no such player". Loka knows the new name, so when the name misses,
+        // its UUID is used instead: EldritchBot answers to that whatever they are called today.
+        EldritchStats stats;
+        LokaPlayer lokaPlayer;
+        try {
+            stats = eldritch.fetchStats(name);
+            lokaPlayer = lokaLookup.join();
+        } catch (ApiException byName) {
+            if (!byName.notFound()) {
+                throw byName;
+            }
+            lokaPlayer = lokaLookup.join();
+            if (lokaPlayer == null || lokaPlayer.uuid() == null) {
+                throw byName;
+            }
+            stats = eldritch.fetchStats(undashed(lokaPlayer.uuid()));
+        }
 
         UUID uuid = lokaPlayer != null ? lokaPlayer.uuid() : null;
         Instant firstSeen = lokaPlayer != null ? lokaPlayer.firstSeen() : null;
@@ -190,9 +207,16 @@ public final class PlayerStatsService {
             fightingFor = stats.town();
         }
 
+        // Loka's name wins over EldritchBot's: Loka tracks renames, EldritchBot files a career under
+        // whatever the player was called at their last fight. Showing the stale one as the headline
+        // would answer a search for xPabloFights_YT with somebody else's name.
+        String current = lokaPlayer != null && lokaPlayer.name() != null && !lokaPlayer.name().isBlank()
+                ? lokaPlayer.name()
+                : stats.name();
+
         // Town details and the live-battle check are deliberately absent here: they are several more
         // requests for decoration, and the headline should not wait on them.
-        return new PlayerProfile(stats.name(), rank, uuid, firstSeen, null, stats.town(), stats,
+        return new PlayerProfile(current, stats.name(), rank, uuid, firstSeen, null, stats.town(), stats,
                 fightingFor, false, List.copyOf(pending),
                 pending.isEmpty() ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.LOADING);
     }
@@ -258,10 +282,16 @@ public final class PlayerStatsService {
 
         saveFightCache();
 
-        return new PlayerProfile(profile.name(), profile.rank(), profile.uuid(), profile.firstSeen(),
+        return new PlayerProfile(profile.name(), profile.careerName(), profile.rank(), profile.uuid(),
+                profile.firstSeen(),
                 townLookup.join(), profile.townName(), profile.stats(), fightingFor, fighting.join(),
                 List.copyOf(resolved),
                 anyDetail ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.UNAVAILABLE);
+    }
+
+    /** EldritchBot stores UUIDs without dashes, and 302s away from the dashed form. */
+    private static String undashed(UUID uuid) {
+        return uuid.toString().replace("-", "");
     }
 
     /**

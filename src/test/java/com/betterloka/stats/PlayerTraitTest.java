@@ -135,7 +135,7 @@ class PlayerTraitTest {
     }
 
     private static PlayerProfile profile(EldritchStats stats) {
-        return new PlayerProfile("someone", null, null, null, null, null, stats, null, false,
+        return new PlayerProfile("someone", "someone", null, null, null, null, null, stats, null, false,
                 List.of(), PlayerProfile.FightsState.READY);
     }
 
