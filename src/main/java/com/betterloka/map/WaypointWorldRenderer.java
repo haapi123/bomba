@@ -38,6 +38,10 @@ public final class WaypointWorldRenderer {
     /** Past this it stops growing, or a marker across the map would fill the screen. */
     private static final double MAX_SCALE_DISTANCE = 600;
 
+    /** Turned on by the screenshot driver to work out why a marker is not appearing. */
+    private static final boolean DIAGNOSE = "1".equals(System.getenv("BETTERLOKA_SHOTS"));
+    private int diagnosed;
+
     private final MapService map;
 
     public WaypointWorldRenderer(MapService map) {
@@ -65,6 +69,11 @@ public final class WaypointWorldRenderer {
                 : client.world.getRegistryKey().getValue().getPath();
 
         MatrixStack matrices = context.matrices();
+        if (DIAGNOSE && diagnosed++ < 3) {
+            com.betterloka.BetterLoka.LOGGER.info(
+                    "WAYPOINT-RENDER fired: {} waypoint(s), world={}, matrices={}, consumers={}",
+                    waypoints.size(), here, matrices, context.consumers());
+        }
         for (Waypoint waypoint : waypoints) {
             if (!onThisContinent(here, waypoint)) {
                 continue;
@@ -127,6 +136,14 @@ public final class WaypointWorldRenderer {
                 context.consumers(), TextRenderer.TextLayerType.SEE_THROUGH, backdrop, 0xF000F0);
 
         matrices.pop();
+
+        if (DIAGNOSE && diagnosed < 6) {
+            diagnosed++;
+            com.betterloka.BetterLoka.LOGGER.info(
+                    "WAYPOINT-DRAW {} at {},{},{} eye {},{},{} distance {} scale {}",
+                    waypoint.label(), waypoint.x(), waypoint.y(), waypoint.z(),
+                    eye.x, eye.y, eye.z, distance, scale);
+        }
     }
 
     /** Metres up close, kilometres once that stops being a useful number. */
