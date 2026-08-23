@@ -219,6 +219,8 @@ public final class LokaTown {
             case "north" -> "Kalros";
             case "west" -> "Ascalon";
             case "south" -> "Garama";
+            case "lilboi" -> "Rivina";
+            case "bigboi" -> "Balak";
             default -> world;
         };
     }

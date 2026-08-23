@@ -251,11 +251,18 @@ public final class LokaApi {
     }
 
     /**
-     * The worlds Conquest is played on. The API also carries {@code lilboi}, {@code bigboi} and
-     * {@code ctw} — event and minigame maps whose "territories" are not town claims — so the sweep
-     * names the three continents rather than taking whatever comes back.
+     * The worlds Conquest is played on.
+     *
+     * <p>Five, not three. {@code lilboi} and {@code bigboi} were left out here on the reading that
+     * they were event maps — they are Loka's own names for Rivina and Balak, the two continents its
+     * public map serves alongside the other three, and between them they hold 31 claimed
+     * territories. Leaving them out meant a town could fall holding ground on either and nothing
+     * here would notice.
+     *
+     * <p>{@code ctw} really is a minigame: one territory, never claimed. It stays out.
      */
-    public static final List<String> CONQUEST_WORLDS = List.of("north", "west", "south");
+    public static final List<String> CONQUEST_WORLDS =
+            List.of("north", "west", "south", "lilboi", "bigboi");
 
     /** Every territory on one continent, in a single request. */
     public List<Territory> fetchTerritories(String world) throws ApiException {

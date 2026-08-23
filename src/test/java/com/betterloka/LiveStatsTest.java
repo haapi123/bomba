@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -264,9 +265,13 @@ class LiveStatsTest {
             java.util.List<com.betterloka.api.model.Territory> all = new java.util.ArrayList<>();
             for (String world : LokaApi.CONQUEST_WORLDS) {
                 var slice = api.fetchTerritories(world);
-                assertTrue(slice.size() > 50, world + " should have a hundred-odd territories, got " + slice.size());
+                // Kalros, Ascalon and Garama run to 130-210 apiece; Rivina and Balak are small
+                // continents of 19 each, which is why they once read as event maps and got left out.
+                assertTrue(slice.size() >= 15,
+                        world + " should have territories, got " + slice.size());
                 all.addAll(slice);
             }
+            assertTrue(all.size() > 450, "expected every continent, got " + all.size());
 
             var owned = all.stream().filter(com.betterloka.api.model.Territory::isOwned).toList();
             assertTrue(!owned.isEmpty(), "towns hold territory");
@@ -499,6 +504,33 @@ class LiveStatsTest {
 
             System.out.println("pl->en: " + toEnglish);
             System.out.println("en->pl: " + toPolish);
+        }
+    }
+
+    @Test
+    void readsEveryContinentsTerritoryOutlinesOffLokasOwnMap() throws Exception {
+        try (com.betterloka.api.HttpTransport transport = new com.betterloka.api.HttpTransport()) {
+            com.betterloka.map.DynmapApi map = new com.betterloka.map.DynmapApi(transport);
+            int total = 0;
+            for (com.betterloka.map.Continent continent : com.betterloka.map.Continent.values()) {
+                var territories = map.fetchTerritories(continent);
+                assertFalse(territories.isEmpty(),
+                        continent.displayName() + " should have territories on Loka's map");
+                total += territories.size();
+
+                var first = territories.get(0);
+                assertTrue(first.xs().length >= 3, "a territory is a polygon, not a point");
+                assertEquals(first.xs().length, first.zs().length);
+                assertTrue(first.contains(first.centerX(), first.centerZ())
+                                || territories.stream().anyMatch(t -> t.contains(t.centerX(), t.centerZ())),
+                        "a territory's own marker should sit inside it");
+
+                System.out.printf("%s (%s): %d territories, %d held%n",
+                        continent.displayName(), continent.world(), territories.size(),
+                        territories.stream().filter(t -> !t.neutral()).count());
+            }
+            // Rivina and Balak are the two that used to be written off as event maps.
+            assertTrue(total > 400, "expected the whole map, got " + total + " territories");
         }
     }
 }

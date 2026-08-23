@@ -74,6 +74,8 @@ public record Territory(String id, String world, String num, String areaName, St
             case "north" -> "Kalros";
             case "west" -> "Ascalon";
             case "south" -> "Garama";
+            case "lilboi" -> "Rivina";
+            case "bigboi" -> "Balak";
             default -> world;
         };
     }
