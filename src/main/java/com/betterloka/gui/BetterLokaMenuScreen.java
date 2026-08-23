@@ -33,6 +33,7 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.town_logger", TownLoggerScreen::new);
         y = addModule(x, y, "betterloka.module.fight_manager", FightManagerScreen::new);
         y = addModule(x, y, "betterloka.module.loka_grinder", LokaGrinderScreen::new);
+        y = addModule(x, y, "betterloka.module.loka_map", LokaMapScreen::new);
         addModule(x, y, "betterloka.module.loka_helper", null);
 
         addDrawableChild(ButtonWidget.builder(ScreenTexts.DONE, button -> close())

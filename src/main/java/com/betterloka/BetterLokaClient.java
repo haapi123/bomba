@@ -8,6 +8,9 @@ import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
+import com.betterloka.map.DynmapApi;
+import com.betterloka.map.MapService;
+import com.betterloka.map.WaypointHud;
 import com.betterloka.grind.GrindTimer;
 import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
@@ -64,6 +67,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static ChatLog chatLog;
     private static TownLogger townLogger;
     private static TownActivityStore townActivity;
+    private static MapService map;
     private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
 
@@ -88,6 +92,9 @@ public class BetterLokaClient implements ClientModInitializer {
         // The active count is the number Loka deletes towns on, and the only place it exists is the
         // /town info panel. Read passively: the mod never runs the command, it reads a screen the
         // player opened.
+        map = new MapService(new DynmapApi(transport), configDir().resolve("map.json"),
+                configDir().resolve("waypoints.json"));
+        new WaypointHud(map).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
         new TownInfoReader(townActivity).register();
         grindTimers = new GrindTimers();
@@ -200,6 +207,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static TownActivityStore townActivity() {
         return townActivity;
+    }
+
+    public static MapService map() {
+        return map;
     }
 
     public static TownCache towns() {

@@ -60,6 +60,13 @@ public final class DevShots {
         step(300, () -> { });
         shot(20, "town-finder-founded");
 
+        step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(200, () -> { });
+        shot(20, "map-kalros");
+        step(5, () -> click(client().currentScreen, "Rivina"));
+        step(200, () -> { });
+        shot(20, "map-rivina");
+
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
             client().scheduleStop();

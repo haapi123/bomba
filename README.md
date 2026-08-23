@@ -309,6 +309,35 @@ from what it can see — which shulkers you swung at, and which of those then di
 else finishes off after you also hit it will start the timer, and one killed with a bow will not
 start it at all. The box stays the reliable way; auto-start only saves a click in the ordinary case.
 
+## Loka Map
+
+Loka's own map, drawn from Loka's own outlines, with all five continents: **Kalros, Ascalon, Garama,
+Rivina and Balak**.
+
+`map.lokamc.com` runs Dynmap and publishes each continent's territory borders as marker data — the
+same file the website draws from. So the shapes here are not approximated from a beacon coordinate:
+they are the real polygons, up to twenty-six sides apiece, 516 of them across the five continents.
+About 440 KB in total, cached for a day, because a border moves when a territory is captured and not
+otherwise.
+
+Click a territory and it names the region, the town holding it, that town's alliance and any active
+mutator, with the beacon coordinates and how far away you are in metres and chunks. Two things to do
+with it:
+
+- **Set waypoint** — it goes into the corner of the screen with an arrow that turns as you do, and
+  the distance counting down. Only waypoints for the continent you are standing on are drawn: a
+  marker set on Kalros points nowhere useful from Garama.
+- **Copy coordinates** — straight to the clipboard, in the form a command will take.
+
+Hit-testing is ray casting against the real outline rather than a bounding box. Loka's territories
+are not rectangles, and a box would hand a corner to the neighbour.
+
+### What is not in it yet
+
+**The terrain itself.** Dynmap serves it as 32×32-block tiles, so a continent is tens of thousands
+of them at full detail — the map here draws the territory polygons over a plain background rather
+than pulling that down. The geometry is 1:1; the scenery is not there.
+
 ## Discord bot
 
 [`bot/`](bot/README.md) is a separate program that watches for towns falling and **pings a Discord
