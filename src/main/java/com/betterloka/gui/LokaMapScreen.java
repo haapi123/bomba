@@ -186,7 +186,7 @@ public class LokaMapScreen extends Screen {
             return;
         }
         BetterLokaClient.map().toggle(new Waypoint(selected.label(), continent.world(),
-                selected.centerX(), 64, selected.centerZ(), selected.fillColor()));
+                selected.centerX(), 64, selected.centerZ(), selected.fillColor(), selected.icon()));
     }
 
     private void copyCoordinates() {
@@ -494,7 +494,7 @@ public class LokaMapScreen extends Screen {
             return "—";
         }
         Waypoint at = new Waypoint(selected.label(), continent.world(),
-                selected.centerX(), 64, selected.centerZ(), 0);
+                selected.centerX(), 64, selected.centerZ(), 0, selected.icon());
         double blocks = at.distanceTo(this.client.player.getX(), this.client.player.getZ());
         return String.format(Locale.ROOT, "%.0fm / %d chunks",
                 blocks, at.chunksTo(this.client.player.getX(), this.client.player.getZ()));

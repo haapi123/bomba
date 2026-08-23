@@ -1,60 +1,56 @@
 package com.betterloka.map;
 
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import com.betterloka.BetterLoka;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Camera;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.Locale;
 
 /**
- * Draws each waypoint where it actually is, out in the world.
+ * Marks each waypoint on screen, over the place it actually is.
  *
- * <p>Through walls and through terrain, deliberately: a marker you can only see with nothing in the
- * way is no use for finding a territory two kilometres off, which is the whole reason for setting
- * one. It scales with distance so it stays the same size on screen however far away it is.
+ * <p>Projected here and drawn as part of the HUD, rather than submitted into the world. The world
+ * route was tried first and instrumented: the render event fired every frame, found the waypoint and
+ * ran the draw with correct coordinates — and nothing ever appeared, because a see-through label
+ * submitted from a mod's event goes into a buffer the world renderer never empties. Flushing it
+ * explicitly did not help either.
+ *
+ * <p>Projecting instead makes "always visible" true by construction rather than by fighting the
+ * depth buffer, and it does something world-space cannot: a marker behind you pins to the edge of
+ * the screen on the side it lies, instead of silently not existing.
  */
 public final class WaypointWorldRenderer {
-    /** Height above the beacon, so the label clears the ground rather than sinking into it. */
-    private static final double LIFT = 2.5;
+    /** Height above the beacon, so the marker sits over the place rather than in the dirt. */
+    private static final double LIFT = 2.0;
 
-    /**
-     * World size per unit of text, per block of distance.
-     *
-     * <p>Text has to grow with range to hold its size on screen. A first guess at this was small
-     * enough that a marker two hundred blocks out was a smudge on the horizon — this is worked from
-     * the geometry instead: with a 70 degree field of view a screen is about 1.4 times as tall as
-     * it is distant, so a label a thirtieth of that is {@code 0.0047} per block per text unit.
-     */
-    private static final double SCALE_PER_BLOCK = 0.0047;
+    /** Keeps a pinned marker off the very edge, where it would be half cut off. */
+    private static final int EDGE_MARGIN = 16;
 
-    /** Close up the label would shrink to nothing, so it stops here. */
-    private static final double MIN_SCALE_DISTANCE = 8;
-
-    /** Past this it stops growing, or a marker across the map would fill the screen. */
-    private static final double MAX_SCALE_DISTANCE = 600;
-
-    /** Turned on by the screenshot driver to work out why a marker is not appearing. */
-    private static final boolean DIAGNOSE = "1".equals(System.getenv("BETTERLOKA_SHOTS"));
-    private int diagnosed;
+    private static final int ICON_SIZE = 10;
 
     private final MapService map;
+    private final MapIcons icons;
 
-    public WaypointWorldRenderer(MapService map) {
+    public WaypointWorldRenderer(MapService map, MapIcons icons) {
         this.map = map;
+        this.icons = icons;
     }
 
     public void register() {
-        WorldRenderEvents.AFTER_ENTITIES.register(this::render);
+        HudElementRegistry.addLast(Identifier.of(BetterLoka.MOD_ID, "waypoint_markers"), this::render);
     }
 
-    private void render(net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext context) {
+    private void render(DrawContext context, net.minecraft.client.render.RenderTickCounter tick) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.options.hudHidden) {
+        if (client == null || client.player == null || client.options.hudHidden
+                || client.currentScreen != null) {
             return;
         }
         var waypoints = map.waypoints();
@@ -68,26 +64,15 @@ public final class WaypointWorldRenderer {
                 ? null
                 : client.world.getRegistryKey().getValue().getPath();
 
-        MatrixStack matrices = context.matrices();
-        boolean drewAny = false;
-        if (DIAGNOSE && diagnosed++ < 3) {
-            com.betterloka.BetterLoka.LOGGER.info(
-                    "WAYPOINT-RENDER fired: {} waypoint(s), world={}, matrices={}, consumers={}",
-                    waypoints.size(), here, matrices, context.consumers());
-        }
+        int screenWidth = context.getScaledWindowWidth();
+        int screenHeight = context.getScaledWindowHeight();
+        double fov = Math.toRadians(client.options.getFov().getValue());
+
         for (Waypoint waypoint : waypoints) {
             if (!onThisContinent(here, waypoint)) {
                 continue;
             }
-            draw(client, context, matrices, camera, eye, waypoint);
-            drewAny = true;
-        }
-
-        // Text goes into a buffer keyed by render layer, and the world renderer only empties the
-        // layers it knows it used. A see-through label submitted here would otherwise sit in that
-        // buffer until something else happened to flush it — which is why nothing appeared.
-        if (drewAny && context.consumers() instanceof net.minecraft.client.render.VertexConsumerProvider.Immediate immediate) {
-            immediate.draw();
+            draw(context, client, camera, eye, waypoint, screenWidth, screenHeight, fov);
         }
     }
 
@@ -97,62 +82,71 @@ public final class WaypointWorldRenderer {
      * <p>When the world's name is not one Loka uses, everything is drawn: an unexpected server name
      * should leave a marker visible in the wrong place rather than hide every marker there is.
      */
-    private static boolean onThisContinent(String here, Waypoint waypoint) {
+    static boolean onThisContinent(String here, Waypoint waypoint) {
         if (here == null) {
             return true;
         }
-        boolean known = false;
         for (Continent continent : Continent.values()) {
             if (here.equalsIgnoreCase(continent.world())) {
-                known = true;
-                break;
+                return waypoint.world().equalsIgnoreCase(here);
             }
         }
-        return !known || waypoint.world().equalsIgnoreCase(here);
+        return true;
     }
 
-    private void draw(MinecraftClient client,
-                      net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext context,
-                      MatrixStack matrices, Camera camera, Vec3d eye, Waypoint waypoint) {
-        double distance = Math.sqrt(Math.pow(waypoint.x() - eye.x, 2)
-                + Math.pow(waypoint.z() - eye.z, 2));
+    private void draw(DrawContext context, MinecraftClient client, Camera camera, Vec3d eye,
+                      Waypoint waypoint, int screenWidth, int screenHeight, double fov) {
+        Vector3f view = toViewSpace(camera, eye, waypoint);
 
-        matrices.push();
-        // Vertices go in camera-relative coordinates, which is what the world renderer expects.
-        matrices.translate(waypoint.x() - eye.x, waypoint.y() + LIFT - eye.y, waypoint.z() - eye.z);
-        matrices.multiply(camera.getRotation());
+        // Camera space looks down -Z, so anything at or past zero is behind the player.
+        boolean behind = view.z >= -0.05f;
+        double focal = (screenHeight / 2.0) / Math.tan(fov / 2);
 
-        // Grows with distance so the label holds its apparent size, then stops.
-        double ranged = Math.max(MIN_SCALE_DISTANCE, Math.min(distance, MAX_SCALE_DISTANCE));
-        float scale = (float) (SCALE_PER_BLOCK * ranged);
-        // Negative Y: world space counts upwards and text counts downwards.
-        matrices.scale(-scale, -scale, scale);
+        int x;
+        int y;
+        if (behind) {
+            // Pinned low on the side it lies, which is the honest thing to show for a place that is
+            // not in front of you — the alternative is a marker that vanishes when you turn round.
+            x = view.x > 0 ? screenWidth - EDGE_MARGIN : EDGE_MARGIN;
+            y = screenHeight * 2 / 3;
+        } else {
+            x = (int) (screenWidth / 2.0 + view.x / -view.z * focal);
+            y = (int) (screenHeight / 2.0 - view.y / -view.z * focal);
+            x = Math.max(EDGE_MARGIN, Math.min(screenWidth - EDGE_MARGIN, x));
+            y = Math.max(EDGE_MARGIN, Math.min(screenHeight - EDGE_MARGIN, y));
+        }
 
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
-        TextRenderer text = client.textRenderer;
-
+        double distance = waypoint.distanceTo(eye.x, eye.z);
         Text label = Text.literal(waypoint.label());
-        Text below = Text.literal(range(distance));
+        Text below = Text.literal(range(distance) + " / " + waypoint.chunksTo(eye.x, eye.z) + "ch");
+
+        Identifier icon = waypoint.icon() == null ? null : icons.get(waypoint.icon(), Continent.KALROS);
+        if (icon != null) {
+            context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, icon,
+                    x - ICON_SIZE / 2, y - ICON_SIZE / 2, 0, 0,
+                    ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE, 0xFFFFFFFF);
+        } else {
+            // A plain diamond until the keep has downloaded, so the place is still marked.
+            context.fill(x - 4, y - 4, x + 4, y + 4, 0xFF000000);
+            context.fill(x - 3, y - 3, x + 3, y + 3, 0xFF000000 | waypoint.color());
+        }
 
         int color = 0xFF000000 | waypoint.color();
-        // A quarter-opaque black plate behind it, the way a nameplate is drawn, so a pale marker is
-        // still readable against snow or sky.
-        int backdrop = (int) (client.options.getTextBackgroundOpacity(0.25f) * 255) << 24;
+        context.drawTextWithShadow(client.textRenderer, label,
+                x - client.textRenderer.getWidth(label) / 2, y - ICON_SIZE / 2 - 11, color);
+        context.drawTextWithShadow(client.textRenderer, below,
+                x - client.textRenderer.getWidth(below) / 2, y + ICON_SIZE / 2 + 2, 0xFFC8C8C8);
+    }
 
-        text.draw(label, -text.getWidth(label) / 2f, -10, color, false, matrix,
-                context.consumers(), TextRenderer.TextLayerType.SEE_THROUGH, backdrop, 0xF000F0);
-        text.draw(below, -text.getWidth(below) / 2f, 1, 0xFFC8C8C8, false, matrix,
-                context.consumers(), TextRenderer.TextLayerType.SEE_THROUGH, backdrop, 0xF000F0);
-
-        matrices.pop();
-
-        if (DIAGNOSE && diagnosed < 6) {
-            diagnosed++;
-            com.betterloka.BetterLoka.LOGGER.info(
-                    "WAYPOINT-DRAW {} at {},{},{} eye {},{},{} distance {} scale {}",
-                    waypoint.label(), waypoint.x(), waypoint.y(), waypoint.z(),
-                    eye.x, eye.y, eye.z, distance, scale);
-        }
+    /** The waypoint's offset from the eye, turned into the camera's own frame. */
+    private static Vector3f toViewSpace(Camera camera, Vec3d eye, Waypoint waypoint) {
+        Vector3f delta = new Vector3f(
+                (float) (waypoint.x() - eye.x),
+                (float) (waypoint.y() + LIFT - eye.y),
+                (float) (waypoint.z() - eye.z));
+        // getRotation turns camera-local into world, so its conjugate does the reverse.
+        Quaternionf toCamera = new Quaternionf(camera.getRotation()).conjugate();
+        return toCamera.transform(delta);
     }
 
     /** Metres up close, kilometres once that stops being a useful number. */

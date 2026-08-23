@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class WaypointTest {
     private static Waypoint at(double x, double z) {
-        return new Waypoint("Ice Wastes 119", "north", x, 64, z, 0x3AB3DA);
+        return new Waypoint("Ice Wastes 119", "north", x, 64, z, 0x3AB3DA, "territory_owned");
     }
 
     @Test
@@ -27,7 +27,7 @@ class WaypointTest {
     @Test
     void writesCoordinatesInTheFormACommandTakes() {
         assertEquals("1234 64 -560",
-                new Waypoint("x", "north", 1234.4, 64, -560.2, 0).coordinates());
+                new Waypoint("x", "north", 1234.4, 64, -560.2, 0, null).coordinates());
     }
 
     @Test

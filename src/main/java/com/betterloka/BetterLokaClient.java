@@ -99,7 +99,7 @@ public class BetterLokaClient implements ClientModInitializer {
                 configDir().resolve("waypoints.json"));
         mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         new WaypointHud(map).register();
-        new WaypointWorldRenderer(map).register();
+        new WaypointWorldRenderer(map, mapIcons).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
         new TownInfoReader(townActivity).register();
         grindTimers = new GrindTimers();

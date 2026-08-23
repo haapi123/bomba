@@ -6,8 +6,11 @@ package com.betterloka.map;
  * @param label     what to draw beside it
  * @param world     Loka's world key, so a marker set on one continent is not drawn on another
  * @param x         world coordinates of the territory's own marker — the point worth walking to
+ * @param icon      the marker Loka draws for this territory, so the one in the world is the same one
+ *                  seen on the map; {@code null} falls back to a plain diamond
  */
-public record Waypoint(String label, String world, double x, double y, double z, int color) {
+public record Waypoint(String label, String world, double x, double y, double z, int color,
+                       String icon) {
 
     /** Straight-line distance from a position, ignoring height. */
     public double distanceTo(double fromX, double fromZ) {
