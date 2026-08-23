@@ -22,11 +22,21 @@ public final class WaypointWorldRenderer {
     /** Height above the beacon, so the label clears the ground rather than sinking into it. */
     private static final double LIFT = 2.5;
 
-    /** Screen size of the label, in the units the world text renderer counts in. */
-    private static final float BASE_SCALE = 0.025f;
+    /**
+     * World size per unit of text, per block of distance.
+     *
+     * <p>Text has to grow with range to hold its size on screen. A first guess at this was small
+     * enough that a marker two hundred blocks out was a smudge on the horizon — this is worked from
+     * the geometry instead: with a 70 degree field of view a screen is about 1.4 times as tall as
+     * it is distant, so a label a thirtieth of that is {@code 0.0047} per block per text unit.
+     */
+    private static final double SCALE_PER_BLOCK = 0.0047;
 
-    /** Past this the label stops growing, or a far marker would fill the screen. */
-    private static final double MAX_SCALE_DISTANCE = 400;
+    /** Close up the label would shrink to nothing, so it stops here. */
+    private static final double MIN_SCALE_DISTANCE = 8;
+
+    /** Past this it stops growing, or a marker across the map would fill the screen. */
+    private static final double MAX_SCALE_DISTANCE = 600;
 
     private final MapService map;
 
@@ -95,7 +105,8 @@ public final class WaypointWorldRenderer {
         matrices.multiply(camera.getRotation());
 
         // Grows with distance so the label holds its apparent size, then stops.
-        float scale = (float) (BASE_SCALE * Math.max(1, Math.min(distance, MAX_SCALE_DISTANCE) / 12));
+        double ranged = Math.max(MIN_SCALE_DISTANCE, Math.min(distance, MAX_SCALE_DISTANCE));
+        float scale = (float) (SCALE_PER_BLOCK * ranged);
         // Negative Y: world space counts upwards and text counts downwards.
         matrices.scale(-scale, -scale, scale);
 

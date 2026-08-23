@@ -77,7 +77,7 @@ public final class DevShots {
             if (player != null) {
                 com.betterloka.BetterLokaClient.map().toggle(new com.betterloka.map.Waypoint(
                         "Ice Wastes 119", "lilboi",
-                        player.getX() + 180, player.getY(), player.getZ() + 60, 0x3AB3DA));
+                        player.getX() + 26, player.getY(), player.getZ() + 10, 0x3AB3DA));
             }
             client().setScreen(null);
         });

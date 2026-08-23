@@ -44,8 +44,17 @@ public class LokaMapScreen extends Screen {
     /** The map is the point of the screen, so everything else is sized around it. */
     private static final int MAX_CONTENT_WIDTH = 560;
 
-    /** Loka's markers are 16 square; half that reads at the scale a whole continent is drawn at. */
-    private static final int ICON_SIZE = 8;
+    /** Loka's markers are 16 square; smaller reads better at the scale a continent is drawn at. */
+    private static final int ICON_SIZE = 6;
+
+    /**
+     * How wide a territory must be on screen before its marker is drawn.
+     *
+     * <p>A whole continent in four hundred pixels puts territories about twenty across, and a marker
+     * in every one of them filled the map rather than labelling it. Below this the colour and the
+     * border say everything a marker would.
+     */
+    private static final int ICON_MIN_TERRITORY_WIDTH = 16;
 
     private final Screen parent;
 
@@ -364,6 +373,10 @@ public class LokaMapScreen extends Screen {
      * reached — the territory is still drawn and still clickable either way.
      */
     private void drawIcon(DrawContext context, MapTerritory territory) {
+        double onScreenWidth = (territory.maxX() - territory.minX()) * worldScale;
+        if (onScreenWidth < ICON_MIN_TERRITORY_WIDTH) {
+            return;
+        }
         var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
         if (id == null) {
             return;
