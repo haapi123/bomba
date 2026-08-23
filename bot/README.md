@@ -113,15 +113,22 @@ not "has not played".
 
 `maxMembersChecked` in the config, **100** by default. Set it to `0` for no limit.
 
-The cap exists because each member is three requests, one of them a 30 KB page. Measured, the whole
-pipeline moves at roughly **1.5 members a second** — four concurrent requests against two rate-limited
-hosts — so a hundred members is about a minute and Loka's largest town, at 1217, is a quarter of an
-hour.
+The cap exists because each member is three requests, one of them a 30 KB page — four when the
+player has renamed and the career has to be fetched again by UUID.
 
-That matters more than the bandwidth, because **Discord only allows a command fifteen minutes to
-answer**. A report that runs past it cannot be delivered at all. The bot gives up at twelve minutes
-and says the town is too big rather than leaving a "thinking..." that never resolves — but the useful
-fix is a lower `maxMembersChecked`, not a longer wait.
+Time matters more than bandwidth here, because **Discord only allows a command fifteen minutes to
+answer**; a report that runs past it cannot be delivered at all. Two measured points, against
+Concord:
+
+| Members checked | Wall time |
+|---|---|
+| 25 | 6 seconds |
+| 1217 (no limit) | **did not finish in 15 minutes** |
+
+It is not a straight line — the small run is several times faster per member than the large one — so
+size the limit from the table rather than from a rate. The bot gives up at twelve minutes and says
+the town is too big, rather than leaving a "thinking..." that never resolves, but the useful fix is a
+lower `maxMembersChecked`.
 
 For scale: Loka's median town has **92** members and the largest has **1217**.
 

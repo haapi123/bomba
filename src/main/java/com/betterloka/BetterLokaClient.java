@@ -15,6 +15,8 @@ import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.NameplateKdService;
 import com.betterloka.stats.PlayerStatsService;
+import com.betterloka.towns.TownActivityStore;
+import com.betterloka.towns.TownInfoReader;
 import com.betterloka.towns.TownLogStore;
 import com.betterloka.towns.TownLogger;
 import com.betterloka.translate.ChatChannels;
@@ -61,6 +63,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TranslationService translations;
     private static ChatLog chatLog;
     private static TownLogger townLogger;
+    private static TownActivityStore townActivity;
     private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
 
@@ -82,6 +85,11 @@ public class BetterLokaClient implements ClientModInitializer {
         townLogger = new TownLogger(loka, towns, config,
                 new TownLogStore(configDir().resolve("town-log.json")));
         townLogger.start();
+        // The active count is the number Loka deletes towns on, and the only place it exists is the
+        // /town info panel. Read passively: the mod never runs the command, it reads a screen the
+        // player opened.
+        townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
+        new TownInfoReader(townActivity).register();
         grindTimers = new GrindTimers();
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
         new ShulkerWatcher(grindTimers, config).register();
@@ -188,6 +196,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static TownLogger townLogger() {
         return townLogger;
+    }
+
+    public static TownActivityStore townActivity() {
+        return townActivity;
     }
 
     public static TownCache towns() {

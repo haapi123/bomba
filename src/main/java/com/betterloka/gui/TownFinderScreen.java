@@ -5,6 +5,8 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.towns.TownActivityStore;
+import com.betterloka.towns.TownInfoReading;
 import com.betterloka.api.model.Territory;
 import com.betterloka.towns.TownLogStore;
 import net.minecraft.client.gui.Click;
@@ -500,23 +502,89 @@ public class TownFinderScreen extends Screen {
                 town.foundedIsImport() ? GuiTheme.MUTED : GuiTheme.TEXT);
         y += statsHeight + CARD_GAP;
 
+        y = renderActivity(context, left, y, width, inner, town);
         y = renderPeople(context, left, y, width, inner);
         y = renderAlliance(context, left, y, width, inner);
         return renderTerritories(context, left, y, width, inner);
     }
 
     /**
-     * The vulnerability window, start to finish.
+     * The vulnerability window, start to finish, in the reader's own clock.
      *
-     * <p>Loka publishes only the hour it opens; the eight-hour length is the server's rule, so the
-     * end is worked out from it and wraps past midnight.
+     * <p>Loka publishes only the hour it opens, and publishes it in UTC: the API says 19 for a town
+     * whose panel in game reads "9pm – 5am". Printing the API's number as a wall-clock hour was two
+     * hours early all summer, which for a window you have to actually turn up for is the difference
+     * between arriving and missing it. The eight-hour length is the server's rule — confirmed by
+     * that same panel — so the end is worked out from it and wraps past midnight.
      */
     private static String vulnText(LokaTown of) {
         int hour = of.vulnerabilityWindow();
         if (hour < 0) {
             return "—";
         }
-        return String.format(Locale.ROOT, "%02d:00 – %02d:00", hour, (hour + VULN_HOURS) % 24);
+        int start = localHour(hour);
+        return String.format(Locale.ROOT, "%02d:00 – %02d:00", start, (start + VULN_HOURS) % 24);
+    }
+
+    /** An hour of the UTC day, moved into the local zone as it stands today. */
+    private static int localHour(int utcHour) {
+        return java.time.OffsetTime.of(utcHour, 0, 0, 0, java.time.ZoneOffset.UTC)
+                .atDate(java.time.LocalDate.now())
+                .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                .getHour();
+    }
+
+    /**
+     * The active count, and what it means for how long the town has left.
+     *
+     * <p>Loka deletes a town after a month with no active members, and that count is the one number
+     * its API publishes nowhere — so this is whatever the {@code /town info} panel last said, read
+     * off the screen when the player opened it. With nothing read yet the card says so and how to
+     * fill it, rather than leaving a blank that looks like a town with no members.
+     */
+    private int renderActivity(DrawContext context, int left, int y, int width, int inner,
+                               LokaTown town) {
+        TownActivityStore activity = BetterLokaClient.townActivity();
+        TownInfoReading reading = activity == null ? null : activity.latest(town.name());
+
+        if (reading == null) {
+            int emptyHeight = CARD_PADDING * 2 + ROW_HEIGHT;
+            GuiTheme.panel(context, left, y, width, emptyHeight);
+            context.drawTextWithShadow(this.textRenderer,
+                    this.textRenderer.trimToWidth(
+                            Text.translatable("betterloka.town_finder.no_activity").getString(), inner),
+                    left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
+            return y + emptyHeight + CARD_GAP;
+        }
+
+        boolean zero = reading.atZero();
+        long days = activity.daysAtZero(town.name());
+        long deletion = activity.deletionNoEarlierThan(town.name());
+
+        int rows = zero ? 3 : 2;
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+        GuiTheme.panel(context, left, y, width, height);
+        int textX = left + CARD_PADDING;
+        int textY = y + CARD_PADDING;
+
+        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
+                Text.translatable("betterloka.town_finder.active").getString(),
+                reading.hasActive()
+                        ? reading.active() + " / " + reading.members()
+                        : "—",
+                zero ? GuiTheme.BAD : GuiTheme.GOOD);
+        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
+                Text.translatable("betterloka.town_finder.read_at").getString(),
+                TimeFormat.ago(reading.readAt()), GuiTheme.MUTED);
+
+        if (zero) {
+            // Deliberately "no earlier than": the count may have been zero long before anybody
+            // opened the panel, and the run here is only as old as the first reading.
+            GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
+                    Text.translatable("betterloka.town_finder.falls_after", days).getString(),
+                    TimeFormat.date(java.time.Instant.ofEpochMilli(deletion)), GuiTheme.LIVE);
+        }
+        return y + height + CARD_GAP;
     }
 
     /**

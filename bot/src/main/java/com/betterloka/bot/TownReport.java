@@ -244,22 +244,30 @@ public final class TownReport {
                 player.firstSeen(), lastFight(player), listing);
     }
 
-    /** EldritchBot files careers under whatever the player was called at their last fight. */
+    /**
+     * Asked by UUID, never by name.
+     *
+     * <p>EldritchBot answers to either, and a career page fetched by UUID is byte for byte the page
+     * fetched by name — so the name buys nothing and costs a great deal here. It files a career
+     * under whatever the player was called at their last fight, so a name misses for two different
+     * people: somebody who renamed, and somebody who never fought at all. Trying the name first and
+     * falling back to the UUID meant paying two requests for every member of the second group, which
+     * on a roster like Concord's is most of it.
+     *
+     * <p>The mod's Player Finder still asks by name first, for the opposite reason: there a search
+     * starts from a name and the UUID is not known until Loka answers, so name-first keeps the two
+     * lookups running side by side instead of one behind the other.
+     */
     private Instant lastFight(LokaPlayer player) {
-        EldritchStats stats;
-        try {
-            stats = eldritch.fetchStats(player.name());
-        } catch (ApiException byName) {
-            if (!byName.notFound() || player.uuid() == null) {
-                return null;
-            }
-            try {
-                stats = eldritch.fetchStats(undashed(player.uuid()));
-            } catch (ApiException byUuid) {
-                return null;
-            }
+        if (player.uuid() == null) {
+            return null;
         }
-        return parseFightDate(stats.lastFight());
+        try {
+            return parseFightDate(eldritch.fetchStats(undashed(player.uuid())).lastFight());
+        } catch (ApiException e) {
+            // Never fought, and so has no page at all — not an error, just nothing to report.
+            return null;
+        }
     }
 
     private static String undashed(UUID uuid) {

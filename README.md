@@ -236,10 +236,12 @@ A town, whether searched for or clicked:
   oldest towns, given new records when the database they live in was built — so those read **"On
   record since"** rather than "Founded". Presenting an import as a founding would be inventing a
   fact.
+- **Active members**, and how long the town has left — see below
 - **Level, strength, members, recruiting**
-- **Vulnerable from** — the eight hours it is attackable for. Loka publishes the opening hour; across
-  the live roster those run 09:00 to 20:00 and pile up at 09:00 and 19:00, the European and American
-  prime times.
+- **Vulnerable from** — the eight hours it is attackable for, in your own clock. Loka publishes the
+  opening hour and publishes it in **UTC**: the API says 19 for a town whose in-game panel reads
+  "9pm – 5am", so the number is converted rather than printed as it comes. The eight-hour length is
+  the server's rule, confirmed against that panel.
 - **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as, one per
   line so a town with five of them shows all five
 - **Alliance** it belongs to now, and **who it has been allied with, longest first**
@@ -247,6 +249,27 @@ A town, whether searched for or clicked:
 
 A name with no living town behind it is usually a town that is gone rather than one that never
 existed, so the search falls back to the deleted-town roster and says so.
+
+### When a town will be deleted
+
+Loka deletes a town once it has gone **a month with no active members**. That makes the deletion date
+knowable in advance, and the active count is the one number that decides it.
+
+It is published nowhere. Every field of the town record was checked, on both the list and the
+single-town endpoint, and on all 11,338 member entries across the live roster: a member entry carries
+`subowner` and nothing else. The count exists only on the panel `/town info` opens.
+
+So the mod reads it off that panel. Open `/town info <town>` yourself and the reading is recorded —
+name, members, active, and when it was read. Nothing is sent: the mod never runs the command, it
+looks at a screen you opened, which is the same screen you are looking at.
+
+With a reading in hand the Town Finder shows the active count, when it was taken, and — once the
+count is at zero — how many days it has been there and the date Loka could remove it.
+
+That date is deliberately labelled **"no earlier than"**. The mod can only count from the first zero
+*it* saw, and a town may have been at zero for weeks before anybody opened its panel, which would
+bring the real date forward. Checking a town every few days tightens the estimate; any reading above
+zero resets the clock, because the town was alive that day.
 
 ### Who they usually ally with
 
