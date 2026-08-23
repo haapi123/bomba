@@ -109,8 +109,28 @@ That is a **lower bound**, not a login time, and the reply says so under every r
 logs in daily but neither fights nor trades shows as "no record" — which means "nothing published",
 not "has not played".
 
-The roster is capped at 40 members per report: each member is three requests, one of them a 30 KB
-page, and the reply says how many it left out.
+### How much of the roster it checks
+
+`maxMembersChecked` in the config, **100** by default. Set it to `0` for no limit.
+
+The cap exists because each member is three requests, one of them a 30 KB page. It is worth knowing
+what "no limit" means before you set it: Loka's median town has **92** members and the largest has
+**1217**, so an unlimited report on a big one is thousands of requests off somebody else's free
+service.
+
+Two things the cap never does:
+
+- **The owner and every sub-owner are always checked**, on top of the limit. They are the people who
+  decide whether a town survives, so losing them to an arbitrary cut would remove the point of the
+  command.
+- **The rest are an even spread across the roster, not the first N.** Loka stores members in the
+  order they joined, so "the first hundred" means the hundred oldest accounts — the group most
+  likely to be inactive — and reporting their activity as the town's would make every large town
+  look dead.
+
+The reply says how many of the roster it checked, and every activity count is stated as a fraction
+of that, never of the roster. Discord caps an embed at 4096 characters, so a large check is
+summarised rather than listed line by line however high you set the limit.
 
 ### Trying it without Discord
 
@@ -126,7 +146,8 @@ Every setting can be given as an environment variable instead, which is the bett
 host a token: `BETTERLOKA_WEBHOOK_URL`, `BETTERLOKA_BOT_TOKEN`, `BETTERLOKA_CHANNEL_ID`,
 `BETTERLOKA_ROLE_ID`, `BETTERLOKA_GUILD_ID`, `BETTERLOKA_CHECK_SECONDS`,
 `BETTERLOKA_FULL_SWEEP_MINUTES`, `BETTERLOKA_ANNOUNCE_BACKLOG`, `BETTERLOKA_TEST_ON_START`,
-`BETTERLOKA_ENABLE_COMMANDS`, `BETTERLOKA_STATE_FILE`. They win over the file.
+`BETTERLOKA_ENABLE_COMMANDS`, `BETTERLOKA_MAX_MEMBERS`, `BETTERLOKA_STATE_FILE`. They win over the
+file.
 
 ### On a hosting panel (Pterodactyl and friends)
 

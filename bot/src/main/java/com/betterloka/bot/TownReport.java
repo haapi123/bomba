@@ -31,19 +31,28 @@ import java.util.concurrent.CompletionException;
  */
 public final class TownReport {
     /**
-     * How many members are looked up.
+     * How many members are looked up when nothing is configured.
      *
-     * <p>Each one is three requests, one of them a 30 KB page, so a fifty-person town would be a
-     * megabyte and a half and a long wait. The report says how many it left out.
+     * <p>The first version of this capped at forty on the guess that fifty was a big town. Loka's
+     * live roster says the median town has ninety-two members and the largest has 1217, so forty was
+     * cutting most towns in half. Each member is three requests, one of them a 30 KB page, so the
+     * cap still has to exist — but it belongs in the config, and the officers are never inside it.
      */
-    private static final int MAX_MEMBERS = 40;
+    public static final int DEFAULT_MAX_MEMBERS = 100;
 
     private final LokaApi loka;
     private final EldritchApi eldritch;
+    private final int maxMembers;
 
     public TownReport(LokaApi loka, EldritchApi eldritch) {
+        this(loka, eldritch, DEFAULT_MAX_MEMBERS);
+    }
+
+    /** @param maxMembers how many ordinary members to check; zero or less means all of them */
+    public TownReport(LokaApi loka, EldritchApi eldritch, int maxMembers) {
         this.loka = loka;
         this.eldritch = eldritch;
+        this.maxMembers = maxMembers;
     }
 
     /**
@@ -83,10 +92,19 @@ public final class TownReport {
     }
 
     /**
-     * @param members      the roster, owner first, then sub-owners, then everybody else
-     * @param skipped      members not looked up because the roster is longer than {@link #MAX_MEMBERS}
+     * @param members     the roster that was checked, owner first, then sub-owners, then the rest
+     * @param rosterSize  how many members the town has in total, checked or not
      */
-    public record Report(LokaTown town, List<Member> members, int skipped) {
+    public record Report(LokaTown town, List<Member> members, int rosterSize) {
+
+        /** How many of the roster were left out of the sample. */
+        public int skipped() {
+            return Math.max(0, rosterSize - members.size());
+        }
+
+        public boolean sampled() {
+            return skipped() > 0;
+        }
 
         /** The newest activity anywhere in the town — the whole roster's clock. */
         public Instant lastActive() {
@@ -100,12 +118,17 @@ public final class TownReport {
             return newest;
         }
 
-        /** How many members have shown no sign of life in the given number of days. */
+        /** How many of the checked members have shown no sign of life in the given number of days. */
         public long quietFor(int days) {
             Instant cutoff = Instant.now().minusSeconds(days * 86400L);
             return members.stream()
                     .filter(member -> member.lastSeen() == null || member.lastSeen().isBefore(cutoff))
                     .count();
+        }
+
+        /** How many of the checked members have been seen inside the given number of days. */
+        public long activeWithin(int days) {
+            return members.size() - quietFor(days);
         }
     }
 
@@ -120,11 +143,7 @@ public final class TownReport {
             return null;
         }
 
-        List<String> ids = new ArrayList<>(town.memberIds());
-        int skipped = Math.max(0, ids.size() - MAX_MEMBERS);
-        if (skipped > 0) {
-            ids = ids.subList(0, MAX_MEMBERS);
-        }
+        List<String> ids = select(town, maxMembers);
 
         List<CompletableFuture<Member>> tasks = new ArrayList<>(ids.size());
         for (String identityId : ids) {
@@ -153,7 +172,40 @@ public final class TownReport {
                 .thenComparing(Member::lastSeen,
                         Comparator.nullsLast(Comparator.reverseOrder())));
 
-        return new Report(town, List.copyOf(members), skipped);
+        return new Report(town, List.copyOf(members), town.memberIds().size());
+    }
+
+    /**
+     * Which members to look up.
+     *
+     * <p>The owner and the sub-owners are always in, whatever the cap: they are the people who
+     * decide whether a town survives, and losing them off the end of an arbitrary cut was the worst
+     * part of the old behaviour. The rest are taken as an even spread across the roster rather than
+     * the first N, because Loka stores members in the order they were added — so "the first forty"
+     * meant the forty oldest, which is exactly the group most likely to be inactive and made the
+     * quiet-member count read far worse than the town really was.
+     */
+    static List<String> select(LokaTown town, int maxMembers) {
+        List<String> officers = new ArrayList<>();
+        List<String> rest = new ArrayList<>();
+        for (String id : town.memberIds()) {
+            if (id.equals(town.ownerId()) || town.subOwnerIds().contains(id)) {
+                officers.add(id);
+            } else {
+                rest.add(id);
+            }
+        }
+
+        int room = maxMembers <= 0 ? rest.size() : Math.max(0, maxMembers - officers.size());
+        List<String> selected = new ArrayList<>(officers);
+        if (room >= rest.size()) {
+            selected.addAll(rest);
+            return selected;
+        }
+        for (int i = 0; i < room; i++) {
+            selected.add(rest.get((int) ((long) i * rest.size() / room)));
+        }
+        return selected;
     }
 
     private Member member(LokaTown town, String identityId) {

@@ -127,22 +127,28 @@ public final class TownCheckCommand {
 
         description.append("**Continent** ").append(town.continentName())
                 .append("  ·  **Level** ").append((long) town.townLevel())
-                .append("  ·  **Members** ").append(town.memberCount()).append('\n');
+                .append("  ·  **Members** ").append(report.rosterSize()).append('\n');
 
         Instant lastActive = report.lastActive();
         description.append("**Town last seen active** ")
                 .append(lastActive == null ? "no record" : ago(lastActive)).append('\n');
 
-        long quiet = report.quietFor(30);
-        description.append("**Quiet 30+ days** ").append(quiet).append('/')
-                .append(report.members().size()).append(" members\n\n");
+        // Stated as a fraction of what was checked, never of the roster: a sample of a 1200-member
+        // town that reported "quiet: 40/1200" would be claiming to know about 1160 people it never
+        // looked at.
+        description.append("**Of the ").append(report.members().size()).append(" checked**: ")
+                .append(report.activeWithin(30)).append(" seen in 30 days, ")
+                .append(report.activeWithin(90)).append(" in 90, ")
+                .append(report.quietFor(90)).append(" older or never\n");
+
+        if (report.sampled()) {
+            description.append("_Checked the owner, every sub-owner, and an even spread of ")
+                    .append(report.members().size()).append(" of the ").append(report.rosterSize())
+                    .append(" members. Raise `maxMembersChecked` in the config for more._\n");
+        }
+        description.append('\n');
 
         appendMembers(description, report.members());
-
-        if (report.skipped() > 0) {
-            description.append("\n_").append(report.skipped())
-                    .append(" more member(s) not checked._");
-        }
 
         embed.addProperty("description", trim(description.toString()));
 
@@ -157,24 +163,44 @@ public final class TownCheckCommand {
         return embed;
     }
 
+    /**
+     * Lists as many members as the embed will hold, officers first.
+     *
+     * <p>Discord caps a description at 4096 characters, so a hundred-member check cannot be printed
+     * in full however high the config's limit goes. The list stops when the budget runs out and says
+     * how many it did not print — the summary above already covers all of them.
+     */
     private static void appendMembers(StringBuilder out, List<TownReport.Member> members) {
         if (members.isEmpty()) {
             out.append("_No members could be looked up._");
             return;
         }
+        int printed = 0;
         for (TownReport.Member member : members) {
+            StringBuilder line = new StringBuilder();
             String role = member.owner() ? "👑 " : (member.subOwner() ? "🛡 " : "• ");
-            out.append(role).append("**").append(member.name()).append("** — ");
+            line.append(role).append("**").append(member.name()).append("** — ");
             Instant seen = member.lastSeen();
             if (seen == null) {
-                out.append("no fight or listing on record");
+                line.append("no fight or listing on record");
             } else {
-                out.append(ago(seen)).append(" (").append(member.lastSeenSource()).append(')');
+                line.append(ago(seen)).append(" (").append(member.lastSeenSource()).append(')');
             }
             if (member.joinedLoka() != null) {
-                out.append(", joined ").append(STAMP.format(member.joinedLoka()).substring(0, 10));
+                line.append(", joined ").append(STAMP.format(member.joinedLoka()).substring(0, 10));
             }
-            out.append('\n');
+            line.append('\n');
+
+            // Room kept for the "and N more" line, so the list never runs into the trim.
+            if (out.length() + line.length() > MAX_DESCRIPTION - 60) {
+                break;
+            }
+            out.append(line);
+            printed++;
+        }
+        if (printed < members.size()) {
+            out.append("_…and ").append(members.size() - printed)
+                    .append(" more checked, counted above._");
         }
     }
 

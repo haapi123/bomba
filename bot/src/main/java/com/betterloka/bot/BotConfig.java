@@ -108,6 +108,19 @@ public final class BotConfig {
      */
     public boolean testOnStart = false;
 
+    /**
+     * How many town members {@code /sprawdz} looks up.
+     *
+     * <p>The owner and sub-owners are always checked on top of this, so raising or lowering it never
+     * costs you the people who actually decide whether a town survives.
+     *
+     * <p>Set to {@code 0} for no limit. Be deliberate about that: Loka's largest town has over
+     * twelve hundred members, each one is three requests and a 30 KB page, and a report that size is
+     * forty megabytes off EldritchBot and long enough that Discord's fifteen-minute reply window can
+     * run out before it finishes.
+     */
+    public int maxMembersChecked = TownReport.DEFAULT_MAX_MEMBERS;
+
     /** Where the bot remembers what it has already announced. */
     public String stateFile = "betterloka-bot-state.json";
 
@@ -190,6 +203,7 @@ public final class BotConfig {
         roleId = envOr("BETTERLOKA_ROLE_ID", roleId);
         stateFile = envOr("BETTERLOKA_STATE_FILE", stateFile);
 
+        maxMembersChecked = envInt("BETTERLOKA_MAX_MEMBERS", maxMembersChecked);
         checkIntervalSeconds = envInt("BETTERLOKA_CHECK_SECONDS", checkIntervalSeconds);
         fullSweepIntervalMinutes = envInt("BETTERLOKA_FULL_SWEEP_MINUTES", fullSweepIntervalMinutes);
         announceBacklogOnFirstRun =

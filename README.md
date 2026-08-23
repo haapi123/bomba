@@ -331,6 +331,11 @@ recent Conquest fight, per EldritchBot, and the newest item they have listed on 
 ObjectID says when it was posted. It is a **lower bound**: a player who logs in daily but neither
 fights nor trades leaves no trace in anything Loka publishes, and shows as "no record".
 
+How much of the roster it checks is `maxMembersChecked` in the config (100 by default, `0` for no
+limit) — but the owner and every sub-owner are always checked on top of it, and the rest are an even
+spread rather than the first N, because Loka stores members in join order and the oldest accounts are
+the least active ones.
+
 The same report runs on the console without any Discord setup at all, which is the way to see what it
 answers:
 

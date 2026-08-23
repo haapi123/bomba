@@ -45,8 +45,12 @@ public final class BetterLokaBot {
         // see what the command would answer without a bot application — and the way to check the
         // report itself when something looks wrong.
         if (check != null) {
+            int limit = Files.exists(CONFIG_FILE)
+                    ? BotConfig.load(CONFIG_FILE).maxMembersChecked
+                    : TownReport.DEFAULT_MAX_MEMBERS;
             try (HttpTransport transport = new HttpTransport()) {
-                printReport(new TownReport(new LokaApi(transport), new EldritchApi(transport)), check);
+                printReport(new TownReport(new LokaApi(transport), new EldritchApi(transport), limit),
+                        check);
             }
             return;
         }
@@ -164,6 +168,7 @@ public final class BetterLokaBot {
             LOG.info("Loka has no town called \"{}\"", townName);
             return;
         }
+        LOG.info("Checked {} of {} member(s)", report.members().size(), report.rosterSize());
         LOG.info("{} - {}{}", report.town().name(),
                 report.town().foundedIsImport() ? "on record since " : "founded ",
                 report.town().founded());
@@ -178,8 +183,9 @@ public final class BetterLokaBot {
                     member.lastSeen() == null ? "no record" : TownCheckCommand.ago(member.lastSeen()),
                     member.lastSeenSource() == null ? "" : " (" + member.lastSeenSource() + ")");
         }
-        if (report.skipped() > 0) {
-            LOG.info("  ... {} member(s) not checked", report.skipped());
+        if (report.sampled()) {
+            LOG.info("  ... {} member(s) not checked - raise maxMembersChecked, or set it to 0",
+                    report.skipped());
         }
     }
 
@@ -202,8 +208,12 @@ public final class BetterLokaBot {
         }
 
         SlashCommands commands = new SlashCommands(config.botToken);
-        TownCheckCommand check =
-                new TownCheckCommand(new TownReport(api, new EldritchApi(transport)), commands);
+        if (config.maxMembersChecked <= 0) {
+            LOG.warn("maxMembersChecked is 0, so /sprawdz will check every member of a town. "
+                    + "Loka's largest has over 1200, which is a long report and a lot of traffic.");
+        }
+        TownCheckCommand check = new TownCheckCommand(
+                new TownReport(api, new EldritchApi(transport), config.maxMembersChecked), commands);
 
         // The application ID arrives with READY, so registration waits for the connection rather
         // than guessing it: it is not the same number as the bot token's prefix on every account.
