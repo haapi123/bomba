@@ -62,10 +62,27 @@ public final class DevShots {
 
         step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(200, () -> { });
+        // Park the cursor over the middle of the map so the hover card is on screen for the shot.
+        step(5, () -> centreCursor());
+        step(20, () -> { });
         shot(20, "map-kalros");
         step(5, () -> click(client().currentScreen, "Rivina"));
         step(200, () -> { });
+        step(5, () -> centreCursor());
         shot(20, "map-rivina");
+
+        // A waypoint a short walk away, then out to the world to see it drawn.
+        step(5, () -> {
+            var player = client().player;
+            if (player != null) {
+                com.betterloka.BetterLokaClient.map().toggle(new com.betterloka.map.Waypoint(
+                        "Ice Wastes 119", "lilboi",
+                        player.getX() + 180, player.getY(), player.getZ() + 60, 0x3AB3DA));
+            }
+            client().setScreen(null);
+        });
+        step(30, () -> { });
+        shot(20, "waypoint-world");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
@@ -155,6 +172,18 @@ public final class DevShots {
                 field.setText(text);
             }
         });
+    }
+
+    /** Moves the real cursor, which is what a screen reads its hover position from. */
+    private static void centreCursor() {
+        MinecraftClient client = client();
+        if (client.currentScreen == null) {
+            return;
+        }
+        double scale = client.getWindow().getScaleFactor();
+        org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.getWindow().getHandle(),
+                client.currentScreen.width / 2.0 * scale,
+                client.currentScreen.height * 0.33 * scale);
     }
 
     private static void scroll(int amount) {

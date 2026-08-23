@@ -114,6 +114,37 @@ public final class HttpTransport implements AutoCloseable {
     }
 
     /**
+     * The same fetch, for something that is not text.
+     *
+     * <p>Used for the map's marker icons. It goes through the same rate limiter as everything else,
+     * so a screen asking for nine of them at once still queues politely.
+     */
+    public byte[] getBytes(String url, boolean background) throws ApiException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Accept", "image/png,image/*")
+                .header("User-Agent", "BetterLoka/" + BetterLoka.VERSION + " (Minecraft mod)")
+                .timeout(REQUEST_TIMEOUT)
+                .GET()
+                .build();
+        try {
+            limiterFor(URI.create(url).getHost()).acquire(background);
+            requestCount.incrementAndGet();
+            HttpResponse<byte[]> response =
+                    http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200) {
+                throw new ApiException("HTTP " + response.statusCode() + " from " + url,
+                        response.statusCode() == 404);
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException("Interrupted fetching " + url, e);
+        } catch (java.io.IOException e) {
+            throw new ApiException("Could not reach " + url, e);
+        }
+    }
+
+    /**
      * @param background true for a sweep or an index build — work nobody is watching, which then
      *                   yields its place in the queue to anything a player is waiting on
      */

@@ -204,6 +204,7 @@
   "betterloka.map.waypoint": "Set waypoint",
   "betterloka.map.waypoint_off": "Remove waypoint",
   "betterloka.map.copy": "Copy coordinates",
+  "betterloka.map.clear_waypoints": "Clear waypoints (%s)",
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",
   "betterloka.grind.shulker.title": "Shulker respawn",

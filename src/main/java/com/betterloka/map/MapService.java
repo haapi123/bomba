@@ -37,7 +37,8 @@ public final class MapService {
      */
     private record StoredTerritory(String number, String areaName, String owner, String alliance,
                                    String mutator, List<Double> xs, List<Double> zs,
-                                   double centerX, double centerZ, int fillColor) {
+                                   double centerX, double centerZ, int fillColor, int strokeColor,
+                                   String icon) {
     }
 
     private final DynmapApi api;
@@ -45,6 +46,8 @@ public final class MapService {
     private final JsonStore<List<Waypoint>> waypointStore;
 
     private final Map<Continent, List<MapTerritory>> loaded = new EnumMap<>(Continent.class);
+    /** Town cards, by lower-case name, so a territory's owner can be looked up on hover. */
+    private final Map<Continent, Map<String, MapTown>> towns = new EnumMap<>(Continent.class);
     private final List<Waypoint> waypoints = new ArrayList<>();
 
     public MapService(DynmapApi api, Path territoryFile, Path waypointFile) {
@@ -75,7 +78,9 @@ public final class MapService {
                 return remember(continent, cached);
             }
             try {
-                return remember(continent, api.fetchTerritories(continent));
+                DynmapApi.ContinentData data = api.fetchContinent(continent);
+                rememberTowns(continent, data.towns());
+                return remember(continent, data.territories());
             } catch (ApiException e) {
                 throw new CompletionException(e);
             }
@@ -103,7 +108,7 @@ public final class MapService {
         for (StoredTerritory one : stored) {
             territories.add(new MapTerritory(one.number(), one.areaName(), one.owner(),
                     one.alliance(), one.mutator(), toArray(one.xs()), toArray(one.zs()),
-                    one.centerX(), one.centerZ(), one.fillColor()));
+                    one.centerX(), one.centerZ(), one.fillColor(), one.strokeColor(), one.icon()));
         }
         return territories;
     }
@@ -117,7 +122,8 @@ public final class MapService {
                     stored.add(new StoredTerritory(territory.number(), territory.areaName(),
                             territory.owner(), territory.alliance(), territory.mutator(),
                             toList(territory.xs()), toList(territory.zs()),
-                            territory.centerX(), territory.centerZ(), territory.fillColor()));
+                            territory.centerX(), territory.centerZ(), territory.fillColor(),
+                            territory.strokeColor(), territory.icon()));
                 }
                 out.put(continent.name(), stored);
             });
@@ -127,6 +133,41 @@ public final class MapService {
         } catch (RuntimeException e) {
             BetterLoka.LOGGER.warn("Could not cache the map", e);
         }
+    }
+
+    private void rememberTowns(Continent continent, List<MapTown> found) {
+        Map<String, MapTown> byName = new java.util.HashMap<>();
+        for (MapTown town : found) {
+            if (town.name() != null) {
+                byName.put(town.name().toLowerCase(java.util.Locale.ROOT), town);
+            }
+        }
+        synchronized (towns) {
+            towns.put(continent, byName);
+        }
+    }
+
+    /**
+     * The card for the town holding a territory, if this continent's markers named one.
+     *
+     * <p>Absent when the map was restored from disk, which keeps outlines and not town cards: the
+     * hover panel then shows what the territory itself says and no more.
+     */
+    public MapTown town(Continent continent, String name) {
+        if (name == null) {
+            return null;
+        }
+        synchronized (towns) {
+            Map<String, MapTown> byName = towns.get(continent);
+            return byName == null ? null : byName.get(name.toLowerCase(java.util.Locale.ROOT));
+        }
+    }
+
+    /** Removes one waypoint by the label it was set under. */
+    public synchronized void remove(Waypoint waypoint) {
+        waypoints.removeIf(existing -> existing.world().equals(waypoint.world())
+                && existing.label().equals(waypoint.label()));
+        saveWaypoints();
     }
 
     // --- waypoints ---

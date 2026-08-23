@@ -40,6 +40,19 @@ public final class DynmapApi {
     /** {@code <br/>Cherry Grove 129<br/>} — the region name and the territory number together. */
     private static final Pattern AREA = Pattern.compile("<br/>\\s*(.*?)\\s*(\\d+)\\s*<br/>");
 
+    /** A town card: {@code <h2>Vanguard<br/><small>ChickenCurry_0 Alliance - 183 strength...} */
+    private static final Pattern TOWN_NAME = Pattern.compile("<h2>\\s*([^<]+?)\\s*<br/>");
+    /**
+     * Anchored to the {@code <small>} the card's detail line opens with.
+     *
+     * <p>Unanchored, the alliance group swallows the markup before it and reports the town's own
+     * name and tags as its alliance.
+     */
+    private static final Pattern TOWN_STRENGTH =
+            Pattern.compile("<small>\\s*(?:([^<>]+?)\\s+-\\s+)?([0-9.]+)\\s+strength");
+    private static final Pattern TOWN_COUNTS =
+            Pattern.compile("(\\d+)\\s+members\\s*\\|\\s*(\\d+)\\s+territories");
+
     private final HttpTransport transport;
 
     public DynmapApi(HttpTransport transport) {
@@ -50,12 +63,29 @@ public final class DynmapApi {
         return transport.executor();
     }
 
+    /** Everything one continent's marker file carries: its outlines and its town cards. */
+    public record ContinentData(List<MapTerritory> territories, List<MapTown> towns) {
+    }
+
+    /** Both halves in one request — they live in the same file. */
+    public ContinentData fetchContinent(Continent continent) throws ApiException {
+        String url = BASE_URL + "/" + continent.instance()
+                + "/tiles/_markers_/marker_" + continent.world() + ".json";
+        JsonObject json = getObject(url);
+        JsonObject sets = Json.object(json, "sets");
+        JsonObject markerSet = sets == null ? null : Json.object(sets, "markers");
+        JsonObject markers = markerSet == null ? null : Json.object(markerSet, "markers");
+        return new ContinentData(territoriesFrom(json), towns(markers));
+    }
+
     /** Every territory on one continent, outlines and all. */
     public List<MapTerritory> fetchTerritories(Continent continent) throws ApiException {
         String url = BASE_URL + "/" + continent.instance()
                 + "/tiles/_markers_/marker_" + continent.world() + ".json";
-        JsonObject json = getObject(url);
+        return territoriesFrom(getObject(url));
+    }
 
+    private static List<MapTerritory> territoriesFrom(JsonObject json) {
         JsonObject sets = Json.object(json, "sets");
         if (sets == null) {
             return List.of();
@@ -70,6 +100,7 @@ public final class DynmapApi {
         // labels are indexed first and each polygon picks up its own.
         Map<String, String> labels = new HashMap<>();
         Map<String, double[]> centers = new HashMap<>();
+        Map<String, String> icons = new HashMap<>();
         if (markerSet != null) {
             JsonObject markers = Json.object(markerSet, "markers");
             if (markers != null) {
@@ -79,6 +110,7 @@ public final class DynmapApi {
                     }
                     JsonObject marker = entry.getValue().getAsJsonObject();
                     labels.put(entry.getKey(), Json.string(marker, "label"));
+                    icons.put(entry.getKey(), Json.string(marker, "icon"));
                     centers.put(entry.getKey(), new double[] {
                             Json.doubleValue(marker, "x", 0), Json.doubleValue(marker, "z", 0)});
                 }
@@ -96,12 +128,69 @@ public final class DynmapApi {
                 continue;
             }
             MapTerritory territory = parse(entry.getKey(), entry.getValue().getAsJsonObject(),
-                    labels.get(entry.getKey()), centers.get(entry.getKey()));
+                    labels.get(entry.getKey()), centers.get(entry.getKey()),
+                    icons.get(entry.getKey()));
             if (territory != null) {
                 result.add(territory);
             }
         }
         return List.copyOf(result);
+    }
+
+    /**
+     * The towns on one continent, from the cards their markers show.
+     *
+     * <p>Same request as the territories, so this is fed the marker set rather than fetching again.
+     */
+    public static List<MapTown> towns(JsonObject markers) {
+        if (markers == null) {
+            return List.of();
+        }
+        List<MapTown> towns = new ArrayList<>();
+        for (Map.Entry<String, JsonElement> entry : markers.entrySet()) {
+            if (!entry.getValue().isJsonObject()) {
+                continue;
+            }
+            JsonObject marker = entry.getValue().getAsJsonObject();
+            String icon = Json.string(marker, "icon");
+            if (icon == null || !icon.startsWith("town")) {
+                continue;
+            }
+            MapTown town = parseTown(Json.string(marker, "label"));
+            if (town != null) {
+                towns.add(town);
+            }
+        }
+        return List.copyOf(towns);
+    }
+
+    static MapTown parseTown(String label) {
+        if (label == null) {
+            return null;
+        }
+        Matcher name = TOWN_NAME.matcher(label);
+        if (!name.find()) {
+            return null;
+        }
+        String alliance = null;
+        double strength = -1;
+        Matcher strengthMatch = TOWN_STRENGTH.matcher(label);
+        if (strengthMatch.find()) {
+            alliance = strengthMatch.group(1) == null ? null : strengthMatch.group(1).trim();
+            try {
+                strength = Double.parseDouble(strengthMatch.group(2));
+            } catch (NumberFormatException ignored) {
+                strength = -1;
+            }
+        }
+        int members = 0;
+        int territories = 0;
+        Matcher counts = TOWN_COUNTS.matcher(label);
+        if (counts.find()) {
+            members = Integer.parseInt(counts.group(1));
+            territories = Integer.parseInt(counts.group(2));
+        }
+        return new MapTown(name.group(1).trim(), alliance, strength, members, territories);
     }
 
     /** Background work: a map nobody has opened yet must not queue in front of a search. */
@@ -118,7 +207,8 @@ public final class DynmapApi {
         }
     }
 
-    private static MapTerritory parse(String key, JsonObject area, String label, double[] center) {
+    private static MapTerritory parse(String key, JsonObject area, String label, double[] center,
+                                      String icon) {
         double[] xs = doubles(area, "x");
         double[] zs = doubles(area, "z");
         if (xs.length < 3 || xs.length != zs.length) {
@@ -142,7 +232,8 @@ public final class DynmapApi {
         double centerZ = center != null ? center[1] : average(zs);
 
         return new MapTerritory(number, areaName, owner, alliance, mutator, xs, zs,
-                centerX, centerZ, color(Json.string(area, "fillcolor")));
+                centerX, centerZ, color(Json.string(area, "fillcolor")),
+                color(Json.string(area, "color")), icon);
     }
 
     /**

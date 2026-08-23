@@ -3,6 +3,7 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerritory;
+import com.betterloka.map.MapTown;
 import com.betterloka.map.Waypoint;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -43,6 +44,9 @@ public class LokaMapScreen extends Screen {
     /** The map is the point of the screen, so everything else is sized around it. */
     private static final int MAX_CONTENT_WIDTH = 560;
 
+    /** Loka's markers are 16 square; half that reads at the scale a whole continent is drawn at. */
+    private static final int ICON_SIZE = 8;
+
     private final Screen parent;
 
     private Continent continent = Continent.KALROS;
@@ -50,6 +54,8 @@ public class LokaMapScreen extends Screen {
     private boolean loading;
     private String error;
     private MapTerritory selected;
+    /** Only remembered during render; the tooltip is drawn last so nothing clips it. */
+    private MapTerritory hovered;
 
     /** Bumped on every continent change so a slow load cannot overwrite a newer one. */
     private int generation;
@@ -104,8 +110,16 @@ public class LokaMapScreen extends Screen {
                         button -> copyCoordinates())
                 .dimensions(left + half + 4, buttonsY, width - half - 4, 20).build());
 
+        int waypointCount = BetterLokaClient.map().waypoints().size();
+        addDrawableChild(ButtonWidget.builder(
+                        Text.translatable("betterloka.map.clear_waypoints", waypointCount),
+                        button -> {
+                            BetterLokaClient.map().clear();
+                            clearAndInit();
+                        })
+                .dimensions(left, this.height - 28, 140, 20).build());
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 28, 200, 20).build());
+                .dimensions(this.width / 2 - 70, this.height - 28, 140, 20).build());
 
         if (territories.isEmpty() && !loading) {
             load();
@@ -220,10 +234,77 @@ public class LokaMapScreen extends Screen {
         } else if (territories.isEmpty()) {
             centered(context, "betterloka.map.empty", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
         } else {
+            hovered = territoryAt(mouseX, mouseY);
             drawMap(context);
         }
 
         drawPanel(context, left, this.height - 56 - PANEL_HEIGHT, width);
+
+        // Last, and outside the map's scissor, or the panel would clip its own tooltip.
+        if (hovered != null) {
+            context.drawOrderedTooltip(this.textRenderer, tooltip(hovered), mouseX, mouseY);
+        }
+    }
+
+    /** @return the territory under a screen position, or {@code null} outside the map. */
+    private MapTerritory territoryAt(double screenX, double screenY) {
+        if (screenX < mapX || screenX >= mapX + mapWidth
+                || screenY < mapY || screenY >= mapY + mapHeight) {
+            return null;
+        }
+        double worldX = worldMinX + (screenX - mapX) / worldScale;
+        double worldZ = worldMinZ + (screenY - mapY) / worldScale;
+        for (MapTerritory territory : territories) {
+            if (territory.contains(worldX, worldZ)) {
+                return territory;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The card Loka's own map shows on hover: the holder, its alliance and strength, its size.
+     *
+     * <p>The strength and the counts come from the town's marker, which is only in the marker file —
+     * so a map restored from yesterday's cache shows the territory's own lines and stops there,
+     * rather than inventing numbers.
+     */
+    private List<net.minecraft.text.OrderedText> tooltip(MapTerritory territory) {
+        List<net.minecraft.text.Text> lines = new java.util.ArrayList<>();
+        MapTown town = territory.neutral()
+                ? null
+                : BetterLokaClient.map().town(continent, territory.owner());
+
+        lines.add(Text.literal(territory.neutral() ? territory.label() : territory.owner())
+                .formatted(Formatting.WHITE));
+
+        if (territory.neutral()) {
+            lines.add(Text.translatable("betterloka.map.neutral").formatted(Formatting.GRAY));
+        } else if (town != null) {
+            String head = town.hasAlliance()
+                    ? town.alliance() + " - " + strength(town.strength()) + " strength"
+                    : strength(town.strength()) + " strength";
+            lines.add(Text.literal(head).formatted(Formatting.GRAY));
+            lines.add(Text.literal(town.members() + " members | " + town.territories()
+                    + " territories").formatted(Formatting.GRAY));
+        } else if (territory.alliance() != null) {
+            lines.add(Text.literal(territory.alliance()).formatted(Formatting.GRAY));
+        }
+
+        lines.add(Text.literal(territory.label()).formatted(Formatting.DARK_GRAY));
+        if (territory.mutator() != null) {
+            lines.add(Text.literal("Mutator: " + territory.mutator()).formatted(Formatting.LIGHT_PURPLE));
+        }
+
+        List<net.minecraft.text.OrderedText> ordered = new java.util.ArrayList<>(lines.size());
+        for (net.minecraft.text.Text line : lines) {
+            ordered.add(line.asOrderedText());
+        }
+        return ordered;
+    }
+
+    private static String strength(double value) {
+        return value < 0 ? "?" : String.format(Locale.ROOT, "%.0f", value);
     }
 
     private void centered(DrawContext context, String key, int y, int color) {
@@ -257,15 +338,41 @@ public class LokaMapScreen extends Screen {
         worldMinZ = minZ - (mapHeight / worldScale - spanZ) / 2;
 
         context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
+
+        // Fill, then outline, then icons — in that order, or a neighbour's fill would paint over
+        // the border between them and the hexes would run together the way they did before.
         for (MapTerritory territory : territories) {
-            boolean isSelected = territory == selected;
-            int alpha = isSelected ? 0xFF : (territory.neutral() ? 0x66 : 0xAA);
+            int alpha = territory == selected ? 0xFF : (territory.neutral() ? 0xB0 : 0xD8);
             fill(context, territory, (alpha << 24) | territory.fillColor());
+        }
+        for (MapTerritory territory : territories) {
+            drawOutline(context, territory, 0xFF000000 | territory.strokeColor());
         }
         if (selected != null) {
             drawOutline(context, selected, 0xFFFFFFFF);
         }
+        for (MapTerritory territory : territories) {
+            drawIcon(context, territory);
+        }
         context.disableScissor();
+    }
+
+    /**
+     * The keep or tower Loka draws in the middle of a territory.
+     *
+     * <p>Absent on the first frames while it downloads, and absent for good if the map cannot be
+     * reached — the territory is still drawn and still clickable either way.
+     */
+    private void drawIcon(DrawContext context, MapTerritory territory) {
+        var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
+        if (id == null) {
+            return;
+        }
+        int size = ICON_SIZE;
+        int x = mapX + (int) ((territory.centerX() - worldMinX) * worldScale) - size / 2;
+        int y = mapY + (int) ((territory.centerZ() - worldMinZ) * worldScale) - size / 2;
+        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
+                x, y, 0, 0, size, size, size, size, 0xFFFFFFFF);
     }
 
     /**

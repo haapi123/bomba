@@ -212,6 +212,7 @@
   "betterloka.map.waypoint": "Ustaw waypoint",
   "betterloka.map.waypoint_off": "Usuń waypoint",
   "betterloka.map.copy": "Kopiuj kordy",
+  "betterloka.map.clear_waypoints": "Usuń waypointy (%s)",
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",
   "betterloka.grind.shulker.title": "Respawn shulkera",

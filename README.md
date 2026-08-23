@@ -322,14 +322,25 @@ they are the real polygons, up to twenty-six sides apiece, 516 of them across th
 About 440 KB in total, cached for a day, because a border moves when a territory is captured and not
 otherwise.
 
-Click a territory and it names the region, the town holding it, that town's alliance and any active
-mutator, with the beacon coordinates and how far away you are in metres and chunks. Two things to do
-with it:
+Each territory is filled in the colour Loka gives it, outlined in the same near-black its own map
+uses, and carries the same marker in the middle — the keep for a held territory, the plainer one for
+neutral ground. **Hovering** one shows the card the website shows: the holding town, its alliance and
+strength, its members and how many territories it holds.
 
-- **Set waypoint** — it goes into the corner of the screen with an arrow that turns as you do, and
-  the distance counting down. Only waypoints for the continent you are standing on are drawn: a
-  marker set on Kalros points nowhere useful from Garama.
+The markers are Loka's artwork, so they are fetched at runtime the way a browser viewing the map
+fetches them and cached under `config/betterloka/map-icons` — about ten kilobytes, once, and never
+bundled into the jar.
+
+Clicking a territory names it and offers two things:
+
+- **Set waypoint** — drawn out in the world at the place itself, through walls and terrain, with the
+  distance under it in metres or kilometres. It also lists in the corner of the screen with an arrow
+  that turns as you do. Only waypoints for the continent you are standing on are drawn: a marker set
+  on Kalros points nowhere useful from Garama.
 - **Copy coordinates** — straight to the clipboard, in the form a command will take.
+
+**Clear waypoints** removes them all; setting one on a territory that already has one takes that one
+off.
 
 Hit-testing is ray casting against the real outline rather than a bounding box. Loka's territories
 are not rectangles, and a box would hand a corner to the neighbour.
@@ -338,7 +349,8 @@ are not rectangles, and a box would hand a corner to the neighbour.
 
 **The terrain itself.** Dynmap serves it as 32×32-block tiles, so a continent is tens of thousands
 of them at full detail — the map here draws the territory polygons over a plain background rather
-than pulling that down. The geometry is 1:1; the scenery is not there.
+than pulling that down. The geometry, the colours, the borders and the markers are Loka's; the
+scenery underneath them is not there.
 
 ## Discord bot
 

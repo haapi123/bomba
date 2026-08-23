@@ -14,11 +14,16 @@ package com.betterloka.map;
  * @param xs        polygon vertices, world X
  * @param zs        polygon vertices, world Z; the same length as {@code xs}
  * @param centerX   where the territory's marker sits — the point worth walking to
- * @param fillColor the colour Loka's map fills it with, {@code 0xRRGGBB}
+ * @param fillColor   the colour Loka's map fills it with, {@code 0xRRGGBB}
+ * @param strokeColor the colour it outlines it with — near-black on Loka's own map, which is what
+ *                    separates one hex from the next
+ * @param icon        the marker Loka draws in the middle: a keep for a held territory, a plainer
+ *                    one for neutral ground
  */
 public record MapTerritory(String number, String areaName, String owner, String alliance,
                            String mutator, double[] xs, double[] zs,
-                           double centerX, double centerZ, int fillColor) {
+                           double centerX, double centerZ, int fillColor, int strokeColor,
+                           String icon) {
 
     public boolean neutral() {
         return owner == null || owner.isBlank();

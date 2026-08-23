@@ -9,8 +9,10 @@ import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
 import com.betterloka.map.DynmapApi;
+import com.betterloka.map.MapIcons;
 import com.betterloka.map.MapService;
 import com.betterloka.map.WaypointHud;
+import com.betterloka.map.WaypointWorldRenderer;
 import com.betterloka.grind.GrindTimer;
 import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
@@ -68,6 +70,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TownLogger townLogger;
     private static TownActivityStore townActivity;
     private static MapService map;
+    private static MapIcons mapIcons;
     private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
 
@@ -94,7 +97,9 @@ public class BetterLokaClient implements ClientModInitializer {
         // player opened.
         map = new MapService(new DynmapApi(transport), configDir().resolve("map.json"),
                 configDir().resolve("waypoints.json"));
+        mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         new WaypointHud(map).register();
+        new WaypointWorldRenderer(map).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
         new TownInfoReader(townActivity).register();
         grindTimers = new GrindTimers();
@@ -211,6 +216,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static MapService map() {
         return map;
+    }
+
+    public static MapIcons mapIcons() {
+        return mapIcons;
     }
 
     public static TownCache towns() {
