@@ -113,8 +113,11 @@ not "has not played".
 
 `maxMembersChecked` in the config, **100** by default. Set it to `0` for no limit.
 
-The cap exists because each member is three requests, one of them a 30 KB page — four when the
-player has renamed and the career has to be fetched again by UUID.
+The cap exists because each member is three requests, one of them a 30 KB page. EldritchBot is asked
+by UUID rather than by name: it answers to either and returns the same page, but a name misses both
+for somebody who renamed and for somebody who never fought, so name-with-a-UUID-fallback paid two
+requests for every member of that second group — most of a large roster. (This cut request count, not
+measured time; see the table.)
 
 Time matters more than bandwidth here, because **Discord only allows a command fifteen minutes to
 answer**; a report that runs past it cannot be delivered at all. Two measured points, against
@@ -123,10 +126,12 @@ Concord:
 | Members checked | Wall time |
 |---|---|
 | 25 | 6 seconds |
+| 200 | 3m24s, and 4m15s on a second run |
 | 1217 (no limit) | **did not finish in 15 minutes** |
 
-It is not a straight line — the small run is several times faster per member than the large one — so
-size the limit from the table rather than from a rate. The bot gives up at twelve minutes and says
+It is not a straight line, and the two 200-member runs are 25% apart, so it is dominated by what the
+two remote services feel like on the day rather than by anything countable here. Size the limit from
+the table, conservatively. The bot gives up at twelve minutes and says
 the town is too big, rather than leaving a "thinking..." that never resolves, but the useful fix is a
 lower `maxMembersChecked`.
 
