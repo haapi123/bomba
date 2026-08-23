@@ -113,10 +113,17 @@ not "has not played".
 
 `maxMembersChecked` in the config, **100** by default. Set it to `0` for no limit.
 
-The cap exists because each member is three requests, one of them a 30 KB page. It is worth knowing
-what "no limit" means before you set it: Loka's median town has **92** members and the largest has
-**1217**, so an unlimited report on a big one is thousands of requests off somebody else's free
-service.
+The cap exists because each member is three requests, one of them a 30 KB page. Measured, the whole
+pipeline moves at roughly **1.5 members a second** — four concurrent requests against two rate-limited
+hosts — so a hundred members is about a minute and Loka's largest town, at 1217, is a quarter of an
+hour.
+
+That matters more than the bandwidth, because **Discord only allows a command fifteen minutes to
+answer**. A report that runs past it cannot be delivered at all. The bot gives up at twelve minutes
+and says the town is too big rather than leaving a "thinking..." that never resolves — but the useful
+fix is a lower `maxMembersChecked`, not a longer wait.
+
+For scale: Loka's median town has **92** members and the largest has **1217**.
 
 Two things the cap never does:
 
