@@ -2,13 +2,21 @@ package com.betterloka.bot;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Where the bot posts and how often it looks.
@@ -103,20 +111,74 @@ public final class BotConfig {
     /** Where the bot remembers what it has already announced. */
     public String stateFile = "betterloka-bot-state.json";
 
+    /**
+     * Keys found in the config file that this bot does not know.
+     *
+     * <p>Gson drops an unrecognised key without a word, so {@code "webhook"} where {@code
+     * "webhookUrl"} was meant reads exactly like an empty setting — which is a long way to look for a
+     * typo on a hosting panel with nothing but a log to go on.
+     */
+    private transient final List<String> unknownKeys = new ArrayList<>();
+
     public static BotConfig load(Path file) {
         BotConfig config = new BotConfig();
         if (Files.isRegularFile(file)) {
             try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                BotConfig loaded = GSON.fromJson(reader, BotConfig.class);
+                JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
+                BotConfig loaded = GSON.fromJson(json, BotConfig.class);
                 if (loaded != null) {
                     config = loaded;
                 }
+                config.unknownKeys.addAll(unknownKeysIn(json));
             } catch (IOException | RuntimeException e) {
                 throw new IllegalStateException("Could not read " + file + ": " + e.getMessage(), e);
             }
         }
         config.applyEnvironment();
         return config;
+    }
+
+    private static List<String> unknownKeysIn(JsonObject json) {
+        Set<String> known = new HashSet<>();
+        for (Field field : BotConfig.class.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) && !Modifier.isTransient(field.getModifiers())) {
+                known.add(field.getName());
+            }
+        }
+        List<String> unknown = new ArrayList<>();
+        for (String key : json.keySet()) {
+            if (!known.contains(key)) {
+                unknown.add(key);
+            }
+        }
+        return unknown;
+    }
+
+    public List<String> unknownKeys() {
+        return unknownKeys;
+    }
+
+    /**
+     * What the bot actually ended up with, for when it cannot start.
+     *
+     * <p>Secrets are reported as set or empty and never printed: this goes in a log that gets pasted
+     * into chat windows, which is how the last webhook had to be thrown away.
+     */
+    public List<String> describeSettings() {
+        List<String> lines = new ArrayList<>();
+        lines.add("  webhookUrl: " + state(webhookUrl));
+        lines.add("  botToken:   " + state(botToken));
+        lines.add("  channelId:  " + state(channelId));
+        lines.add("  roleId:     " + state(roleId));
+        lines.add("  guildId:    " + state(guildId));
+        return lines;
+    }
+
+    private static String state(String value) {
+        if (value == null || value.isBlank()) {
+            return "empty";
+        }
+        return "set (" + value.length() + " characters)";
     }
 
     /** Environment wins over the file, so a host's secret store beats a checked-in default. */

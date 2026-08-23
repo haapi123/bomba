@@ -60,11 +60,23 @@ public final class BetterLokaBot {
         }
 
         BotConfig config = BotConfig.load(CONFIG_FILE);
+
+        // A key Gson did not recognise is silently dropped, so a typo looks exactly like an empty
+        // setting. Said before validation, because it is usually the reason validation fails.
+        if (!config.unknownKeys().isEmpty()) {
+            LOG.warn("{} has setting(s) this bot does not know, and they were ignored: {}",
+                    CONFIG_FILE.toAbsolutePath(), String.join(", ", config.unknownKeys()));
+            LOG.warn("Check the spelling: webhookUrl, botToken, channelId, roleId, guildId.");
+        }
+
         String problem = config.validate();
         if (problem != null && !list) {
             LOG.error("{}", problem);
-            LOG.error("Edit {} or set the matching BETTERLOKA_* environment variables.",
-                    CONFIG_FILE.toAbsolutePath());
+            LOG.error("Read from {}:", CONFIG_FILE.toAbsolutePath());
+            for (String line : config.describeSettings()) {
+                LOG.error("{}", line);
+            }
+            LOG.error("Fill one of those in, or set the matching BETTERLOKA_* environment variable.");
             System.exit(1);
             return;
         }
