@@ -41,19 +41,26 @@ public class LokaMapScreen extends Screen {
 
     /** World blocks per screen pixel. Smaller is closer in. */
     private static final double MIN_BLOCKS_PER_PIXEL = 0.5;
-    private static final double MAX_BLOCKS_PER_PIXEL = 24;
-
-    /** Where it opens: close enough to read a territory, wide enough to see its neighbours. */
-    private static final double DEFAULT_BLOCKS_PER_PIXEL = 2;
+    private static final double MAX_BLOCKS_PER_PIXEL = 30;
 
     /**
-     * Past this the ground is not drawn.
+     * Where it opens: about six territories across.
      *
-     * <p>Tiles are 32 blocks apiece, so a whole continent is tens of thousands of them. Zoomed in it
-     * is a couple of hundred; zoomed out it is a download nobody asked for, and at that size the
-     * terrain would be a smear anyway.
+     * <p>Picked from the roster rather than by eye. Kalros's territories have a median width of 584
+     * blocks, so two blocks to a pixel — the first guess — put a single hex wider than the panel and
+     * showed two slabs of colour instead of a map.
      */
-    private static final double TERRAIN_UNTIL = 3.0;
+    private static final double DEFAULT_BLOCKS_PER_PIXEL = 6;
+
+    /**
+     * Past this the ground is not drawn, and that is a limit of Loka's map rather than a choice.
+     *
+     * <p>Its tiles are 32 blocks each and it has only rendered about a quarter of them even in its
+     * best areas. A view wide enough to read as a map — six territories, near 3500 blocks — would be
+     * seven thousand tiles for a picture that would still be three-quarters holes. Close in on one
+     * territory it is a couple of hundred and worth having, which is where it stays.
+     */
+    private static final double TERRAIN_UNTIL = 1.5;
 
     /** Guard against a stray drag while a continent is still loading. */
     private static final int DRAG_SLOP = 2;

@@ -205,7 +205,7 @@
   "betterloka.map.waypoint_off": "Remove waypoint",
   "betterloka.map.copy": "Copy coordinates",
   "betterloka.map.recenter": "Fit continent",
-  "betterloka.map.zoom_hint": "scroll to zoom in for terrain",
+  "betterloka.map.zoom_hint": "scroll right in for terrain",
   "betterloka.map.clear_waypoints": "Clear waypoints (%s)",
   "betterloka.map.terrain": "Download terrain",
   "betterloka.map.terrain_size": "Download terrain (~%s MB)",

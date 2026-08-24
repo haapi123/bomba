@@ -213,7 +213,7 @@
   "betterloka.map.waypoint_off": "Usuń waypoint",
   "betterloka.map.copy": "Kopiuj kordy",
   "betterloka.map.recenter": "Dopasuj kontynent",
-  "betterloka.map.zoom_hint": "przybliż kółkiem, żeby zobaczyć teren",
+  "betterloka.map.zoom_hint": "przybliż mocno, żeby zobaczyć teren",
   "betterloka.map.clear_waypoints": "Usuń waypointy (%s)",
   "betterloka.map.terrain": "Pobierz teren",
   "betterloka.map.terrain_size": "Pobierz teren (~%s MB)",
