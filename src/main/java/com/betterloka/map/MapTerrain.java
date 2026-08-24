@@ -60,6 +60,9 @@ public final class MapTerrain {
 
     private final Map<Continent, Terrain> ready = new EnumMap<>(Continent.class);
     private final Map<Continent, Progress> progress = new EnumMap<>(Continent.class);
+    /** Continents Loka has no tiles for, so the button stops offering what cannot be had. */
+    private final java.util.Set<Continent> unavailable =
+            java.util.EnumSet.noneOf(Continent.class);
 
     public MapTerrain(HttpTransport transport, Path cacheDir) {
         this.transport = transport;
@@ -76,6 +79,11 @@ public final class MapTerrain {
 
     public synchronized boolean isRunning(Continent continent) {
         return progressOf(continent).running();
+    }
+
+    /** True once a download has come back with nothing, which is a fact about Loka's map. */
+    public synchronized boolean isUnavailable(Continent continent) {
+        return unavailable.contains(continent);
     }
 
     /** @return roughly how many tiles a continent needs, for the button to say what it will cost. */
@@ -107,6 +115,10 @@ public final class MapTerrain {
                 }
                 if (png != null) {
                     publish(continent, bounds, png);
+                } else {
+                    synchronized (this) {
+                        unavailable.add(continent);
+                    }
                 }
             } catch (RuntimeException e) {
                 BetterLoka.LOGGER.warn("Could not build the terrain for {}", continent, e);
@@ -141,6 +153,7 @@ public final class MapTerrain {
 
         NativeImage mosaic = new NativeImage(width, height, true);
         AtomicInteger done = new AtomicInteger();
+        AtomicInteger pasted = new AtomicInteger();
 
         List<Thread> workers = new ArrayList<>();
         AtomicInteger next = new AtomicInteger();
@@ -153,6 +166,7 @@ public final class MapTerrain {
                     byte[] tile = fetchTile(continent, bounds, column, row);
                     if (tile != null) {
                         paste(mosaic, tile, column, row, across, down);
+                        pasted.incrementAndGet();
                     }
                     synchronized (MapTerrain.this) {
                         progress.put(continent, new Progress(done.incrementAndGet(), total, true));
@@ -171,6 +185,16 @@ public final class MapTerrain {
                 mosaic.close();
                 return null;
             }
+        }
+
+        // Not every continent has ground to fetch: Loka's Dynmap renders a world when somebody
+        // walks it, and Rivina's flat map has no tiles at all — not at zoom two, not even at zoom
+        // zero in the middle of the island. An empty mosaic published as terrain would replace a
+        // readable map with a white sheet, so nothing is published and the screen says so.
+        if (pasted.get() == 0) {
+            BetterLoka.LOGGER.info("Loka has rendered no map tiles for {}", continent);
+            mosaic.close();
+            return null;
         }
 
         try {

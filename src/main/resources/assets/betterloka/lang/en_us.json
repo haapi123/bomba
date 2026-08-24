@@ -209,6 +209,7 @@
   "betterloka.map.terrain_size": "Download terrain (~%s MB)",
   "betterloka.map.terrain_busy": "Downloading...",
   "betterloka.map.terrain_on": "Terrain loaded",
+  "betterloka.map.terrain_none": "No terrain on Loka's map",
   "betterloka.map.terrain_progress": "Downloading terrain: %s / %s tiles (%s%%)",
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",

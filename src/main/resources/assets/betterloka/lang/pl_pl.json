@@ -217,6 +217,7 @@
   "betterloka.map.terrain_size": "Pobierz teren (~%s MB)",
   "betterloka.map.terrain_busy": "Pobieram...",
   "betterloka.map.terrain_on": "Teren wczytany",
+  "betterloka.map.terrain_none": "Loka nie ma tu terenu",
   "betterloka.map.terrain_progress": "Pobieram teren: %s / %s kafelków (%s%%)",
   "betterloka.grind.tab.shulker": "Shulker Timer",
   "betterloka.grind.tab.glowstone": "Glowstone",

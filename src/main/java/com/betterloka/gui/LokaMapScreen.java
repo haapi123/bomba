@@ -156,6 +156,9 @@ public class LokaMapScreen extends Screen {
         if (BetterLokaClient.mapTerrain().isRunning(continent)) {
             return Text.translatable("betterloka.map.terrain_busy");
         }
+        if (BetterLokaClient.mapTerrain().isUnavailable(continent)) {
+            return Text.translatable("betterloka.map.terrain_none");
+        }
         int tiles = com.betterloka.map.MapTerrain.tileEstimate(territories);
         if (tiles == 0) {
             return Text.translatable("betterloka.map.terrain");
