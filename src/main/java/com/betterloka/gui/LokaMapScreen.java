@@ -44,17 +44,11 @@ public class LokaMapScreen extends Screen {
     /** The map is the point of the screen, so everything else is sized around it. */
     private static final int MAX_CONTENT_WIDTH = 560;
 
-    /** Loka's markers are 16 square; smaller reads better at the scale a continent is drawn at. */
-    private static final int ICON_SIZE = 6;
+    /** Loka's markers, drawn at their own size the way its map draws them. */
+    private static final int ICON_SIZE = 8;
 
-    /**
-     * How wide a territory must be on screen before its marker is drawn.
-     *
-     * <p>A whole continent in four hundred pixels puts territories about twenty across, and a marker
-     * in every one of them filled the map rather than labelling it. Below this the colour and the
-     * border say everything a marker would.
-     */
-    private static final int ICON_MIN_TERRITORY_WIDTH = 16;
+    /** Below this a territory is too small on screen to hold a marker without covering itself. */
+    private static final int ICON_MIN_TERRITORY_WIDTH = 10;
 
     private final Screen parent;
 
@@ -119,6 +113,14 @@ public class LokaMapScreen extends Screen {
                         button -> copyCoordinates())
                 .dimensions(left + half + 4, buttonsY, width - half - 4, 20).build());
 
+        int third = (width - 8) / 3;
+        int bottomY = this.height - 28;
+        addDrawableChild(ButtonWidget.builder(terrainLabel(), button -> {
+                    BetterLokaClient.mapTerrain().load(continent, territories);
+                    clearAndInit();
+                })
+                .dimensions(left, bottomY, third, 20).build());
+
         int waypointCount = BetterLokaClient.map().waypoints().size();
         addDrawableChild(ButtonWidget.builder(
                         Text.translatable("betterloka.map.clear_waypoints", waypointCount),
@@ -126,9 +128,9 @@ public class LokaMapScreen extends Screen {
                             BetterLokaClient.map().clear();
                             clearAndInit();
                         })
-                .dimensions(left, this.height - 28, 140, 20).build());
+                .dimensions(left + third + 4, bottomY, third, 20).build());
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 70, this.height - 28, 140, 20).build());
+                .dimensions(left + (third + 4) * 2, bottomY, width - (third + 4) * 2, 20).build());
 
         if (territories.isEmpty() && !loading) {
             load();
@@ -138,6 +140,27 @@ public class LokaMapScreen extends Screen {
     private Text tabLabel(Continent value) {
         Text label = Text.literal(value.displayName());
         return value == continent ? label.copy().formatted(Formatting.YELLOW) : label;
+    }
+
+    /**
+     * What the terrain button offers, or reports.
+     *
+     * <p>The size is stated up front because it is not small: Loka renders no zoom level coarser
+     * than 128 blocks to a tile, so a continent is hundreds to thousands of tiles fetched from their
+     * server. Worth spending once and cached for good — not worth spending behind somebody's back.
+     */
+    private Text terrainLabel() {
+        if (BetterLokaClient.mapTerrain().get(continent) != null) {
+            return Text.translatable("betterloka.map.terrain_on");
+        }
+        if (BetterLokaClient.mapTerrain().isRunning(continent)) {
+            return Text.translatable("betterloka.map.terrain_busy");
+        }
+        int tiles = com.betterloka.map.MapTerrain.tileEstimate(territories);
+        if (tiles == 0) {
+            return Text.translatable("betterloka.map.terrain");
+        }
+        return Text.translatable("betterloka.map.terrain_size", tiles * 5 / 1024 + 1);
     }
 
     private Text waypointLabel() {
@@ -247,6 +270,15 @@ public class LokaMapScreen extends Screen {
             drawMap(context);
         }
 
+        var terrainProgress = BetterLokaClient.mapTerrain().progressOf(continent);
+        if (terrainProgress.running()) {
+            context.drawCenteredTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.map.terrain_progress",
+                            terrainProgress.done(), terrainProgress.total(),
+                            terrainProgress.percent()),
+                    this.width / 2, MAP_TOP + 4, GuiTheme.LIVE);
+        }
+
         drawPanel(context, left, this.height - 56 - PANEL_HEIGHT, width);
 
         // Last, and outside the map's scissor, or the panel would clip its own tooltip.
@@ -348,10 +380,22 @@ public class LokaMapScreen extends Screen {
 
         context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
 
+        drawTerrain(context);
+
         // Fill, then outline, then icons — in that order, or a neighbour's fill would paint over
         // the border between them and the hexes would run together the way they did before.
+        // Over bare panel the fills carry the whole map and are nearly solid; over ground they are
+        // a tint, the way Loka's own map washes its colours over the terrain.
+        boolean overTerrain = BetterLokaClient.mapTerrain().get(continent) != null;
         for (MapTerritory territory : territories) {
-            int alpha = territory == selected ? 0xFF : (territory.neutral() ? 0xB0 : 0xD8);
+            int alpha;
+            if (territory == selected) {
+                alpha = overTerrain ? 0xA0 : 0xFF;
+            } else if (overTerrain) {
+                alpha = territory.neutral() ? 0x40 : 0x66;
+            } else {
+                alpha = territory.neutral() ? 0xB0 : 0xD8;
+            }
             fill(context, territory, (alpha << 24) | territory.fillColor());
         }
         for (MapTerritory territory : territories) {
@@ -364,6 +408,28 @@ public class LokaMapScreen extends Screen {
             drawIcon(context, territory);
         }
         context.disableScissor();
+    }
+
+    /**
+     * The ground, if it has been downloaded.
+     *
+     * <p>Placed by its world bounds rather than stretched to the panel, so a hex sits over the
+     * ground it actually covers — the whole point of having it there.
+     */
+    private void drawTerrain(DrawContext context) {
+        var terrain = BetterLokaClient.mapTerrain().get(continent);
+        if (terrain == null) {
+            return;
+        }
+        int x1 = mapX + (int) Math.floor((terrain.minX() - worldMinX) * worldScale);
+        int y1 = mapY + (int) Math.floor((terrain.minZ() - worldMinZ) * worldScale);
+        int x2 = mapX + (int) Math.ceil((terrain.maxX() - worldMinX) * worldScale);
+        int y2 = mapY + (int) Math.ceil((terrain.maxZ() - worldMinZ) * worldScale);
+        int width = Math.max(1, x2 - x1);
+        int height = Math.max(1, y2 - y1);
+
+        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, terrain.texture(),
+                x1, y1, 0f, 0f, width, height, width, height, width, height, 0xFFFFFFFF);
     }
 
     /**

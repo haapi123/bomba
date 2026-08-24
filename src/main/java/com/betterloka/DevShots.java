@@ -68,6 +68,9 @@ public final class DevShots {
         shot(20, "map-kalros");
         step(5, () -> click(client().currentScreen, "Rivina"));
         step(200, () -> { });
+        // Pull the ground down and wait for it, which is the whole point of this run.
+        step(5, () -> click(client().currentScreen, "Download terrain"));
+        step(2400, () -> { });
         step(5, () -> centreCursor());
         shot(20, "map-rivina");
 
