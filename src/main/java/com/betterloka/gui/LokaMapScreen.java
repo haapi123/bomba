@@ -122,32 +122,24 @@ public class LokaMapScreen extends Screen {
             x += tabWidth + 4;
         }
 
-        int buttonsY = this.height - 52;
-        int half = (width - 4) / 2;
+        // One row, so the map gets the rest of the screen. What is selected is drawn on the map
+        // itself the way Loka's own does it, rather than in a panel eating half the height.
+        int bottomY = this.height - 26;
+        int quarter = (width - 12) / 4;
         addDrawableChild(ButtonWidget.builder(waypointLabel(), button -> {
                     toggleWaypoint();
                     button.setMessage(waypointLabel());
                 })
-                .dimensions(left, buttonsY, half, 20).build());
+                .dimensions(left, bottomY, quarter, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.map.copy"),
                         button -> copyCoordinates())
-                .dimensions(left + half + 4, buttonsY, width - half - 4, 20).build());
-
-        int third = (width - 8) / 3;
-        int bottomY = this.height - 28;
+                .dimensions(left + quarter + 4, bottomY, quarter, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.map.recenter"),
                         button -> fitToContinent())
-                .dimensions(left, bottomY, third, 20).build());
-        addDrawableChild(ButtonWidget.builder(
-                        Text.translatable("betterloka.map.clear_waypoints",
-                                BetterLokaClient.map().waypoints().size()),
-                        button -> {
-                            BetterLokaClient.map().clear();
-                            clearAndInit();
-                        })
-                .dimensions(left + third + 4, bottomY, third, 20).build());
+                .dimensions(left + (quarter + 4) * 2, bottomY, quarter, 20).build());
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(left + (third + 4) * 2, bottomY, width - (third + 4) * 2, 20).build());
+                .dimensions(left + (quarter + 4) * 3, bottomY,
+                        left + width - (left + (quarter + 4) * 3), 20).build());
 
         if (territories.isEmpty() && !loading) {
             load();
@@ -348,12 +340,11 @@ public class LokaMapScreen extends Screen {
 
         int width = contentWidth();
         int left = contentLeft();
-        int bottom = this.height - 56 - PANEL_HEIGHT - 4;
 
         mapX = left + MAP_MARGIN;
         mapY = MAP_TOP;
         mapWidth = width - MAP_MARGIN * 2;
-        mapHeight = Math.max(40, bottom - MAP_TOP);
+        mapHeight = Math.max(60, this.height - 32 - MAP_TOP);
 
         GuiTheme.panel(context, left, MAP_TOP - 4, width, mapHeight + 8);
 
@@ -371,8 +362,6 @@ public class LokaMapScreen extends Screen {
             hovered = dragging ? null : territoryAt(mouseX, mouseY);
             drawMap(context);
         }
-
-        drawPanel(context, left, this.height - 56 - PANEL_HEIGHT, width);
 
         if (hovered != null) {
             context.drawOrderedTooltip(this.textRenderer, tooltip(hovered), mouseX, mouseY);
@@ -412,9 +401,53 @@ public class LokaMapScreen extends Screen {
         for (MapTerritory territory : territories) {
             drawIcon(context, territory);
         }
+        drawSelectedCard(context);
         context.disableScissor();
 
         drawScaleNote(context);
+    }
+
+    /**
+     * What is selected, drawn on the map rather than under it.
+     *
+     * <p>A panel below cost a third of the screen for four lines, and the map is the thing worth the
+     * space — Loka's own puts this over the map for the same reason.
+     */
+    private void drawSelectedCard(DrawContext context) {
+        if (selected == null) {
+            return;
+        }
+        List<Text> lines = new ArrayList<>();
+        lines.add(Text.literal(selected.label()).formatted(Formatting.BOLD));
+        lines.add(Text.literal(selected.neutral()
+                ? Text.translatable("betterloka.map.neutral").getString()
+                : selected.owner()));
+        if (selected.alliance() != null) {
+            lines.add(Text.literal(selected.alliance()));
+        }
+        lines.add(Text.literal(String.format(Locale.ROOT, "%d, %d  ·  %s",
+                Math.round(selected.centerX()), Math.round(selected.centerZ()), distance())));
+
+        int widest = 0;
+        for (Text line : lines) {
+            widest = Math.max(widest, this.textRenderer.getWidth(line));
+        }
+        int boxWidth = widest + 12;
+        int boxHeight = lines.size() * ROW_HEIGHT + 8;
+        int boxX = mapX + 4;
+        int boxY = mapY + mapHeight - boxHeight - 4;
+
+        context.fill(boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0xD0101014);
+        context.fill(boxX, boxY, boxX + boxWidth, boxY + 1, 0xFF000000 | selected.fillColor());
+
+        int y = boxY + 5;
+        boolean first = true;
+        for (Text line : lines) {
+            context.drawTextWithShadow(this.textRenderer, line, boxX + 6, y,
+                    first ? GuiTheme.ACCENT : GuiTheme.MUTED);
+            y += ROW_HEIGHT;
+            first = false;
+        }
     }
 
     /**
