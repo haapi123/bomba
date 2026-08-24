@@ -12,20 +12,40 @@ package com.betterloka.map;
  * other three and they hold claimed territory like any of them.
  */
 public enum Continent {
-    KALROS("Kalros", "kalros", "north"),
-    ASCALON("Ascalon", "ascalon", "west"),
-    GARAMA("Garama", "garama", "south"),
-    RIVINA("Rivina", "conquest", "lilboi"),
-    BALAK("Balak", "conquest", "bigboi");
+    KALROS("Kalros", "kalros", "north", 3717, 4234),
+    ASCALON("Ascalon", "ascalon", "west", 5760, 5255),
+    GARAMA("Garama", "garama", "south", 4382, 2097),
+    RIVINA("Rivina", "conquest", "lilboi", 2385, 1041),
+    BALAK("Balak", "conquest", "bigboi", 2302, 3010);
 
     private final String displayName;
     private final String instance;
     private final String world;
+    private final double centerX;
+    private final double centerZ;
 
-    Continent(String displayName, String instance, String world) {
+    Continent(String displayName, String instance, String world, double centerX, double centerZ) {
         this.displayName = displayName;
         this.instance = instance;
         this.world = world;
+        this.centerX = centerX;
+        this.centerZ = centerZ;
+    }
+
+    /**
+     * Where Loka's own map opens this continent.
+     *
+     * <p>Worth having rather than using the middle of the territory outlines: Loka has only rendered
+     * ground in patches, and this is the patch it rendered. Opening on the geometric centre of the
+     * territories put the view over bare sea floor with no tiles at all — 0 of 169 where its own
+     * centre has 40.
+     */
+    public double centerX() {
+        return centerX;
+    }
+
+    public double centerZ() {
+        return centerZ;
     }
 
     public String displayName() {

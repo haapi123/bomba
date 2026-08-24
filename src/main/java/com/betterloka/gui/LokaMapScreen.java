@@ -195,23 +195,16 @@ public class LokaMapScreen extends Screen {
         });
     }
 
-    /** Puts the middle of the continent in the middle of the panel, at the opening zoom. */
+    /**
+     * Opens where Loka's own map opens.
+     *
+     * <p>Not the middle of the territory outlines, which sounds right and is not: Loka has rendered
+     * ground only in patches, and the geometric centre of Kalros lands on one with no tiles at all.
+     * Its published centre lands on the patch it did render.
+     */
     private void centreOnContinent() {
-        if (territories.isEmpty()) {
-            return;
-        }
-        double minX = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-        for (MapTerritory territory : territories) {
-            minX = Math.min(minX, territory.minX());
-            maxX = Math.max(maxX, territory.maxX());
-            minZ = Math.min(minZ, territory.minZ());
-            maxZ = Math.max(maxZ, territory.maxZ());
-        }
-        centerX = (minX + maxX) / 2;
-        centerZ = (minZ + maxZ) / 2;
+        centerX = continent.centerX();
+        centerZ = continent.centerZ();
         centred = true;
     }
 
@@ -561,7 +554,11 @@ public class LokaMapScreen extends Screen {
             lines.add(Text.literal(territory.alliance()).formatted(Formatting.GRAY));
         }
 
-        lines.add(Text.literal(territory.label()).formatted(Formatting.DARK_GRAY));
+        // Only when it says something the heading did not: for neutral ground the heading is
+        // already the territory's name.
+        if (!territory.neutral()) {
+            lines.add(Text.literal(territory.label()).formatted(Formatting.DARK_GRAY));
+        }
         if (territory.mutator() != null) {
             lines.add(Text.literal("Mutator: " + territory.mutator())
                     .formatted(Formatting.LIGHT_PURPLE));

@@ -195,6 +195,6 @@ public final class MapTerrain {
     }
 
     public static int tileYAt(double worldZ) {
-        return (int) Math.floor(-worldZ / BLOCKS_PER_TILE) - 1;
+        return (int) Math.floor(-worldZ / BLOCKS_PER_TILE);
     }
 }
