@@ -39,6 +39,9 @@ public class LokaMapScreen extends Screen {
     /** Loka's markers, at the size its own map draws them. */
     private static final int ICON_SIZE = 8;
 
+    /** What lies under everything: deep water, the way Loka's map shows the gaps between land. */
+    private static final int OCEAN = 0xFF17263A;
+
     /** World blocks per screen pixel. Smaller is closer in. */
     private static final double MIN_BLOCKS_PER_PIXEL = 0.5;
     private static final double MAX_BLOCKS_PER_PIXEL = 30;
@@ -375,6 +378,11 @@ public class LokaMapScreen extends Screen {
 
     private void drawMap(DrawContext context) {
         context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
+
+        // Opaque, and the colour of deep water. The screen's usual translucent panel let the game
+        // show through the map, which read as a smeared overlay rather than something to look at;
+        // Loka's own draws its hexes over sea.
+        context.fill(mapX, mapY, mapX + mapWidth, mapY + mapHeight, OCEAN);
 
         drawTerrain(context);
 
