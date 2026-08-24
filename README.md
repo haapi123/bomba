@@ -345,12 +345,23 @@ off.
 Hit-testing is ray casting against the real outline rather than a bounding box. Loka's territories
 are not rectangles, and a box would hand a corner to the neighbour.
 
-### What is not in it yet
+### Panning, zoom, and where the ground is
 
-**The terrain itself.** Dynmap serves it as 32×32-block tiles, so a continent is tens of thousands
-of them at full detail — the map here draws the territory polygons over a plain background rather
-than pulling that down. The geometry, the colours, the borders and the markers are Loka's; the
-scenery underneath them is not there.
+It opens about six territories across — measured, not guessed: Kalros's territories have a median
+width of 584 blocks, and a first attempt at two blocks to a pixel put one hex wider than the whole
+panel. Drag to move, scroll to zoom about the cursor, **Fit continent** to get back out.
+
+**The terrain only appears zoomed right in**, and that is a limit of Loka's map rather than a
+choice. Its tiles are 32 blocks each and roughly a quarter of them exist even where it has rendered
+most — sampling a hundred in the middle of Kalros found 24 at the detailed zoom, 11 one step out and
+none two steps out. A view wide enough to read as a map is over seven thousand tiles and would still
+be three-quarters holes. Close in on one territory it is a couple of hundred, so that is where it
+draws: fetched a tile at a time for the window on screen, capped at six requests a frame, cached to
+disk.
+
+The map opens on the centre Loka publishes rather than the middle of the territory outlines. That is
+not cosmetic either: the geometric centre of Kalros is bare sea floor with no tiles at all, against
+40 of 169 at Loka's own centre.
 
 ## Discord bot
 
