@@ -2,6 +2,7 @@ package com.betterloka.gui;
 
 import com.betterloka.BetterLokaClient;
 import com.betterloka.map.Continent;
+import com.betterloka.map.MapTerrain;
 import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
 import com.betterloka.map.Waypoint;
@@ -13,42 +14,49 @@ import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * Loka's own map, drawn from its own territory outlines.
+ * Loka's map, brought into the game: its outlines, its colours, its markers.
  *
- * <p>Five continents, each a real set of polygons rather than a picture — which is what lets a click
- * land on a territory and mean something. Picking one offers the two things worth doing with a place
- * on a map: mark it so it can be found in the world, or copy its coordinates.
+ * <p>It opens zoomed in and is dragged with the mouse, the way its website is used. That is not only
+ * a nicety — the ground under the territories is fetched a tile at a time for whatever is on screen,
+ * and only a zoomed-in window is few enough tiles to be worth fetching at all.
  */
 public class LokaMapScreen extends Screen {
-    /**
-     * Below the toast strip.
-     *
-     * <p>This screen's tab row runs the full width, so its last two tabs sit under the top right —
-     * where Minecraft draws toasts. At the usual 26 an advancement popping mid-look clips the tabs,
-     * which is exactly when somebody is reading the map. A toast is 32 tall, so the row starts under
-     * one.
-     */
+    /** Below the toast strip, which owns the top right and would clip the last tabs. */
     private static final int TAB_ROW_Y = 36;
     private static final int TAB_ROW_HEIGHT = 16;
     private static final int MAP_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 6;
-    private static final int MAP_MARGIN = 12;
+    private static final int MAP_MARGIN = 8;
 
-    /** Height of the panel under the map that describes the selected territory. */
     private static final int PANEL_HEIGHT = 50;
     private static final int ROW_HEIGHT = 11;
+    private static final int MAX_CONTENT_WIDTH = 620;
 
-    /** The map is the point of the screen, so everything else is sized around it. */
-    private static final int MAX_CONTENT_WIDTH = 560;
-
-    /** Loka's markers, drawn at their own size the way its map draws them. */
+    /** Loka's markers, at the size its own map draws them. */
     private static final int ICON_SIZE = 8;
 
-    /** Below this a territory is too small on screen to hold a marker without covering itself. */
-    private static final int ICON_MIN_TERRITORY_WIDTH = 10;
+    /** World blocks per screen pixel. Smaller is closer in. */
+    private static final double MIN_BLOCKS_PER_PIXEL = 0.5;
+    private static final double MAX_BLOCKS_PER_PIXEL = 24;
+
+    /** Where it opens: close enough to read a territory, wide enough to see its neighbours. */
+    private static final double DEFAULT_BLOCKS_PER_PIXEL = 2;
+
+    /**
+     * Past this the ground is not drawn.
+     *
+     * <p>Tiles are 32 blocks apiece, so a whole continent is tens of thousands of them. Zoomed in it
+     * is a couple of hundred; zoomed out it is a download nobody asked for, and at that size the
+     * terrain would be a smear anyway.
+     */
+    private static final double TERRAIN_UNTIL = 3.0;
+
+    /** Guard against a stray drag while a continent is still loading. */
+    private static final int DRAG_SLOP = 2;
 
     private final Screen parent;
 
@@ -57,20 +65,31 @@ public class LokaMapScreen extends Screen {
     private boolean loading;
     private String error;
     private MapTerritory selected;
-    /** Only remembered during render; the tooltip is drawn last so nothing clips it. */
     private MapTerritory hovered;
-
-    /** Bumped on every continent change so a slow load cannot overwrite a newer one. */
     private int generation;
+
+    /** The view: which world point is in the middle, and how tight the zoom is. */
+    private double centerX;
+    private double centerZ;
+    private double blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
+    private boolean centred;
+
+    private boolean dragging;
+    private double dragStartX;
+    private double dragStartZ;
+    private double dragOriginX;
+    private double dragOriginY;
 
     // Where the map was drawn this frame, so a click can be turned back into world coordinates.
     private int mapX;
     private int mapY;
     private int mapWidth;
     private int mapHeight;
-    private double worldMinX;
-    private double worldMinZ;
-    private double worldScale = 1;
+
+    public LokaMapScreen(Screen parent) {
+        super(Text.translatable("betterloka.module.loka_map"));
+        this.parent = parent;
+    }
 
     private int contentWidth() {
         return Math.min(this.width - 20, MAX_CONTENT_WIDTH);
@@ -78,11 +97,6 @@ public class LokaMapScreen extends Screen {
 
     private int contentLeft() {
         return (this.width - contentWidth()) / 2;
-    }
-
-    public LokaMapScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.loka_map"));
-        this.parent = parent;
     }
 
     @Override
@@ -95,7 +109,6 @@ public class LokaMapScreen extends Screen {
         int x = left;
         for (int i = 0; i < count; i++) {
             Continent target = Continent.values()[i];
-            // The last tab takes the rounding, so the row ends flush with the panel below it.
             int thisWidth = i == count - 1 ? left + width - x : tabWidth;
             addDrawableChild(ButtonWidget.builder(tabLabel(target), button -> select(target))
                     .dimensions(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
@@ -115,15 +128,12 @@ public class LokaMapScreen extends Screen {
 
         int third = (width - 8) / 3;
         int bottomY = this.height - 28;
-        addDrawableChild(ButtonWidget.builder(terrainLabel(), button -> {
-                    BetterLokaClient.mapTerrain().load(continent, territories);
-                    clearAndInit();
-                })
+        addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.map.recenter"),
+                        button -> fitToContinent())
                 .dimensions(left, bottomY, third, 20).build());
-
-        int waypointCount = BetterLokaClient.map().waypoints().size();
         addDrawableChild(ButtonWidget.builder(
-                        Text.translatable("betterloka.map.clear_waypoints", waypointCount),
+                        Text.translatable("betterloka.map.clear_waypoints",
+                                BetterLokaClient.map().waypoints().size()),
                         button -> {
                             BetterLokaClient.map().clear();
                             clearAndInit();
@@ -142,30 +152,6 @@ public class LokaMapScreen extends Screen {
         return value == continent ? label.copy().formatted(Formatting.YELLOW) : label;
     }
 
-    /**
-     * What the terrain button offers, or reports.
-     *
-     * <p>The size is stated up front because it is not small: Loka renders no zoom level coarser
-     * than 128 blocks to a tile, so a continent is hundreds to thousands of tiles fetched from their
-     * server. Worth spending once and cached for good — not worth spending behind somebody's back.
-     */
-    private Text terrainLabel() {
-        if (BetterLokaClient.mapTerrain().get(continent) != null) {
-            return Text.translatable("betterloka.map.terrain_on");
-        }
-        if (BetterLokaClient.mapTerrain().isRunning(continent)) {
-            return Text.translatable("betterloka.map.terrain_busy");
-        }
-        if (BetterLokaClient.mapTerrain().isUnavailable(continent)) {
-            return Text.translatable("betterloka.map.terrain_none");
-        }
-        int tiles = com.betterloka.map.MapTerrain.tileEstimate(territories);
-        if (tiles == 0) {
-            return Text.translatable("betterloka.map.terrain");
-        }
-        return Text.translatable("betterloka.map.terrain_size", tiles * 5 / 1024 + 1);
-    }
-
     private Text waypointLabel() {
         if (selected == null) {
             return Text.translatable("betterloka.map.waypoint");
@@ -182,6 +168,8 @@ public class LokaMapScreen extends Screen {
         territories = List.of();
         selected = null;
         error = null;
+        centred = false;
+        blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
         load();
         clearAndInit();
     }
@@ -207,42 +195,150 @@ public class LokaMapScreen extends Screen {
         });
     }
 
-    private void toggleWaypoint() {
-        if (selected == null) {
+    /** Puts the middle of the continent in the middle of the panel, at the opening zoom. */
+    private void centreOnContinent() {
+        if (territories.isEmpty()) {
             return;
         }
-        BetterLokaClient.map().toggle(new Waypoint(selected.label(), continent.world(),
-                selected.centerX(), 64, selected.centerZ(), selected.fillColor(), selected.icon()));
+        double minX = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxZ = -Double.MAX_VALUE;
+        for (MapTerritory territory : territories) {
+            minX = Math.min(minX, territory.minX());
+            maxX = Math.max(maxX, territory.maxX());
+            minZ = Math.min(minZ, territory.minZ());
+            maxZ = Math.max(maxZ, territory.maxZ());
+        }
+        centerX = (minX + maxX) / 2;
+        centerZ = (minZ + maxZ) / 2;
+        centred = true;
     }
 
-    private void copyCoordinates() {
-        if (selected == null || this.client == null) {
+    /** Zooms out until the whole continent fits, for when panning has lost the plot. */
+    private void fitToContinent() {
+        if (territories.isEmpty()) {
             return;
         }
-        String coordinates = String.format(Locale.ROOT, "%d %d %d",
-                Math.round(selected.centerX()), 64, Math.round(selected.centerZ()));
-        this.client.keyboard.setClipboard(coordinates);
+        double minX = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxZ = -Double.MAX_VALUE;
+        for (MapTerritory territory : territories) {
+            minX = Math.min(minX, territory.minX());
+            maxX = Math.max(maxX, territory.maxX());
+            minZ = Math.min(minZ, territory.minZ());
+            maxZ = Math.max(maxZ, territory.maxZ());
+        }
+        centerX = (minX + maxX) / 2;
+        centerZ = (minZ + maxZ) / 2;
+        blocksPerPixel = Math.min(MAX_BLOCKS_PER_PIXEL, Math.max(
+                (maxX - minX) / Math.max(1, mapWidth), (maxZ - minZ) / Math.max(1, mapHeight)));
+        centred = true;
     }
+
+    private double worldLeft() {
+        return centerX - mapWidth * blocksPerPixel / 2;
+    }
+
+    private double worldTop() {
+        return centerZ - mapHeight * blocksPerPixel / 2;
+    }
+
+    private int screenXOf(double worldX) {
+        return mapX + (int) Math.round((worldX - worldLeft()) / blocksPerPixel);
+    }
+
+    private int screenYOf(double worldZ) {
+        return mapY + (int) Math.round((worldZ - worldTop()) / blocksPerPixel);
+    }
+
+    private double worldXAt(double screenX) {
+        return worldLeft() + (screenX - mapX) * blocksPerPixel;
+    }
+
+    private double worldZAt(double screenY) {
+        return worldTop() + (screenY - mapY) * blocksPerPixel;
+    }
+
+    // --- input ---
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        if (click.x() >= mapX && click.x() < mapX + mapWidth
-                && click.y() >= mapY && click.y() < mapY + mapHeight) {
-            double worldX = worldMinX + (click.x() - mapX) / worldScale;
-            double worldZ = worldMinZ + (click.y() - mapY) / worldScale;
-            for (MapTerritory territory : territories) {
-                if (territory.contains(worldX, worldZ)) {
-                    selected = territory;
-                    clearAndInit();
-                    return true;
-                }
-            }
-            selected = null;
-            clearAndInit();
+        if (insideMap(click.x(), click.y())) {
+            dragging = true;
+            dragOriginX = click.x();
+            dragOriginY = click.y();
+            dragStartX = centerX;
+            dragStartZ = centerZ;
             return true;
         }
         return super.mouseClicked(click, doubled);
     }
+
+    @Override
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (dragging) {
+            centerX = dragStartX - (click.x() - dragOriginX) * blocksPerPixel;
+            centerZ = dragStartZ - (click.y() - dragOriginY) * blocksPerPixel;
+            return true;
+        }
+        return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        if (dragging) {
+            dragging = false;
+            // A press that did not move is a click, and picks the territory under it.
+            if (Math.abs(click.x() - dragOriginX) <= DRAG_SLOP
+                    && Math.abs(click.y() - dragOriginY) <= DRAG_SLOP) {
+                selected = territoryAt(click.x(), click.y());
+                clearAndInit();
+            }
+            return true;
+        }
+        return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        if (!insideMap(mouseX, mouseY)) {
+            return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+        }
+        // Zoom about the cursor, so the thing being pointed at stays under the pointer.
+        double worldUnderCursorX = worldXAt(mouseX);
+        double worldUnderCursorZ = worldZAt(mouseY);
+
+        double factor = vertical > 0 ? 1 / 1.25 : 1.25;
+        blocksPerPixel = Math.max(MIN_BLOCKS_PER_PIXEL,
+                Math.min(MAX_BLOCKS_PER_PIXEL, blocksPerPixel * factor));
+
+        centerX = worldUnderCursorX + (centerX - worldUnderCursorX) * factor;
+        centerZ = worldUnderCursorZ + (centerZ - worldUnderCursorZ) * factor;
+        return true;
+    }
+
+    private boolean insideMap(double screenX, double screenY) {
+        return screenX >= mapX && screenX < mapX + mapWidth
+                && screenY >= mapY && screenY < mapY + mapHeight;
+    }
+
+    private MapTerritory territoryAt(double screenX, double screenY) {
+        if (!insideMap(screenX, screenY)) {
+            return null;
+        }
+        double worldX = worldXAt(screenX);
+        double worldZ = worldZAt(screenY);
+        for (MapTerritory territory : territories) {
+            if (territory.contains(worldX, worldZ)) {
+                return territory;
+            }
+        }
+        return null;
+    }
+
+    // --- drawing ---
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -269,52 +365,182 @@ public class LokaMapScreen extends Screen {
         } else if (territories.isEmpty()) {
             centered(context, "betterloka.map.empty", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
         } else {
-            hovered = territoryAt(mouseX, mouseY);
+            if (!centred) {
+                centreOnContinent();
+            }
+            hovered = dragging ? null : territoryAt(mouseX, mouseY);
             drawMap(context);
-        }
-
-        var terrainProgress = BetterLokaClient.mapTerrain().progressOf(continent);
-        if (terrainProgress.running()) {
-            context.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.map.terrain_progress",
-                            terrainProgress.done(), terrainProgress.total(),
-                            terrainProgress.percent()),
-                    this.width / 2, MAP_TOP + 4, GuiTheme.LIVE);
         }
 
         drawPanel(context, left, this.height - 56 - PANEL_HEIGHT, width);
 
-        // Last, and outside the map's scissor, or the panel would clip its own tooltip.
         if (hovered != null) {
             context.drawOrderedTooltip(this.textRenderer, tooltip(hovered), mouseX, mouseY);
         }
     }
 
-    /** @return the territory under a screen position, or {@code null} outside the map. */
-    private MapTerritory territoryAt(double screenX, double screenY) {
-        if (screenX < mapX || screenX >= mapX + mapWidth
-                || screenY < mapY || screenY >= mapY + mapHeight) {
-            return null;
-        }
-        double worldX = worldMinX + (screenX - mapX) / worldScale;
-        double worldZ = worldMinZ + (screenY - mapY) / worldScale;
+    private void centered(DrawContext context, String key, int y, int color) {
+        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable(key),
+                this.width / 2, y, color);
+    }
+
+    private void drawMap(DrawContext context) {
+        context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
+
+        drawTerrain(context);
+
+        // Fill, then every outline, then the markers. A neighbour's fill drawn after a border paints
+        // over it, and the hexes run together into one blob.
+        boolean overTerrain = blocksPerPixel <= TERRAIN_UNTIL;
         for (MapTerritory territory : territories) {
-            if (territory.contains(worldX, worldZ)) {
-                return territory;
+            int alpha;
+            if (territory == selected) {
+                alpha = overTerrain ? 0x99 : 0xFF;
+            } else if (overTerrain) {
+                alpha = territory.neutral() ? 0x3C : 0x66;
+            } else {
+                alpha = territory.neutral() ? 0xB0 : 0xD8;
             }
+            fill(context, territory, (alpha << 24) | territory.fillColor());
         }
-        return null;
+        for (MapTerritory territory : territories) {
+            drawOutline(context, territory, 0xE0000000 | territory.strokeColor());
+        }
+        if (selected != null) {
+            drawOutline(context, selected, 0xFFFFFFFF);
+        }
+        for (MapTerritory territory : territories) {
+            drawIcon(context, territory);
+        }
+        context.disableScissor();
+
+        drawScaleNote(context);
     }
 
     /**
-     * The card Loka's own map shows on hover: the holder, its alliance and strength, its size.
+     * Loka's own ground, one tile per 32 blocks, for the window on screen.
      *
-     * <p>The strength and the counts come from the town's marker, which is only in the marker file —
-     * so a map restored from yesterday's cache shows the territory's own lines and stops there,
-     * rather than inventing numbers.
+     * <p>Only close in: zoomed out this would be thousands of tiles for a picture too small to read.
+     * A tile that has not arrived, or that Loka never rendered, simply leaves the background showing.
      */
+    private void drawTerrain(DrawContext context) {
+        if (blocksPerPixel > TERRAIN_UNTIL) {
+            return;
+        }
+        MapTerrain terrain = BetterLokaClient.mapTerrain();
+        terrain.beginFrame();
+
+        int firstX = MapTerrain.tileXAt(worldLeft());
+        int lastX = MapTerrain.tileXAt(worldXAt(mapX + mapWidth));
+        int firstY = MapTerrain.tileYAt(worldZAt(mapY + mapHeight));
+        int lastY = MapTerrain.tileYAt(worldTop());
+
+        int size = (int) Math.ceil(MapTerrain.BLOCKS_PER_TILE / blocksPerPixel);
+        for (int tileX = firstX; tileX <= lastX; tileX++) {
+            for (int tileY = firstY; tileY <= lastY; tileY++) {
+                var id = terrain.tile(continent, tileX, tileY);
+                if (id == null) {
+                    continue;
+                }
+                int x = screenXOf(MapTerrain.tileWorldX(tileX));
+                int y = screenYOf(MapTerrain.tileWorldZ(tileY));
+                context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
+                        x, y, 0f, 0f, size, size, size, size, size, size, 0xFFFFFFFF);
+            }
+        }
+    }
+
+    private void drawIcon(DrawContext context, MapTerritory territory) {
+        double onScreenWidth = (territory.maxX() - territory.minX()) / blocksPerPixel;
+        if (onScreenWidth < ICON_SIZE + 4) {
+            return;
+        }
+        var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
+        if (id == null) {
+            return;
+        }
+        int x = screenXOf(territory.centerX()) - ICON_SIZE / 2;
+        int y = screenYOf(territory.centerZ()) - ICON_SIZE / 2;
+        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
+                x, y, 0f, 0f, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE, 0xFFFFFFFF);
+    }
+
+    /**
+     * Fills one territory, a screen row at a time.
+     *
+     * <p>Each row asks the polygon's edges where they cross it and fills between the crossings in
+     * pairs, rather than testing every pixel for being inside — which for 143 polygons of twenty-six
+     * edges was tens of millions of tests a frame and made the screen a slideshow.
+     */
+    private void fill(DrawContext context, MapTerritory territory, int color) {
+        double[] xs = territory.xs();
+        double[] zs = territory.zs();
+
+        int top = Math.max(mapY, screenYOf(territory.minZ()));
+        int bottom = Math.min(mapY + mapHeight - 1, screenYOf(territory.maxZ()));
+        double[] crossings = new double[xs.length];
+
+        for (int row = top; row <= bottom; row++) {
+            double worldZ = worldZAt(row + 0.5);
+            int found = 0;
+            for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+                if ((zs[i] > worldZ) != (zs[j] > worldZ)) {
+                    crossings[found++] =
+                            xs[i] + (xs[j] - xs[i]) * (worldZ - zs[i]) / (zs[j] - zs[i]);
+                }
+            }
+            if (found < 2) {
+                continue;
+            }
+            java.util.Arrays.sort(crossings, 0, found);
+
+            for (int pair = 0; pair + 1 < found; pair += 2) {
+                int from = Math.max(mapX, screenXOf(crossings[pair]));
+                int to = Math.min(mapX + mapWidth, screenXOf(crossings[pair + 1]));
+                if (to > from) {
+                    context.fill(from, row, to, row + 1, color);
+                }
+            }
+        }
+    }
+
+    private void drawOutline(DrawContext context, MapTerritory territory, int color) {
+        double[] xs = territory.xs();
+        double[] zs = territory.zs();
+        for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+            line(context, xs[j], zs[j], xs[i], zs[i], color);
+        }
+    }
+
+    private void line(DrawContext context, double x1, double z1, double x2, double z2, int color) {
+        int px1 = screenXOf(x1);
+        int py1 = screenYOf(z1);
+        int px2 = screenXOf(x2);
+        int py2 = screenYOf(z2);
+        int steps = Math.max(Math.abs(px2 - px1), Math.abs(py2 - py1));
+        if (steps > 4000) {
+            return;
+        }
+        for (int step = 0; step <= steps; step++) {
+            int px = px1 + (px2 - px1) * step / Math.max(1, steps);
+            int py = py1 + (py2 - py1) * step / Math.max(1, steps);
+            context.fill(px, py, px + 1, py + 1, color);
+        }
+    }
+
+    /** A quiet line saying how close in the view is, and where the middle of it sits. */
+    private void drawScaleNote(DrawContext context) {
+        String note = String.format(Locale.ROOT, "X %d, Z %d",
+                Math.round(centerX), Math.round(centerZ));
+        if (blocksPerPixel > TERRAIN_UNTIL) {
+            note += "  ·  " + Text.translatable("betterloka.map.zoom_hint").getString();
+        }
+        context.drawTextWithShadow(this.textRenderer, note,
+                mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
+    }
+
     private List<net.minecraft.text.OrderedText> tooltip(MapTerritory territory) {
-        List<net.minecraft.text.Text> lines = new java.util.ArrayList<>();
+        List<Text> lines = new ArrayList<>();
         MapTown town = territory.neutral()
                 ? null
                 : BetterLokaClient.map().town(continent, territory.owner());
@@ -337,11 +563,12 @@ public class LokaMapScreen extends Screen {
 
         lines.add(Text.literal(territory.label()).formatted(Formatting.DARK_GRAY));
         if (territory.mutator() != null) {
-            lines.add(Text.literal("Mutator: " + territory.mutator()).formatted(Formatting.LIGHT_PURPLE));
+            lines.add(Text.literal("Mutator: " + territory.mutator())
+                    .formatted(Formatting.LIGHT_PURPLE));
         }
 
-        List<net.minecraft.text.OrderedText> ordered = new java.util.ArrayList<>(lines.size());
-        for (net.minecraft.text.Text line : lines) {
+        List<net.minecraft.text.OrderedText> ordered = new ArrayList<>(lines.size());
+        for (Text line : lines) {
             ordered.add(line.asOrderedText());
         }
         return ordered;
@@ -351,178 +578,6 @@ public class LokaMapScreen extends Screen {
         return value < 0 ? "?" : String.format(Locale.ROOT, "%.0f", value);
     }
 
-    private void centered(DrawContext context, String key, int y, int color) {
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable(key),
-                this.width / 2, y, color);
-    }
-
-    /**
-     * Draws the continent to fit the panel, keeping its proportions.
-     *
-     * <p>Each territory is filled by scanning its own rows: the polygons are concave and up to
-     * twenty-six sided, so anything simpler would spill one territory's colour over its neighbour.
-     */
-    private void drawMap(DrawContext context) {
-        double minX = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-        for (MapTerritory territory : territories) {
-            minX = Math.min(minX, territory.minX());
-            maxX = Math.max(maxX, territory.maxX());
-            minZ = Math.min(minZ, territory.minZ());
-            maxZ = Math.max(maxZ, territory.maxZ());
-        }
-
-        double spanX = Math.max(1, maxX - minX);
-        double spanZ = Math.max(1, maxZ - minZ);
-        worldScale = Math.min(mapWidth / spanX, mapHeight / spanZ);
-        // Centred, so a continent that is wider than it is tall does not sit against one edge.
-        worldMinX = minX - (mapWidth / worldScale - spanX) / 2;
-        worldMinZ = minZ - (mapHeight / worldScale - spanZ) / 2;
-
-        context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
-
-        drawTerrain(context);
-
-        // Fill, then outline, then icons — in that order, or a neighbour's fill would paint over
-        // the border between them and the hexes would run together the way they did before.
-        // Over bare panel the fills carry the whole map and are nearly solid; over ground they are
-        // a tint, the way Loka's own map washes its colours over the terrain.
-        boolean overTerrain = BetterLokaClient.mapTerrain().get(continent) != null;
-        for (MapTerritory territory : territories) {
-            int alpha;
-            if (territory == selected) {
-                alpha = overTerrain ? 0xA0 : 0xFF;
-            } else if (overTerrain) {
-                alpha = territory.neutral() ? 0x40 : 0x66;
-            } else {
-                alpha = territory.neutral() ? 0xB0 : 0xD8;
-            }
-            fill(context, territory, (alpha << 24) | territory.fillColor());
-        }
-        for (MapTerritory territory : territories) {
-            drawOutline(context, territory, 0xFF000000 | territory.strokeColor());
-        }
-        if (selected != null) {
-            drawOutline(context, selected, 0xFFFFFFFF);
-        }
-        for (MapTerritory territory : territories) {
-            drawIcon(context, territory);
-        }
-        context.disableScissor();
-    }
-
-    /**
-     * The ground, if it has been downloaded.
-     *
-     * <p>Placed by its world bounds rather than stretched to the panel, so a hex sits over the
-     * ground it actually covers — the whole point of having it there.
-     */
-    private void drawTerrain(DrawContext context) {
-        var terrain = BetterLokaClient.mapTerrain().get(continent);
-        if (terrain == null) {
-            return;
-        }
-        int x1 = mapX + (int) Math.floor((terrain.minX() - worldMinX) * worldScale);
-        int y1 = mapY + (int) Math.floor((terrain.minZ() - worldMinZ) * worldScale);
-        int x2 = mapX + (int) Math.ceil((terrain.maxX() - worldMinX) * worldScale);
-        int y2 = mapY + (int) Math.ceil((terrain.maxZ() - worldMinZ) * worldScale);
-        int width = Math.max(1, x2 - x1);
-        int height = Math.max(1, y2 - y1);
-
-        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, terrain.texture(),
-                x1, y1, 0f, 0f, width, height, width, height, width, height, 0xFFFFFFFF);
-    }
-
-    /**
-     * The keep or tower Loka draws in the middle of a territory.
-     *
-     * <p>Absent on the first frames while it downloads, and absent for good if the map cannot be
-     * reached — the territory is still drawn and still clickable either way.
-     */
-    private void drawIcon(DrawContext context, MapTerritory territory) {
-        double onScreenWidth = (territory.maxX() - territory.minX()) * worldScale;
-        if (onScreenWidth < ICON_MIN_TERRITORY_WIDTH) {
-            return;
-        }
-        var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
-        if (id == null) {
-            return;
-        }
-        int size = ICON_SIZE;
-        int x = mapX + (int) ((territory.centerX() - worldMinX) * worldScale) - size / 2;
-        int y = mapY + (int) ((territory.centerZ() - worldMinZ) * worldScale) - size / 2;
-        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
-                x, y, 0, 0, size, size, size, size, 0xFFFFFFFF);
-    }
-
-    /**
-     * Fills one territory, a screen row at a time.
-     *
-     * <p>Each row asks the polygon's edges where they cross it and fills between the crossings in
-     * pairs, rather than testing every pixel for being inside. The difference is not academic: a
-     * continent is 143 polygons of up to twenty-six edges over a four-hundred-pixel panel, so the
-     * per-pixel version was tens of millions of tests every frame and made the screen a slideshow.
-     */
-    private void fill(DrawContext context, MapTerritory territory, int color) {
-        double[] xs = territory.xs();
-        double[] zs = territory.zs();
-
-        int top = Math.max(0, (int) Math.floor((territory.minZ() - worldMinZ) * worldScale));
-        int bottom = Math.min(mapHeight - 1, (int) Math.ceil((territory.maxZ() - worldMinZ) * worldScale));
-        double[] crossings = new double[xs.length];
-
-        for (int row = top; row <= bottom; row++) {
-            double worldZ = worldMinZ + (row + 0.5) / worldScale;
-
-            int found = 0;
-            for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-                if ((zs[i] > worldZ) != (zs[j] > worldZ)) {
-                    crossings[found++] =
-                            xs[i] + (xs[j] - xs[i]) * (worldZ - zs[i]) / (zs[j] - zs[i]);
-                }
-            }
-            if (found < 2) {
-                continue;
-            }
-            java.util.Arrays.sort(crossings, 0, found);
-
-            // Crossings come in pairs: the span between the first two is inside, then the next two.
-            for (int pair = 0; pair + 1 < found; pair += 2) {
-                int from = (int) Math.floor((crossings[pair] - worldMinX) * worldScale);
-                int to = (int) Math.ceil((crossings[pair + 1] - worldMinX) * worldScale);
-                from = Math.max(0, from);
-                to = Math.min(mapWidth, to);
-                if (to > from) {
-                    context.fill(mapX + from, mapY + row, mapX + to, mapY + row + 1, color);
-                }
-            }
-        }
-    }
-
-    private void drawOutline(DrawContext context, MapTerritory territory, int color) {
-        double[] xs = territory.xs();
-        double[] zs = territory.zs();
-        for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-            line(context, xs[j], zs[j], xs[i], zs[i], color);
-        }
-    }
-
-    private void line(DrawContext context, double x1, double z1, double x2, double z2, int color) {
-        int px1 = (int) ((x1 - worldMinX) * worldScale);
-        int py1 = (int) ((z1 - worldMinZ) * worldScale);
-        int px2 = (int) ((x2 - worldMinX) * worldScale);
-        int py2 = (int) ((z2 - worldMinZ) * worldScale);
-        int steps = Math.max(Math.abs(px2 - px1), Math.abs(py2 - py1));
-        for (int step = 0; step <= steps; step++) {
-            int px = px1 + (px2 - px1) * step / Math.max(1, steps);
-            int py = py1 + (py2 - py1) * step / Math.max(1, steps);
-            context.fill(mapX + px, mapY + py, mapX + px + 1, mapY + py + 1, color);
-        }
-    }
-
-    /** What the selected territory is, and how far away. */
     private void drawPanel(DrawContext context, int left, int y, int width) {
         GuiTheme.panel(context, left, y, width, PANEL_HEIGHT);
         int textX = left + 6;
@@ -546,9 +601,9 @@ public class LokaMapScreen extends Screen {
                         : selected.owner(),
                 selected.neutral() ? GuiTheme.MUTED : GuiTheme.GOOD);
 
-        String alliance = selected.alliance() == null ? "—" : selected.alliance();
         GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
-                Text.translatable("betterloka.map.alliance").getString(), alliance, GuiTheme.TEXT);
+                Text.translatable("betterloka.map.alliance").getString(),
+                selected.alliance() == null ? "—" : selected.alliance(), GuiTheme.TEXT);
 
         GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
                 Text.translatable("betterloka.map.coords").getString(),
@@ -557,7 +612,6 @@ public class LokaMapScreen extends Screen {
                 GuiTheme.LIVE);
     }
 
-    /** How far the player is from it, in blocks and chunks. */
     private String distance() {
         if (this.client == null || this.client.player == null) {
             return "—";
@@ -567,6 +621,22 @@ public class LokaMapScreen extends Screen {
         double blocks = at.distanceTo(this.client.player.getX(), this.client.player.getZ());
         return String.format(Locale.ROOT, "%.0fm / %d chunks",
                 blocks, at.chunksTo(this.client.player.getX(), this.client.player.getZ()));
+    }
+
+    private void toggleWaypoint() {
+        if (selected == null) {
+            return;
+        }
+        BetterLokaClient.map().toggle(new Waypoint(selected.label(), continent.world(),
+                selected.centerX(), 64, selected.centerZ(), selected.fillColor(), selected.icon()));
+    }
+
+    private void copyCoordinates() {
+        if (selected == null || this.client == null) {
+            return;
+        }
+        this.client.keyboard.setClipboard(String.format(Locale.ROOT, "%d %d %d",
+                Math.round(selected.centerX()), 64, Math.round(selected.centerZ())));
     }
 
     @Override

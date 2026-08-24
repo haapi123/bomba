@@ -61,38 +61,12 @@ public final class DevShots {
         shot(20, "town-finder-founded");
 
         step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
-        step(200, () -> { });
-        // Park the cursor over the middle of the map so the hover card is on screen for the shot.
+        step(300, () -> { });
+        // The ground arrives a tile at a time; give it long enough to cover the window.
+        step(2600, () -> { });
         step(5, () -> centreCursor());
         step(20, () -> { });
         shot(20, "map-kalros");
-        step(5, () -> click(client().currentScreen, "Rivina"));
-        step(200, () -> { });
-        // Pull the ground down and wait for it, which is the whole point of this run.
-        step(5, () -> click(client().currentScreen, "Download terrain"));
-        step(2400, () -> { });
-        step(5, () -> centreCursor());
-        shot(20, "map-rivina");
-
-        // A waypoint a short walk away, then out to the world to see it drawn.
-        step(5, () -> {
-            var player = client().player;
-            if (player != null) {
-                double dx = 26;
-                double dz = 10;
-                com.betterloka.BetterLokaClient.map().toggle(new com.betterloka.map.Waypoint(
-                        "Ice Wastes 119", "lilboi",
-                        player.getX() + dx, player.getY(), player.getZ() + dz, 0x3AB3DA,
-                        "territory_owned"));
-                // Look at it, so "the label did not render" cannot be confused with "it was behind
-                // the camera".
-                player.setYaw((float) (-Math.toDegrees(Math.atan2(dx, dz))));
-                player.setPitch(0);
-            }
-            client().setScreen(null);
-        });
-        step(30, () -> { });
-        shot(20, "waypoint-world");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
