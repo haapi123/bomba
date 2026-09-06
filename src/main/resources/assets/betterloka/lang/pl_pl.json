@@ -182,6 +182,7 @@
   "betterloka.finder.alts": "Możliwe alty",
   "betterloka.finder.alts_count": "Możliwe alty (%s)",
   "betterloka.finder.previous_names": "Wcześniejsze nicki",
+  "betterloka.finder.previous_count": "Poprzednie nicki (%s)",
   "betterloka.finder.alts_none": "Brak w rejestrze Loki",
   "betterloka.finder.previous_none": "Brak w rejestrze",
   "betterloka.town_finder.founded": "Założony",

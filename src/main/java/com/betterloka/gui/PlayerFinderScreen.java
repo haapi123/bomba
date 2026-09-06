@@ -61,7 +61,7 @@ public class PlayerFinderScreen extends Screen {
     private static final int CHIP_GAP = 4;
 
     /** Beyond a handful, old names stop being a summary. */
-    private static final int MAX_PREVIOUS_NAMES = 6;
+    private static final int MAX_PREVIOUS_NAMES = 8;
 
     /** How wide a chip's explanation is allowed to get before it wraps. */
     private static final int TOOLTIP_WIDTH = 190;
@@ -93,7 +93,7 @@ public class PlayerFinderScreen extends Screen {
 
     /** Other accounts this person plays on, and names they have gone by. */
     private List<PlayerIdentity.Account> alts = List.of();
-    private List<String> previousNames = List.of();
+    private List<com.betterloka.stats.NameHistoryService.FormerName> previousNames = List.of();
     private boolean identityLoading;
 
     /** The chip under the pointer this frame, and where the pointer is; both reset every frame. */
@@ -227,9 +227,12 @@ public class PlayerFinderScreen extends Screen {
             // record of the account has supplied one.
             // The career name is a former name whenever Loka reports a newer one, and it is the only
             // source for a player who has never duelled — the ladders index nobody else.
-            previousNames = merge(headline.formerName(), previousNames);
-            arena.previousNames(headline.name(), headline.uuid())
+            // Laby.net rather than the ranked ladders: those only knew a name if the player had
+            // been on a ladder under it, which for a first test account meant no history at all
+            // while the game's own /find listed two older names.
+            BetterLokaClient.nameHistory().previousNames(headline.name(), headline.uuid())
                     .whenComplete((names, throwable) -> applyOnClientThread(generation, () -> {
+                        identityLoading = false;
                         if (throwable == null && names != null) {
                             previousNames = merge(headline.formerName(), names);
                         }
@@ -454,13 +457,17 @@ public class PlayerFinderScreen extends Screen {
         }
 
         context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.previous_names"), left, y + 2, GuiTheme.MUTED);
+                previousNames.isEmpty()
+                        ? Text.translatable("betterloka.finder.previous_names")
+                        : Text.translatable("betterloka.finder.previous_count", previousNames.size()),
+                left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (previousNames.isEmpty()) {
             return card(context, left, y, width, 1, (x, rowY) ->
                     context.drawTextWithShadow(this.textRenderer,
-                            label("betterloka.finder.previous_none"), x, rowY, GuiTheme.MUTED));
+                            label(identityLoading ? "betterloka.finder.loading"
+                                    : "betterloka.finder.previous_none"), x, rowY, GuiTheme.MUTED));
         }
 
         int rows = Math.min(previousNames.size(), MAX_PREVIOUS_NAMES);
@@ -468,26 +475,37 @@ public class PlayerFinderScreen extends Screen {
         GuiTheme.panel(context, left, y, width, height);
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
-        for (String name : previousNames.subList(0, rows)) {
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(name, inner), textX, textY, GuiTheme.TEXT);
+        for (var entry : previousNames.subList(0, rows)) {
+            // The name, and when it was dropped. A tilde marks a date Laby estimated rather than
+            // one Mojang published, which is everything since they closed the history in 2022.
+            String when = entry.changedAt() == null ? ""
+                    : (entry.accurate() ? "" : "~") + TimeFormat.monthAndYear(entry.changedAt());
+            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
+                    this.textRenderer.trimToWidth(entry.name(), inner - 60), when, GuiTheme.MUTED);
             textY += ROW_HEIGHT;
         }
         return y + height + CARD_GAP;
     }
 
-    /** Puts the career name at the head of the ladder's older names, without repeating it. */
-    private static List<String> merge(String first, List<String> rest) {
+    /**
+     * Puts the name EldritchBot last saw at the head of the list, if it is not there already.
+     *
+     * <p>Its record is the name at the player's last fight, which can be newer than anything Laby
+     * has crawled — so it is worth keeping even though it carries no date.
+     */
+    private static List<com.betterloka.stats.NameHistoryService.FormerName> merge(
+            String first, List<com.betterloka.stats.NameHistoryService.FormerName> rest) {
         if (first == null) {
             return rest;
         }
-        List<String> names = new java.util.ArrayList<>();
-        names.add(first);
-        for (String name : rest) {
-            if (!name.equalsIgnoreCase(first)) {
-                names.add(name);
+        for (var entry : rest) {
+            if (entry.name().equalsIgnoreCase(first)) {
+                return rest;
             }
         }
+        List<com.betterloka.stats.NameHistoryService.FormerName> names = new java.util.ArrayList<>();
+        names.add(new com.betterloka.stats.NameHistoryService.FormerName(first, null, false));
+        names.addAll(rest);
         return List.copyOf(names);
     }
 

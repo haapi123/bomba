@@ -182,6 +182,7 @@
   "betterloka.finder.alts": "Possible alts",
   "betterloka.finder.alts_count": "Possible alts (%s)",
   "betterloka.finder.previous_names": "Previously known as",
+  "betterloka.finder.previous_count": "Past names (%s)",
   "betterloka.finder.alts_none": "None on Loka's record",
   "betterloka.finder.previous_none": "None on record",
   "betterloka.town_finder.founded": "Founded",

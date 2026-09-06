@@ -50,12 +50,14 @@ public final class DevShots {
 
         step(5, () -> client().setScreen(new PlayerFinderScreen(null)));
         step(5, () -> {
-            type(client().currentScreen, "xPabloFights_YT");
+            type(client().currentScreen, "haapi");
             click(client().currentScreen, "Search");
         });
         step(400, () -> { });
         step(5, () -> scroll(-4000));
         shot(20, "player-finder-identity");
+        step(200, () -> { });
+        shot(20, "player-finder-names");
 
         step(5, () -> client().setScreen(new TownFinderScreen(null)));
         step(5, () -> {

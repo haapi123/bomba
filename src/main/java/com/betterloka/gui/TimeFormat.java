@@ -17,6 +17,14 @@ public final class TimeFormat {
     private TimeFormat() {
     }
 
+    /** Month and year, which is as precise as a crawled rename date deserves to look. */
+    private static final DateTimeFormatter MONTH_YEAR =
+            DateTimeFormatter.ofPattern("MM.yyyy").withZone(ZoneId.systemDefault());
+
+    public static String monthAndYear(Instant instant) {
+        return instant == null ? "" : MONTH_YEAR.format(instant);
+    }
+
     public static String date(Instant instant) {
         return instant == null ? "—" : DATE.format(instant);
     }

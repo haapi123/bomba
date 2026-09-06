@@ -10,7 +10,9 @@ import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
 import com.betterloka.map.DynmapApi;
 import com.betterloka.map.MapIcons;
+import com.betterloka.api.LabyApi;
 import com.betterloka.map.MapDataStore;
+import com.betterloka.stats.NameHistoryService;
 import com.betterloka.map.MapService;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.WaypointHud;
@@ -71,6 +73,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static ChatLog chatLog;
     private static TownLogger townLogger;
     private static TownActivityStore townActivity;
+    private static NameHistoryService nameHistory;
     private static MapService map;
     private static MapDataStore mapData;
     private static MapIcons mapIcons;
@@ -99,6 +102,10 @@ public class BetterLokaClient implements ClientModInitializer {
         // The active count is the number Loka deletes towns on, and the only place it exists is the
         // /town info panel. Read passively: the mod never runs the command, it reads a screen the
         // player opened.
+        // Mojang withdrew name history in 2022; Laby.net kept its own and has more of it than
+        // Loka's own /find does.
+        nameHistory = new NameHistoryService(new LabyApi(transport), transport,
+                configDir().resolve("name-history.json"));
         map = new MapService(configDir().resolve("waypoints.json"));
         // The map's own data lives on its own, refreshed in the background, so opening the screen
         // is instant and a capture shows up whether or not anybody was looking.
@@ -221,6 +228,10 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static TownActivityStore townActivity() {
         return townActivity;
+    }
+
+    public static NameHistoryService nameHistory() {
+        return nameHistory;
     }
 
     public static MapService map() {
