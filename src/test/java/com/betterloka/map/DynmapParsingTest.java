@@ -68,7 +68,7 @@ class DynmapParsingTest {
     void readsATownCardOffItsMarker() {
         MapTown town = DynmapApi.parseTown(
                 "<h2>Vanguard<br/><small>ChickenCurry_0 Alliance - 183 strength<br/>"
-                        + "97 members | 2 territories</small></h2>");
+                        + "97 members | 2 territories</small></h2>", 1200, -340);
 
         assertEquals("Vanguard", town.name());
         assertEquals("ChickenCurry_0 Alliance", town.alliance());
@@ -80,12 +80,49 @@ class DynmapParsingTest {
     @Test
     void aTownWithNoAllianceSaysSo() {
         MapTown town = DynmapApi.parseTown(
-                "<h2>Aqronso's Town<br/><small>100.0 strength<br/>1 members | 0 territories</small></h2>");
+                "<h2>Aqronso's Town<br/><small>100.0 strength<br/>1 members | 0 territories</small></h2>",
+                0, 0);
 
         assertEquals("Aqronso's Town", town.name());
         assertFalse(town.hasAlliance());
         assertEquals(100.0, town.strength());
         assertEquals(1, town.members());
+    }
+
+    /**
+     * The card a held territory actually publishes, byte for byte from Kalros.
+     *
+     * <p>This is the shape that broke: the pattern for the region's name used to reach from the
+     * first line break through the owner's markup to the number, so the name came back as
+     * {@code <small>Owner: Corvus</small><small><br/>Cherry Grove} and the player read the tags.
+     */
+    private static final String HELD_TERRITORY =
+            "<h2>Falcon Fury Territory<br/><small>Owner: Corvus</small><small><br/>"
+                    + "Cherry Grove 129<br/><br/><h3><b>Mutator: Lone Wolf</b></h3>"
+                    + "You gain Strength III if you have no friendlies near you.<br/><br/>"
+                    + "Falcon Fury owns the Cherry Grove</small></h2>";
+
+    @Test
+    void aHeldTerritoryNamesItsRegionAndNotTheMarkupAroundIt() {
+        assertEquals("Cherry Grove", DynmapApi.areaName(HELD_TERRITORY));
+    }
+
+    @Test
+    void neutralGroundStillNamesItsRegion() {
+        assertEquals("Ice Wastes", DynmapApi.areaName(
+                "<h2>Ice Wastes - Neutral<small><br/>Ice Wastes 119<br/><br/></small></h2>"));
+    }
+
+    @Test
+    void aTownCardWithEscapedTextComesOutReadable() {
+        MapTown town = DynmapApi.parseTown(
+                "<h2>Aqronso&#39;s Town<br/><small>Bell &amp; Sons - 12 strength<br/>"
+                        + "3 members | 1 territories</small></h2>", 10, 20);
+
+        assertEquals("Aqronso's Town", town.name());
+        assertEquals("Bell & Sons", town.alliance());
+        assertEquals(10.0, town.x());
+        assertEquals(20.0, town.z());
     }
 
     @Test

@@ -37,8 +37,18 @@ public final class DynmapApi {
     /** {@code <h3><b>Mutator: Air Support</b></h3>} */
     private static final Pattern MUTATOR = Pattern.compile("Mutator:\\s*([^<]+)");
 
-    /** {@code <br/>Cherry Grove 129<br/>} — the region name and the territory number together. */
-    private static final Pattern AREA = Pattern.compile("<br/>\\s*(.*?)\\s*(\\d+)\\s*<br/>");
+    /**
+     * {@code <br/>Cherry Grove 129<br/>} — the region name and the territory number together.
+     *
+     * <p>The name may hold no angle bracket, which looks like a detail and is the whole point. A
+     * held territory's card reads
+     * {@code <h2>Falcon Fury Territory<br/><small>Owner: Corvus</small><small><br/>Cherry Grove 129<br/>},
+     * and a {@code .*?} in that gap runs from the first break straight through the owner's markup to
+     * the number, so the territory's own name came out as
+     * {@code <small>Owner: Corvus</small><small><br/>Cherry Grove}. Neutral ground has no such run
+     * before its name, which is why only held territories showed it.
+     */
+    private static final Pattern AREA = Pattern.compile("<br/>\\s*([^<>]*?)\\s*(\\d+)\\s*<br/>");
 
     /** A town card: {@code <h2>Vanguard<br/><small>ChickenCurry_0 Alliance - 183 strength...} */
     private static final Pattern TOWN_NAME = Pattern.compile("<h2>\\s*([^<]+?)\\s*<br/>");
@@ -156,7 +166,8 @@ public final class DynmapApi {
             if (icon == null || !icon.startsWith("town")) {
                 continue;
             }
-            MapTown town = parseTown(Json.string(marker, "label"));
+            MapTown town = parseTown(Json.string(marker, "label"),
+                    Json.doubleValue(marker, "x", 0), Json.doubleValue(marker, "z", 0));
             if (town != null) {
                 towns.add(town);
             }
@@ -164,7 +175,7 @@ public final class DynmapApi {
         return List.copyOf(towns);
     }
 
-    static MapTown parseTown(String label) {
+    static MapTown parseTown(String label, double x, double z) {
         if (label == null) {
             return null;
         }
@@ -172,11 +183,15 @@ public final class DynmapApi {
         if (!name.find()) {
             return null;
         }
+        String townName = HtmlText.plain(name.group(1));
+        if (townName == null) {
+            return null;
+        }
         String alliance = null;
         double strength = -1;
         Matcher strengthMatch = TOWN_STRENGTH.matcher(label);
         if (strengthMatch.find()) {
-            alliance = strengthMatch.group(1) == null ? null : strengthMatch.group(1).trim();
+            alliance = HtmlText.plain(strengthMatch.group(1));
             try {
                 strength = Double.parseDouble(strengthMatch.group(2));
             } catch (NumberFormatException ignored) {
@@ -190,7 +205,7 @@ public final class DynmapApi {
             members = Integer.parseInt(counts.group(1));
             territories = Integer.parseInt(counts.group(2));
         }
-        return new MapTown(name.group(1).trim(), alliance, strength, members, territories);
+        return new MapTown(townName, alliance, strength, members, territories, x, z);
     }
 
     /** Background work: a map nobody has opened yet must not queue in front of a search. */
@@ -215,7 +230,7 @@ public final class DynmapApi {
             return null;
         }
 
-        String number = Json.string(area, "label");
+        String number = HtmlText.plain(Json.string(area, "label"));
         if (number == null || number.isBlank()) {
             // The key is "<world>-<number>"; the label is the friendlier source but not guaranteed.
             int dash = key.lastIndexOf('-');
@@ -242,24 +257,27 @@ public final class DynmapApi {
      * <p>Taken from the line carrying the territory number rather than the heading, because the
      * heading is the holder's name when somebody holds it and the region's name when nobody does.
      */
-    private static String areaName(String label) {
+    static String areaName(String label) {
         Matcher matcher = AREA.matcher(label);
         while (matcher.find()) {
-            String name = matcher.group(1).trim();
-            if (!name.isEmpty()) {
+            String name = HtmlText.plain(matcher.group(1));
+            if (name != null) {
                 return name;
             }
         }
         return null;
     }
 
+    /**
+     * One field out of a marker card, as plain text.
+     *
+     * <p>Every string this class hands out goes through {@link HtmlText}, patterns tight or not. A
+     * pattern is a guess about markup somebody else controls; the sanitiser is the guarantee that a
+     * wrong guess shows up as an odd name rather than as tags on the player's screen.
+     */
     private static String group(Pattern pattern, String text) {
         Matcher matcher = pattern.matcher(text);
-        if (!matcher.find()) {
-            return null;
-        }
-        String value = matcher.group(1).trim();
-        return value.isEmpty() ? null : value;
+        return matcher.find() ? HtmlText.plain(matcher.group(1)) : null;
     }
 
     /** {@code #3AB3DA} as Dynmap writes it, or a neutral grey when it is missing or malformed. */

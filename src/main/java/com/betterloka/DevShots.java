@@ -1,15 +1,20 @@
 package com.betterloka;
 
 import com.betterloka.gui.LokaGrinderScreen;
+import com.betterloka.gui.LokaMapScreen;
+import com.betterloka.map.Continent;
+import com.betterloka.map.MapTerritory;
 import com.betterloka.gui.PlayerFinderScreen;
 import com.betterloka.gui.TownFinderScreen;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.world.CreateWorldScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.input.MouseInput;
 import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.world.gen.WorldPresets;
 
@@ -60,27 +65,50 @@ public final class DevShots {
         step(300, () -> { });
         shot(20, "town-finder-founded");
 
+        // The tutorial toast owns the top right and would sit over the map's card.
+        step(5, () -> client().getToastManager().clear());
         step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(300, () -> { });
         // The ground arrives a tile at a time; give it long enough to cover the window.
         step(1200, () -> { });
-        step(5, () -> centreCursor());
+        shot(20, "map-borders");
+
+        // One card per case: held ground, a town's seat, and ground nobody holds. The cursor cannot
+        // be moved here, so the map is dragged until the territory wanted is under it.
+        step(5, () -> bringUnderCursor(territory -> !territory.neutral()));
         step(20, () -> { });
-        shot(20, "map-kalros");
+        shot(20, "card-held");
+
+        step(5, () -> bringUnderCursor(territory ->
+                BetterLokaClient.map().seatOf(Continent.KALROS, territory) != null));
+        step(20, () -> { });
+        shot(20, "card-town-seat");
+
+        step(5, () -> bringUnderCursor(territory -> territory.neutral()
+                && BetterLokaClient.map().seatOf(Continent.KALROS, territory) == null));
+        step(20, () -> { });
+        shot(20, "card-unclaimed");
+
+        // The zoom buttons, clicked rather than scrolled, so the buttons themselves are exercised.
+        step(5, () -> {
+            for (int i = 0; i < 5; i++) {
+                clickZoom(true);
+            }
+        });
+        step(1200, () -> { });
+        shot(20, "map-zoomed-in");
+
+        step(5, () -> {
+            for (int i = 0; i < 8; i++) {
+                clickZoom(false);
+            }
+        });
+        step(600, () -> { });
+        shot(20, "map-zoomed-out");
 
         step(5, () -> click(client().currentScreen, "Balak"));
         step(1200, () -> { });
         shot(20, "map-balak");
-
-        // Zoomed in, which is the only thing that exercises the sharp layer: the opening view is
-        // drawn entirely from the coarse one, so a shot of it proves nothing about the other.
-        step(5, () -> {
-            for (int i = 0; i < 8; i++) {
-                scroll(1);
-            }
-        });
-        step(1200, () -> { });
-        shot(20, "map-balak-close");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
@@ -172,16 +200,39 @@ public final class DevShots {
         });
     }
 
-    /** Moves the real cursor, which is what a screen reads its hover position from. */
-    private static void centreCursor() {
+    /**
+     * Drags the map until a chosen territory lies under the pointer.
+     *
+     * <p>The obvious way round is to move the pointer, and it cannot be done here: GLFW documents
+     * {@code glfwSetCursorPos} as failing silently without input focus, and a headless X server
+     * gives the window none — so every shot taken that way photographed whatever happened to sit
+     * under the middle of the window, including three that looked convincing. Dragging goes through
+     * the screen's own press, drag and release, so what is photographed is the real thing.
+     */
+    private static void bringUnderCursor(java.util.function.Predicate<MapTerritory> match) {
         MinecraftClient client = client();
-        if (client.currentScreen == null) {
+        if (!(client.currentScreen instanceof LokaMapScreen map)) {
             return;
         }
-        double scale = client.getWindow().getScaleFactor();
-        org.lwjgl.glfw.GLFW.glfwSetCursorPos(client.getWindow().getHandle(),
-                client.currentScreen.width / 2.0 * scale,
-                client.currentScreen.height * 0.33 * scale);
+        int[] point = map.devPointAt(match);
+        if (point == null) {
+            BetterLoka.LOGGER.warn("SHOT no territory matched");
+            return;
+        }
+        double cursorX = client.mouse.getScaledX(client.getWindow());
+        double cursorY = client.mouse.getScaledY(client.getWindow());
+        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
+        map.mouseDragged(new Click(cursorX, cursorY, new MouseInput(0, 0)),
+                cursorX - point[0], cursorY - point[1]);
+        map.mouseReleased(new Click(cursorX, cursorY, new MouseInput(0, 0)));
+    }
+
+    private static void clickZoom(boolean in) {
+        if (!(client().currentScreen instanceof LokaMapScreen map)) {
+            return;
+        }
+        int[] point = in ? map.devZoomInButton() : map.devZoomOutButton();
+        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
     }
 
     private static void scroll(int amount) {

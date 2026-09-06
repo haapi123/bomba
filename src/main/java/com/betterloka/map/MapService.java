@@ -26,8 +26,18 @@ public final class MapService {
     private static final long TERRITORY_TTL_MILLIS = 24 * 60 * 60 * 1000L;
 
     private static final Type TERRITORY_PAYLOAD =
-            new TypeToken<Map<String, List<StoredTerritory>>>() { }.getType();
+            new TypeToken<Map<String, StoredContinent>>() { }.getType();
     private static final Type WAYPOINT_PAYLOAD = new TypeToken<List<Waypoint>>() { }.getType();
+
+    /**
+     * One continent on disk: its outlines and its town cards together.
+     *
+     * <p>The towns used to be dropped on the way to disk, so a map restored from cache knew every
+     * border and no owner — which left the panel unable to say whose seat a territory was for a day
+     * at a time. A cache written in the older shape fails to parse and is simply refetched.
+     */
+    private record StoredContinent(List<StoredTerritory> territories, List<MapTown> towns) {
+    }
 
     /**
      * The disk form of a territory.
@@ -42,7 +52,7 @@ public final class MapService {
     }
 
     private final DynmapApi api;
-    private final JsonStore<Map<String, List<StoredTerritory>>> territoryStore;
+    private final JsonStore<Map<String, StoredContinent>> territoryStore;
     private final JsonStore<List<Waypoint>> waypointStore;
 
     private final Map<Continent, List<MapTerritory>> loaded = new EnumMap<>(Continent.class);
@@ -73,9 +83,12 @@ public final class MapService {
             }
         }
         return CompletableFuture.supplyAsync(() -> {
-            List<MapTerritory> cached = fromDisk(continent);
-            if (cached != null) {
-                return remember(continent, cached);
+            Map<String, StoredContinent> saved = territoryStore.read();
+            StoredContinent cached = saved == null ? null : saved.get(continent.name());
+            List<MapTerritory> restored = fromDisk(cached);
+            if (restored != null) {
+                rememberTowns(continent, cached.towns() == null ? List.of() : cached.towns());
+                return remember(continent, restored);
             }
             try {
                 DynmapApi.ContinentData data = api.fetchContinent(continent);
@@ -95,12 +108,11 @@ public final class MapService {
         return territories;
     }
 
-    private List<MapTerritory> fromDisk(Continent continent) {
-        Map<String, List<StoredTerritory>> saved = territoryStore.read();
-        if (saved == null) {
+    private static List<MapTerritory> fromDisk(StoredContinent cached) {
+        if (cached == null) {
             return null;
         }
-        List<StoredTerritory> stored = saved.get(continent.name());
+        List<StoredTerritory> stored = cached.territories();
         if (stored == null || stored.isEmpty()) {
             return null;
         }
@@ -114,7 +126,7 @@ public final class MapService {
     }
 
     private void saveToDisk() {
-        Map<String, List<StoredTerritory>> out = new java.util.LinkedHashMap<>();
+        Map<String, StoredContinent> out = new java.util.LinkedHashMap<>();
         synchronized (loaded) {
             loaded.forEach((continent, territories) -> {
                 List<StoredTerritory> stored = new ArrayList<>(territories.size());
@@ -125,7 +137,7 @@ public final class MapService {
                             territory.centerX(), territory.centerZ(), territory.fillColor(),
                             territory.strokeColor(), territory.icon()));
                 }
-                out.put(continent.name(), stored);
+                out.put(continent.name(), new StoredContinent(stored, townsOf(continent)));
             });
         }
         try {
@@ -147,12 +159,14 @@ public final class MapService {
         }
     }
 
-    /**
-     * The card for the town holding a territory, if this continent's markers named one.
-     *
-     * <p>Absent when the map was restored from disk, which keeps outlines and not town cards: the
-     * hover panel then shows what the territory itself says and no more.
-     */
+    private List<MapTown> townsOf(Continent continent) {
+        synchronized (towns) {
+            Map<String, MapTown> byName = towns.get(continent);
+            return byName == null ? List.of() : List.copyOf(byName.values());
+        }
+    }
+
+    /** The card for the town holding a territory, if this continent's markers named one. */
     public MapTown town(Continent continent, String name) {
         if (name == null) {
             return null;
@@ -161,6 +175,25 @@ public final class MapService {
             Map<String, MapTown> byName = towns.get(continent);
             return byName == null ? null : byName.get(name.toLowerCase(java.util.Locale.ROOT));
         }
+    }
+
+    /**
+     * The town whose seat this territory is, if any.
+     *
+     * <p>Loka's map never says so outright; what it publishes is a town marker at a position. The
+     * territory that position falls inside is the one the town sits on, and every other territory
+     * that town holds has no marker of its own.
+     */
+    public MapTown seatOf(Continent continent, MapTerritory territory) {
+        if (territory == null) {
+            return null;
+        }
+        for (MapTown town : townsOf(continent)) {
+            if (territory.contains(town.x(), town.z())) {
+                return town;
+            }
+        }
+        return null;
     }
 
     /** Removes one waypoint by the label it was set under. */

@@ -5,6 +5,8 @@ import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
+import com.betterloka.map.TerritoryBorders;
+import com.betterloka.map.TownPalette;
 import com.betterloka.map.Waypoint;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -15,15 +17,20 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * Loka's map, brought into the game: its outlines, its colours, its markers.
+ * Loka's map, brought into the game: its ground, its outlines, its markers.
  *
  * <p>It opens on the whole island and is dragged and scrolled with the mouse, the way its website is
  * used. Loka's own ground is drawn underneath and the claims are washed over it, so the desert, the
- * lava and the coastline stay readable through the colours.
+ * lava and the coastline stay readable through the colours; the borders, not the fills, are what say
+ * who holds what.
+ *
+ * <p>Everything about how it looks lives in {@link MapStyle}.
  */
 public class LokaMapScreen extends Screen {
     /** Below the toast strip, which owns the top right and would clip the last tabs. */
@@ -31,51 +38,23 @@ public class LokaMapScreen extends Screen {
     private static final int TAB_ROW_HEIGHT = 16;
     private static final int MAP_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 6;
     private static final int MAP_MARGIN = 8;
-
-    private static final int PANEL_HEIGHT = 50;
-    private static final int ROW_HEIGHT = 11;
     private static final int MAX_CONTENT_WIDTH = 620;
 
-    /** Loka's markers, at the size its own map draws them. */
-    private static final int ICON_SIZE = 8;
-
-    /** What lies under everything: deep water, the way Loka's map shows the gaps between land. */
-    private static final int OCEAN = 0xFF17263A;
-
-    /** World blocks per screen pixel. Smaller is closer in. */
-    private static final double MIN_BLOCKS_PER_PIXEL = 0.5;
-    private static final double MAX_BLOCKS_PER_PIXEL = 30;
-
-    /**
-     * Where it opens: about six territories across.
-     *
-     * <p>Picked from the roster rather than by eye. Kalros's territories have a median width of 584
-     * blocks, so two blocks to a pixel — the first guess — put a single hex wider than the panel and
-     * showed two slabs of colour instead of a map.
-     */
-    private static final double DEFAULT_BLOCKS_PER_PIXEL = 6;
-
-    /**
-     * How much of the hex's colour survives over the ground.
-     *
-     * <p>The ground is the point of the map — the desert, the lava, the coastline — so the claim
-     * colours sit over it as a wash rather than a coat of paint, and the outlines are left strong so
-     * the borders still read at a glance. Loka's own map does the same.
-     */
-    private static final int FILL_ALPHA_NEUTRAL = 0x40;
-    private static final int FILL_ALPHA_OWNED = 0x55;
-    private static final int FILL_ALPHA_SELECTED = 0x70;
-
-    /** Space left around the island when the map opens, as a fraction of the span. */
-    private static final double FIT_MARGIN = 1.12;
-
-    /** Guard against a stray drag while a continent is still loading. */
+    /** Guard against a stray drag being read as a click on a territory. */
     private static final int DRAG_SLOP = 2;
+
+    /** Where each continent was left: reopening the map should not undo the last pan and zoom. */
+    private record View(double centerX, double centerZ, double blocksPerPixel) {
+    }
+
+    private static final Map<Continent, View> VIEWS = new EnumMap<>(Continent.class);
 
     private final Screen parent;
 
     private Continent continent = Continent.KALROS;
     private List<MapTerritory> territories = List.of();
+    private TerritoryBorders borders = TerritoryBorders.of(List.of());
+    private TownPalette palette = TownPalette.of(List.of());
     private boolean loading;
     private String error;
     private MapTerritory selected;
@@ -85,7 +64,7 @@ public class LokaMapScreen extends Screen {
     /** The view: which world point is in the middle, and how tight the zoom is. */
     private double centerX;
     private double centerZ;
-    private double blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
+    private double blocksPerPixel = MapStyle.MAX_BLOCKS_PER_PIXEL;
     private boolean centred;
 
     private boolean dragging;
@@ -129,7 +108,7 @@ public class LokaMapScreen extends Screen {
             x += tabWidth + 4;
         }
 
-        // One row, so the map gets the rest of the screen. What is selected is drawn on the map
+        // One row, so the map gets the rest of the screen. What is selected is described on the map
         // itself the way Loka's own does it, rather than in a panel eating half the height.
         int bottomY = this.height - 26;
         int quarter = (width - 12) / 4;
@@ -170,12 +149,14 @@ public class LokaMapScreen extends Screen {
         if (continent == target) {
             return;
         }
+        rememberView();
         continent = target;
         territories = List.of();
+        borders = TerritoryBorders.of(List.of());
+        palette = TownPalette.of(List.of());
         selected = null;
         error = null;
         centred = false;
-        blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
         load();
         clearAndInit();
     }
@@ -197,22 +178,47 @@ public class LokaMapScreen extends Screen {
                     return;
                 }
                 territories = found;
+                borders = TerritoryBorders.of(found);
+                palette = TownPalette.of(found.stream().map(MapTerritory::owner).toList());
             });
         });
     }
 
+    // --- the view ---
+
+    private void rememberView() {
+        if (centred) {
+            VIEWS.put(continent, new View(centerX, centerZ, blocksPerPixel));
+        }
+    }
+
     /**
-     * Opens on the whole island, the way Loka's own map opens.
+     * Opens where it was left, or on the whole island the first time.
      *
      * <p>The middle comes from Loka's website and the zoom from the territories, which is the pair
      * that frames it: its centre says where a person wants to be looking, and the outlines say how
      * much has to fit for the continent to read as one place.
      */
     private void centreOnContinent() {
+        View saved = VIEWS.get(continent);
+        if (saved != null) {
+            centerX = saved.centerX();
+            centerZ = saved.centerZ();
+            blocksPerPixel = clampZoom(saved.blocksPerPixel());
+            centred = true;
+            return;
+        }
+        fitToContinent();
+    }
+
+    /** Frames the whole continent, for opening it and for the button that gets back there. */
+    private void fitToContinent() {
         centerX = continent.centerX();
         centerZ = continent.centerZ();
-        blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
-
+        centred = true;
+        if (territories.isEmpty() || mapWidth <= 0 || mapHeight <= 0) {
+            return;
+        }
         double halfWidth = 0;
         double halfHeight = 0;
         for (MapTerritory territory : territories) {
@@ -221,37 +227,39 @@ public class LokaMapScreen extends Screen {
             halfHeight = Math.max(halfHeight, Math.abs(territory.maxZ() - centerZ));
             halfHeight = Math.max(halfHeight, Math.abs(centerZ - territory.minZ()));
         }
-        if (halfWidth > 0 && mapWidth > 0 && mapHeight > 0) {
+        if (halfWidth > 0) {
             blocksPerPixel = clampZoom(Math.max(2 * halfWidth / mapWidth,
-                    2 * halfHeight / mapHeight) * FIT_MARGIN);
+                    2 * halfHeight / mapHeight) * MapStyle.FIT_MARGIN);
         }
-        centred = true;
+        rememberView();
     }
 
     private static double clampZoom(double value) {
-        return Math.max(MIN_BLOCKS_PER_PIXEL, Math.min(MAX_BLOCKS_PER_PIXEL, value));
+        return Math.max(MapStyle.MIN_BLOCKS_PER_PIXEL,
+                Math.min(MapStyle.MAX_BLOCKS_PER_PIXEL, value));
     }
 
-    /** Zooms out until the whole continent fits, for when panning has lost the plot. */
-    private void fitToContinent() {
-        if (territories.isEmpty()) {
-            return;
-        }
-        double minX = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-        for (MapTerritory territory : territories) {
-            minX = Math.min(minX, territory.minX());
-            maxX = Math.max(maxX, territory.maxX());
-            minZ = Math.min(minZ, territory.minZ());
-            maxZ = Math.max(maxZ, territory.maxZ());
-        }
-        centerX = (minX + maxX) / 2;
-        centerZ = (minZ + maxZ) / 2;
-        blocksPerPixel = Math.min(MAX_BLOCKS_PER_PIXEL, Math.max(
-                (maxX - minX) / Math.max(1, mapWidth), (maxZ - minZ) / Math.max(1, mapHeight)));
-        centred = true;
+    /** Zooms about a point on screen, so whatever is under it stays under it. */
+    private void zoomAbout(double screenX, double screenY, boolean in) {
+        double worldUnderX = worldXAt(screenX);
+        double worldUnderZ = worldZAt(screenY);
+
+        double before = blocksPerPixel;
+        blocksPerPixel = clampZoom(in ? blocksPerPixel / MapStyle.ZOOM_STEP
+                : blocksPerPixel * MapStyle.ZOOM_STEP);
+        double factor = blocksPerPixel / before;
+
+        centerX = worldUnderX + (centerX - worldUnderX) * factor;
+        centerZ = worldUnderZ + (centerZ - worldUnderZ) * factor;
+        rememberView();
+    }
+
+    private boolean canZoomIn() {
+        return blocksPerPixel > MapStyle.MIN_BLOCKS_PER_PIXEL + 1e-9;
+    }
+
+    private boolean canZoomOut() {
+        return blocksPerPixel < MapStyle.MAX_BLOCKS_PER_PIXEL - 1e-9;
     }
 
     private double worldLeft() {
@@ -280,8 +288,39 @@ public class LokaMapScreen extends Screen {
 
     // --- input ---
 
+    private int zoomButtonX() {
+        return mapX + MapStyle.ZOOM_BUTTON_MARGIN;
+    }
+
+    private int zoomInY() {
+        return mapY + MapStyle.ZOOM_BUTTON_MARGIN;
+    }
+
+    private int zoomOutY() {
+        return zoomInY() + MapStyle.ZOOM_BUTTON_SIZE + MapStyle.ZOOM_BUTTON_GAP;
+    }
+
+    private boolean overButton(double screenX, double screenY, int buttonY) {
+        int x = zoomButtonX();
+        return screenX >= x && screenX < x + MapStyle.ZOOM_BUTTON_SIZE
+                && screenY >= buttonY && screenY < buttonY + MapStyle.ZOOM_BUTTON_SIZE;
+    }
+
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
+        // The zoom buttons sit over the map, so they get the click before panning does.
+        if (mapWidth > 0 && overButton(click.x(), click.y(), zoomInY())) {
+            if (canZoomIn()) {
+                zoomAbout(mapX + mapWidth / 2.0, mapY + mapHeight / 2.0, true);
+            }
+            return true;
+        }
+        if (mapWidth > 0 && overButton(click.x(), click.y(), zoomOutY())) {
+            if (canZoomOut()) {
+                zoomAbout(mapX + mapWidth / 2.0, mapY + mapHeight / 2.0, false);
+            }
+            return true;
+        }
         if (insideMap(click.x(), click.y())) {
             dragging = true;
             dragOriginX = click.x();
@@ -307,6 +346,7 @@ public class LokaMapScreen extends Screen {
     public boolean mouseReleased(Click click) {
         if (dragging) {
             dragging = false;
+            rememberView();
             // A press that did not move is a click, and picks the territory under it.
             if (Math.abs(click.x() - dragOriginX) <= DRAG_SLOP
                     && Math.abs(click.y() - dragOriginY) <= DRAG_SLOP) {
@@ -320,19 +360,10 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-        if (!insideMap(mouseX, mouseY)) {
+        if (!insideMap(mouseX, mouseY) || vertical == 0) {
             return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
         }
-        // Zoom about the cursor, so the thing being pointed at stays under the pointer.
-        double worldUnderCursorX = worldXAt(mouseX);
-        double worldUnderCursorZ = worldZAt(mouseY);
-
-        double factor = vertical > 0 ? 1 / 1.25 : 1.25;
-        blocksPerPixel = Math.max(MIN_BLOCKS_PER_PIXEL,
-                Math.min(MAX_BLOCKS_PER_PIXEL, blocksPerPixel * factor));
-
-        centerX = worldUnderCursorX + (centerX - worldUnderCursorX) * factor;
-        centerZ = worldUnderCursorZ + (centerZ - worldUnderCursorZ) * factor;
+        zoomAbout(mouseX, mouseY, vertical > 0);
         return true;
     }
 
@@ -375,21 +406,28 @@ public class LokaMapScreen extends Screen {
 
         if (loading) {
             centered(context, "betterloka.map.loading", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
-        } else if (error != null) {
+            return;
+        }
+        if (error != null) {
             context.drawCenteredTextWithShadow(this.textRenderer, error,
                     this.width / 2, MAP_TOP + mapHeight / 2, GuiTheme.BAD);
-        } else if (territories.isEmpty()) {
+            return;
+        }
+        if (territories.isEmpty()) {
             centered(context, "betterloka.map.empty", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
-        } else {
-            if (!centred) {
-                centreOnContinent();
-            }
-            hovered = dragging ? null : territoryAt(mouseX, mouseY);
-            drawMap(context);
+            return;
         }
 
-        if (hovered != null) {
-            context.drawOrderedTooltip(this.textRenderer, tooltip(hovered), mouseX, mouseY);
+        if (!centred) {
+            centreOnContinent();
+        }
+        hovered = dragging ? null : territoryAt(mouseX, mouseY);
+        drawMap(context, mouseX, mouseY);
+
+        // Outside the map's scissor: the card may reach past the panel, and should.
+        MapTerritory describing = hovered != null ? hovered : selected;
+        if (describing != null) {
+            drawInfoCard(context, describing, mouseX, mouseY, hovered != null);
         }
     }
 
@@ -398,93 +436,80 @@ public class LokaMapScreen extends Screen {
                 this.width / 2, y, color);
     }
 
-    private void drawMap(DrawContext context) {
+    private void drawMap(DrawContext context, int mouseX, int mouseY) {
         context.enableScissor(mapX, mapY, mapX + mapWidth, mapY + mapHeight);
 
-        // Opaque, and the colour of deep water. The screen's usual translucent panel let the game
-        // show through the map, which read as a smeared overlay rather than something to look at;
-        // Loka's own draws its hexes over sea.
-        context.fill(mapX, mapY, mapX + mapWidth, mapY + mapHeight, OCEAN);
-
+        // Opaque, and the colour of deep water: Loka's own draws its hexes over sea.
+        context.fill(mapX, mapY, mapX + mapWidth, mapY + mapHeight, MapStyle.OCEAN);
         drawTerrain(context);
 
-        // Fill, then every outline, then the markers. A neighbour's fill drawn after a border paints
-        // over it, and the hexes run together into one blob.
+        // Fills first, then every border, then the markers. A neighbour's fill drawn after a border
+        // paints over it, and the hexes run together into one blob.
         for (MapTerritory territory : territories) {
-            int alpha;
-            if (territory == selected) {
-                alpha = FILL_ALPHA_SELECTED;
-            } else {
-                alpha = territory.neutral() ? FILL_ALPHA_NEUTRAL : FILL_ALPHA_OWNED;
+            if (offScreen(territory)) {
+                continue;
             }
+            int alpha = territory == selected ? MapStyle.FILL_ALPHA_SELECTED
+                    : territory.neutral() ? MapStyle.FILL_ALPHA_NEUTRAL : MapStyle.FILL_ALPHA_OWNED;
             fill(context, territory, (alpha << 24) | territory.fillColor());
         }
-        for (MapTerritory territory : territories) {
-            drawOutline(context, territory, 0xE0000000 | territory.strokeColor());
-        }
-        if (selected != null) {
-            drawOutline(context, selected, 0xFFFFFFFF);
-        }
-        for (MapTerritory territory : territories) {
-            drawIcon(context, territory);
-        }
-        drawSelectedCard(context);
-        context.disableScissor();
 
-        drawScaleNote(context);
+        for (MapTerritory territory : territories) {
+            if (!territory.neutral() || offScreen(territory)) {
+                continue;
+            }
+            drawBorder(context, territory, MapStyle.BORDER_NEUTRAL,
+                    MapStyle.BORDER_NEUTRAL_WIDTH, MapStyle.BORDER_NEUTRAL_WIDTH, false);
+        }
+        for (MapTerritory territory : territories) {
+            if (territory.neutral() || offScreen(territory)) {
+                continue;
+            }
+            int color = 0xFF000000 | palette.colorOf(territory.owner());
+            drawBorder(context, territory, color,
+                    MapStyle.BORDER_INNER_WIDTH, MapStyle.BORDER_OUTER_WIDTH, true);
+        }
+        // Last, so the selection is never buried under a neighbour's border.
+        if (selected != null && !offScreen(selected)) {
+            drawBorder(context, selected, MapStyle.BORDER_SELECTED,
+                    MapStyle.BORDER_SELECTED_WIDTH, MapStyle.BORDER_SELECTED_WIDTH, false);
+        }
+
+        for (MapTerritory territory : territories) {
+            if (!offScreen(territory)) {
+                drawIcon(context, territory);
+            }
+        }
+
+        drawZoomButtons(context, mouseX, mouseY);
+        drawViewNote(context);
+        context.disableScissor();
     }
 
-    /**
-     * What is selected, drawn on the map rather than under it.
-     *
-     * <p>A panel below cost a third of the screen for four lines, and the map is the thing worth the
-     * space — Loka's own puts this over the map for the same reason.
-     */
-    private void drawSelectedCard(DrawContext context) {
-        if (selected == null) {
-            return;
-        }
-        List<Text> lines = new ArrayList<>();
-        lines.add(Text.literal(selected.label()).formatted(Formatting.BOLD));
-        lines.add(Text.literal(selected.neutral()
-                ? Text.translatable("betterloka.map.neutral").getString()
-                : selected.owner()));
-        if (selected.alliance() != null) {
-            lines.add(Text.literal(selected.alliance()));
-        }
-        lines.add(Text.literal(String.format(Locale.ROOT, "%d, %d  ·  %s",
-                Math.round(selected.centerX()), Math.round(selected.centerZ()), distance())));
+    /** Whether a territory is entirely outside the window, and so not worth drawing at all. */
+    private boolean offScreen(MapTerritory territory) {
+        return screenXOf(territory.maxX()) < mapX
+                || screenXOf(territory.minX()) > mapX + mapWidth
+                || screenYOf(territory.maxZ()) < mapY
+                || screenYOf(territory.minZ()) > mapY + mapHeight;
+    }
 
-        int widest = 0;
-        for (Text line : lines) {
-            widest = Math.max(widest, this.textRenderer.getWidth(line));
-        }
-        int boxWidth = widest + 12;
-        int boxHeight = lines.size() * ROW_HEIGHT + 8;
-        int boxX = mapX + 4;
-        int boxY = mapY + mapHeight - boxHeight - 4;
-
-        context.fill(boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0xD0101014);
-        context.fill(boxX, boxY, boxX + boxWidth, boxY + 1, 0xFF000000 | selected.fillColor());
-
-        int y = boxY + 5;
-        boolean first = true;
-        for (Text line : lines) {
-            context.drawTextWithShadow(this.textRenderer, line, boxX + 6, y,
-                    first ? GuiTheme.ACCENT : GuiTheme.MUTED);
-            y += ROW_HEIGHT;
-            first = false;
-        }
+    private void drawZoomButtons(DrawContext context, int mouseX, int mouseY) {
+        MapStyle.button(context, this.textRenderer, zoomButtonX(), zoomInY(),
+                MapStyle.ZOOM_BUTTON_SIZE, "+",
+                overButton(mouseX, mouseY, zoomInY()), canZoomIn());
+        MapStyle.button(context, this.textRenderer, zoomButtonX(), zoomOutY(),
+                MapStyle.ZOOM_BUTTON_SIZE, "-",
+                overButton(mouseX, mouseY, zoomOutY()), canZoomOut());
     }
 
     /**
      * Loka's own ground, in two layers.
      *
-     * <p>The coarse one is drawn first and covers the whole continent in a few dozen tiles, so the
-     * island is there complete the moment the map opens. The sharp one is drawn over it and only for
-     * the window being looked at, so zooming in gains detail without ever asking for a continent's
-     * worth of it. Where a sharp tile has not arrived the coarse one is simply left showing, which
-     * is why closing in never flashes holes.
+     * <p>The coarse one covers the whole continent in a few dozen tiles, so the island is there
+     * complete the moment the map opens. The sharp one is drawn over it and only for the window
+     * being looked at. Where a sharp tile has not arrived the coarse one is left showing, which is
+     * why closing in never flashes holes.
      */
     private void drawTerrain(DrawContext context) {
         MapTerrain terrain = BetterLokaClient.mapTerrain();
@@ -530,17 +555,18 @@ public class LokaMapScreen extends Screen {
 
     private void drawIcon(DrawContext context, MapTerritory territory) {
         double onScreenWidth = (territory.maxX() - territory.minX()) / blocksPerPixel;
-        if (onScreenWidth < ICON_SIZE + 4) {
+        if (onScreenWidth < MapStyle.ICON_SIZE + 4) {
             return;
         }
         var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
         if (id == null) {
             return;
         }
-        int x = screenXOf(territory.centerX()) - ICON_SIZE / 2;
-        int y = screenYOf(territory.centerZ()) - ICON_SIZE / 2;
+        int x = screenXOf(territory.centerX()) - MapStyle.ICON_SIZE / 2;
+        int y = screenYOf(territory.centerZ()) - MapStyle.ICON_SIZE / 2;
         context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
-                x, y, 0f, 0f, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE, 0xFFFFFFFF);
+                x, y, 0f, 0f, MapStyle.ICON_SIZE, MapStyle.ICON_SIZE,
+                MapStyle.ICON_SIZE, MapStyle.ICON_SIZE, 0xFFFFFFFF);
     }
 
     /**
@@ -582,132 +608,333 @@ public class LokaMapScreen extends Screen {
         }
     }
 
-    private void drawOutline(DrawContext context, MapTerritory territory, int color) {
+    /**
+     * One territory's outline, thin where it meets its own town and heavy where the holding ends.
+     *
+     * <p>Loka's map has no notion of a town's outer boundary, so six hexes held by one town read as
+     * six separate claims. Drawing the seams between them faintly and the rest heavily is what makes
+     * a holding read as one shape.
+     */
+    private void drawBorder(DrawContext context, MapTerritory territory, int color,
+                            int innerWidth, int outerWidth, boolean rimOuter) {
         double[] xs = territory.xs();
         double[] zs = territory.zs();
         for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-            line(context, xs[j], zs[j], xs[i], zs[i], color);
+            boolean inner = borders.isInternal(xs[j], zs[j], xs[i], zs[i]);
+            int width = inner ? innerWidth : outerWidth;
+            if (rimOuter && !inner) {
+                line(context, xs[j], zs[j], xs[i], zs[i], MapStyle.BORDER_RIM,
+                        MapStyle.BORDER_RIM_WIDTH);
+            }
+            line(context, xs[j], zs[j], xs[i], zs[i], color, width);
         }
     }
 
-    private void line(DrawContext context, double x1, double z1, double x2, double z2, int color) {
+    private void line(DrawContext context, double x1, double z1, double x2, double z2,
+                      int color, int thickness) {
         int px1 = screenXOf(x1);
         int py1 = screenYOf(z1);
         int px2 = screenXOf(x2);
         int py2 = screenYOf(z2);
+
+        // Cheap reject: most edges of most continents are nowhere near the window.
+        int slack = thickness + 1;
+        if (Math.max(px1, px2) < mapX - slack || Math.min(px1, px2) > mapX + mapWidth + slack
+                || Math.max(py1, py2) < mapY - slack
+                || Math.min(py1, py2) > mapY + mapHeight + slack) {
+            return;
+        }
+
         int steps = Math.max(Math.abs(px2 - px1), Math.abs(py2 - py1));
         if (steps > 4000) {
             return;
         }
+        int half = thickness / 2;
         for (int step = 0; step <= steps; step++) {
             int px = px1 + (px2 - px1) * step / Math.max(1, steps);
             int py = py1 + (py2 - py1) * step / Math.max(1, steps);
-            context.fill(px, py, px + 1, py + 1, color);
+            context.fill(px - half, py - half, px - half + thickness, py - half + thickness, color);
         }
     }
 
-    /** A quiet line saying where the middle of the view sits. */
-    private void drawScaleNote(DrawContext context) {
-        String note = String.format(Locale.ROOT, "X %d, Z %d",
+    /** Where the middle of the view sits — labelled, so it cannot be read as a territory's own. */
+    private void drawViewNote(DrawContext context) {
+        Text note = Text.translatable("betterloka.map.view",
                 Math.round(centerX), Math.round(centerZ));
         context.drawTextWithShadow(this.textRenderer, note,
                 mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
     }
 
-    private List<net.minecraft.text.OrderedText> tooltip(MapTerritory territory) {
-        List<Text> lines = new ArrayList<>();
-        MapTown town = territory.neutral()
-                ? null
-                : BetterLokaClient.map().town(continent, territory.owner());
+    // --- the information card ---
 
-        lines.add(Text.literal(territory.neutral() ? territory.label() : territory.owner())
-                .formatted(Formatting.WHITE));
+    private enum Kind { HEADER, OWNER, SEAT, SEPARATOR, ROW, SMALL }
+
+    private record CardLine(Kind kind, Text left, Text right, int leftColor, int rightColor,
+                            String icon) {
+        static CardLine header(Text text) {
+            return new CardLine(Kind.HEADER, text, null, GuiTheme.TEXT, 0, null);
+        }
+
+        static CardLine owner(Text text, int color) {
+            return new CardLine(Kind.OWNER, text, null, color, 0, null);
+        }
+
+        static CardLine seat(Text text, String icon) {
+            return new CardLine(Kind.SEAT, text, null, GuiTheme.TEXT, 0, icon);
+        }
+
+        static CardLine separator() {
+            return new CardLine(Kind.SEPARATOR, null, null, 0, 0, null);
+        }
+
+        static CardLine row(Text label, Text value, int valueColor) {
+            return new CardLine(Kind.ROW, label, value, GuiTheme.MUTED, valueColor, null);
+        }
+
+        static CardLine small(Text text) {
+            return new CardLine(Kind.SMALL, text, null, GuiTheme.MUTED, 0, null);
+        }
+    }
+
+    /**
+     * Everything known about one territory, in sections.
+     *
+     * <p>The distance is worked out from the player's position every frame rather than when the
+     * territory was picked, so it counts down as they walk.
+     */
+    private List<CardLine> cardLines(MapTerritory territory) {
+        List<CardLine> lines = new ArrayList<>();
+        lines.add(CardLine.header(Text.literal(territory.label()).formatted(Formatting.BOLD)));
 
         if (territory.neutral()) {
-            lines.add(Text.translatable("betterloka.map.neutral").formatted(Formatting.GRAY));
-        } else if (town != null) {
-            String head = town.hasAlliance()
-                    ? town.alliance() + " - " + strength(town.strength()) + " strength"
-                    : strength(town.strength()) + " strength";
-            lines.add(Text.literal(head).formatted(Formatting.GRAY));
-            lines.add(Text.literal(town.members() + " members | " + town.territories()
-                    + " territories").formatted(Formatting.GRAY));
-        } else if (territory.alliance() != null) {
-            lines.add(Text.literal(territory.alliance()).formatted(Formatting.GRAY));
+            lines.add(CardLine.owner(Text.translatable("betterloka.map.unclaimed"),
+                    GuiTheme.MUTED));
+        } else {
+            lines.add(CardLine.owner(Text.literal(territory.owner()),
+                    0xFF000000 | palette.colorOf(territory.owner())));
         }
 
-        // Only when it says something the heading did not: for neutral ground the heading is
-        // already the territory's name.
-        if (!territory.neutral()) {
-            lines.add(Text.literal(territory.label()).formatted(Formatting.DARK_GRAY));
+        MapTown seat = BetterLokaClient.map().seatOf(continent, territory);
+        if (seat != null) {
+            lines.add(CardLine.seat(Text.translatable("betterloka.map.town_seat",
+                    Text.literal(seat.name()).formatted(Formatting.BOLD, Formatting.WHITE)),
+                    territory.icon()));
         }
+
+        lines.add(CardLine.separator());
+        lines.add(CardLine.row(Text.translatable("betterloka.map.coordinates"),
+                Text.literal(String.format(Locale.ROOT, "%d, %d",
+                        Math.round(territory.centerX()), Math.round(territory.centerZ()))),
+                GuiTheme.TEXT));
+        lines.add(CardLine.row(Text.translatable("betterloka.map.distance"), distanceText(territory),
+                GuiTheme.LIVE));
+
+        List<CardLine> extra = new ArrayList<>();
+        if (territory.alliance() != null) {
+            extra.add(CardLine.small(Text.translatable("betterloka.map.alliance_of",
+                    territory.alliance())));
+        }
+        MapTown town = territory.neutral()
+                ? null : BetterLokaClient.map().town(continent, territory.owner());
+        if (town != null) {
+            if (town.strength() >= 0) {
+                extra.add(CardLine.small(Text.translatable("betterloka.map.strength_of",
+                        String.format(Locale.ROOT, "%.0f", town.strength()))));
+            }
+            extra.add(CardLine.small(Text.translatable("betterloka.map.holdings",
+                    town.members(), town.territories())));
+        }
+        extra.add(CardLine.small(chunksText(territory)));
         if (territory.mutator() != null) {
-            lines.add(Text.literal("Mutator: " + territory.mutator())
-                    .formatted(Formatting.LIGHT_PURPLE));
+            extra.add(CardLine.small(Text.translatable("betterloka.map.mutator_of",
+                    territory.mutator())));
         }
-
-        List<net.minecraft.text.OrderedText> ordered = new ArrayList<>(lines.size());
-        for (Text line : lines) {
-            ordered.add(line.asOrderedText());
+        if (!extra.isEmpty()) {
+            lines.add(CardLine.separator());
+            lines.addAll(extra);
         }
-        return ordered;
+        return lines;
     }
 
-    private static String strength(double value) {
-        return value < 0 ? "?" : String.format(Locale.ROOT, "%.0f", value);
-    }
-
-    private void drawPanel(DrawContext context, int left, int y, int width) {
-        GuiTheme.panel(context, left, y, width, PANEL_HEIGHT);
-        int textX = left + 6;
-        int textY = y + 6;
-        int inner = width - 12;
-
-        if (selected == null) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.map.pick"), textX, textY, GuiTheme.MUTED);
-            return;
-        }
-
-        context.drawTextWithShadow(this.textRenderer,
-                Text.literal(selected.label()).formatted(Formatting.BOLD), textX, textY,
-                GuiTheme.ACCENT);
-
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
-                Text.translatable("betterloka.map.owner").getString(),
-                selected.neutral()
-                        ? Text.translatable("betterloka.map.neutral").getString()
-                        : selected.owner(),
-                selected.neutral() ? GuiTheme.MUTED : GuiTheme.GOOD);
-
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
-                Text.translatable("betterloka.map.alliance").getString(),
-                selected.alliance() == null ? "—" : selected.alliance(), GuiTheme.TEXT);
-
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
-                Text.translatable("betterloka.map.coords").getString(),
-                String.format(Locale.ROOT, "%d, %d  ·  %s",
-                        Math.round(selected.centerX()), Math.round(selected.centerZ()), distance()),
-                GuiTheme.LIVE);
-    }
-
-    private String distance() {
+    private Text distanceText(MapTerritory territory) {
         if (this.client == null || this.client.player == null) {
-            return "—";
+            return Text.literal("—");
         }
-        Waypoint at = new Waypoint(selected.label(), continent.world(),
-                selected.centerX(), 64, selected.centerZ(), 0, selected.icon());
-        double blocks = at.distanceTo(this.client.player.getX(), this.client.player.getZ());
-        return String.format(Locale.ROOT, "%.0fm / %d chunks",
-                blocks, at.chunksTo(this.client.player.getX(), this.client.player.getZ()));
+        double blocks = at(territory).distanceTo(this.client.player.getX(),
+                this.client.player.getZ());
+        return Text.literal(String.format(Locale.ROOT, "%.0f m", blocks));
     }
+
+    private Text chunksText(MapTerritory territory) {
+        if (this.client == null || this.client.player == null) {
+            return Text.translatable("betterloka.map.chunks_away", "—");
+        }
+        return Text.translatable("betterloka.map.chunks_away",
+                at(territory).chunksTo(this.client.player.getX(), this.client.player.getZ()));
+    }
+
+    private Waypoint at(MapTerritory territory) {
+        return new Waypoint(territory.label(), continent.world(),
+                territory.centerX(), 64, territory.centerZ(),
+                territory.fillColor(), territory.icon());
+    }
+
+    private int lineHeight(CardLine line) {
+        return switch (line.kind()) {
+            case HEADER -> MapStyle.CARD_ROW_HEIGHT + 2;
+            case OWNER, ROW -> MapStyle.CARD_ROW_HEIGHT;
+            case SEAT -> Math.max(MapStyle.CARD_ROW_HEIGHT, MapStyle.ICON_SIZE + 2);
+            case SEPARATOR -> MapStyle.CARD_SECTION_GAP * 2 + 1;
+            case SMALL -> MapStyle.smallHeight(this.textRenderer);
+        };
+    }
+
+    private int lineWidth(CardLine line) {
+        return switch (line.kind()) {
+            case HEADER, OWNER -> (line.kind() == Kind.OWNER
+                    ? MapStyle.SWATCH_WIDTH + MapStyle.SWATCH_GAP : 0)
+                    + this.textRenderer.getWidth(line.left());
+            case SEAT -> MapStyle.ICON_SIZE + MapStyle.SWATCH_GAP
+                    + this.textRenderer.getWidth(line.left());
+            case ROW -> this.textRenderer.getWidth(line.left()) + 14
+                    + this.textRenderer.getWidth(line.right());
+            case SEPARATOR -> 0;
+            case SMALL -> MapStyle.smallWidth(this.textRenderer, line.left());
+        };
+    }
+
+    /**
+     * The card, placed beside the cursor and folded back when it would leave the screen.
+     *
+     * <p>When nothing is under the pointer it describes what was last clicked instead, pinned to the
+     * corner — one card either way, rather than a hover panel and a selection panel repeating each
+     * other.
+     */
+    private void drawInfoCard(DrawContext context, MapTerritory territory,
+                              int mouseX, int mouseY, boolean followCursor) {
+        List<CardLine> lines = cardLines(territory);
+
+        int inner = MapStyle.CARD_MIN_WIDTH;
+        int height = 0;
+        for (CardLine line : lines) {
+            inner = Math.max(inner, lineWidth(line));
+            height += lineHeight(line);
+        }
+        int width = inner + MapStyle.CARD_PADDING * 2;
+        height += MapStyle.CARD_PADDING * 2;
+
+        int x;
+        int y;
+        if (followCursor) {
+            x = mouseX + MapStyle.CARD_CURSOR_OFFSET;
+            if (x + width > this.width - MapStyle.CARD_SCREEN_MARGIN) {
+                x = mouseX - MapStyle.CARD_CURSOR_OFFSET - width;
+            }
+            y = mouseY + MapStyle.CARD_CURSOR_OFFSET;
+            if (y + height > this.height - MapStyle.CARD_SCREEN_MARGIN) {
+                y = mouseY - MapStyle.CARD_CURSOR_OFFSET - height;
+            }
+        } else {
+            x = mapX + 4;
+            y = mapY + mapHeight - height - 4;
+        }
+        x = Math.max(MapStyle.CARD_SCREEN_MARGIN,
+                Math.min(x, this.width - width - MapStyle.CARD_SCREEN_MARGIN));
+        y = Math.max(MapStyle.CARD_SCREEN_MARGIN,
+                Math.min(y, this.height - height - MapStyle.CARD_SCREEN_MARGIN));
+
+        int border = territory.neutral()
+                ? GuiTheme.MUTED : 0xFF000000 | palette.colorOf(territory.owner());
+        MapStyle.card(context, x, y, width, height, border);
+
+        int textX = x + MapStyle.CARD_PADDING;
+        int cursorY = y + MapStyle.CARD_PADDING;
+        for (CardLine line : lines) {
+            drawCardLine(context, line, textX, cursorY, inner, territory);
+            cursorY += lineHeight(line);
+        }
+    }
+
+    private void drawCardLine(DrawContext context, CardLine line, int x, int y, int inner,
+                              MapTerritory territory) {
+        switch (line.kind()) {
+            case HEADER -> context.drawTextWithShadow(this.textRenderer, line.left(), x, y,
+                    line.leftColor());
+            case OWNER -> {
+                context.fill(x, y, x + MapStyle.SWATCH_WIDTH, y + MapStyle.SWATCH_HEIGHT,
+                        line.leftColor());
+                context.drawTextWithShadow(this.textRenderer, line.left(),
+                        x + MapStyle.SWATCH_WIDTH + MapStyle.SWATCH_GAP, y, line.leftColor());
+            }
+            case SEAT -> {
+                var id = BetterLokaClient.mapIcons().get(line.icon(), continent);
+                if (id != null) {
+                    context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
+                            x, y, 0f, 0f, MapStyle.ICON_SIZE, MapStyle.ICON_SIZE,
+                            MapStyle.ICON_SIZE, MapStyle.ICON_SIZE, 0xFFFFFFFF);
+                }
+                context.drawTextWithShadow(this.textRenderer, line.left(),
+                        x + MapStyle.ICON_SIZE + MapStyle.SWATCH_GAP, y, line.leftColor());
+            }
+            case SEPARATOR -> context.fill(x, y + MapStyle.CARD_SECTION_GAP,
+                    x + inner, y + MapStyle.CARD_SECTION_GAP + 1, MapStyle.CARD_SEPARATOR);
+            case ROW -> {
+                context.drawTextWithShadow(this.textRenderer, line.left(), x, y, line.leftColor());
+                int valueWidth = this.textRenderer.getWidth(line.right());
+                context.drawTextWithShadow(this.textRenderer, line.right(),
+                        x + inner - valueWidth, y, line.rightColor());
+            }
+            case SMALL -> MapStyle.small(context, this.textRenderer, line.left(), x, y,
+                    line.leftColor());
+        }
+    }
+
+    // --- development ---
+
+    /**
+     * Where a territory currently sits on screen, or {@code null} if none matches.
+     *
+     * <p>Only the screenshot driver uses this: it has to put the pointer on a held territory and on
+     * neutral ground to photograph both cards, and the mapping from a territory to a pixel lives
+     * here. {@link #zoomButtonX()} and {@link #zoomInY()} are what it aims at for the zoom buttons.
+     */
+    public int[] devPointAt(java.util.function.Predicate<MapTerritory> match) {
+        for (MapTerritory territory : territories) {
+            if (!match.test(territory)) {
+                continue;
+            }
+            int x = screenXOf(territory.centerX());
+            int y = screenYOf(territory.centerZ());
+            // The middle itself has to be grabbable, not merely the territory visible: a wide hex
+            // can overlap the window while its centre sits above the top edge, and a press there
+            // is not on the map at all. Nor may it land on the zoom buttons, which take the click.
+            if (!insideMap(x, y) || overButton(x, y, zoomInY()) || overButton(x, y, zoomOutY())) {
+                continue;
+            }
+            return new int[] {x, y};
+        }
+        return null;
+    }
+
+    /** Development only: the middle of the zoom-in button, for the screenshot driver to click. */
+    public int[] devZoomInButton() {
+        return new int[] {zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2,
+                zoomInY() + MapStyle.ZOOM_BUTTON_SIZE / 2};
+    }
+
+    /** Development only: the middle of the zoom-out button. */
+    public int[] devZoomOutButton() {
+        return new int[] {zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2,
+                zoomOutY() + MapStyle.ZOOM_BUTTON_SIZE / 2};
+    }
+
+    // --- actions ---
 
     private void toggleWaypoint() {
         if (selected == null) {
             return;
         }
-        BetterLokaClient.map().toggle(new Waypoint(selected.label(), continent.world(),
-                selected.centerX(), 64, selected.centerZ(), selected.fillColor(), selected.icon()));
+        BetterLokaClient.map().toggle(at(selected));
     }
 
     private void copyCoordinates() {
@@ -720,6 +947,7 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public void close() {
+        rememberView();
         this.client.setScreen(parent);
     }
 }
