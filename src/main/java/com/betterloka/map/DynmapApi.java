@@ -1,6 +1,7 @@
 package com.betterloka.map;
 
 import com.betterloka.api.ApiException;
+import com.betterloka.api.HtmlText;
 import com.betterloka.api.HttpTransport;
 import com.betterloka.api.model.Json;
 import com.google.gson.JsonElement;

@@ -12,9 +12,42 @@ import com.google.gson.JsonObject;
 public record ScheduledFight(String territoryId, String name, String world, String relocatedName,
                              String attackerTownId, String attackerAllianceId,
                              String defenderTownId, String defenderAllianceId,
-                             int attackerCount, int defenderCount,
+                             String attackerName, String defenderName,
+                             Side attackers, Side defenders,
                              boolean reinforcementsAllowed, boolean started,
                              long timeStarted, double attackerStrength, double defenderStrength) {
+
+    /**
+     * One side's turnout: who signed up, and who actually came.
+     *
+     * <p>Loka records a {@code participationState} against each player — {@code REGISTERED} for
+     * somebody down for the fight, {@code ENTERED} and {@code PARTICIPATED} for somebody who
+     * actually warped in. Loka publishes nothing about who is online, so those two numbers are what
+     * the screen can honestly put a slash between.
+     *
+     * @param present  players who warped in
+     * @param signedUp everybody on the sheet, present or not
+     */
+    public record Side(int present, int signedUp) {
+        static Side of(JsonObject json, String key) {
+            JsonObject side = Json.object(json, key);
+            if (side == null) {
+                return new Side(0, 0);
+            }
+            int present = 0;
+            for (var entry : side.entrySet()) {
+                if (!entry.getValue().isJsonObject()) {
+                    continue;
+                }
+                String state = Json.string(entry.getValue().getAsJsonObject(),
+                        "participationState");
+                if ("ENTERED".equals(state) || "PARTICIPATED".equals(state)) {
+                    present++;
+                }
+            }
+            return new Side(present, side.size());
+        }
+    }
 
     public static ScheduledFight fromJson(JsonObject json) {
         return new ScheduledFight(
@@ -26,8 +59,11 @@ public record ScheduledFight(String territoryId, String name, String world, Stri
                 Json.string(json, "attackerAllianceId"),
                 Json.string(json, "defenderTownId"),
                 Json.string(json, "defenderAllianceId"),
-                count(json, "attackingPlayers"),
-                count(json, "defendingPlayers"),
+                // Loka names both sides on the record itself, colour codes and all.
+                com.betterloka.api.HtmlText.plain(Json.string(json, "attackerName")),
+                com.betterloka.api.HtmlText.plain(Json.string(json, "defenderName")),
+                Side.of(json, "attackingPlayers"),
+                Side.of(json, "defendingPlayers"),
                 Json.bool(json, "reins", false),
                 Json.bool(json, "started", false),
                 Json.longValue(json, "timeStarted", 0),
@@ -35,10 +71,12 @@ public record ScheduledFight(String territoryId, String name, String world, Stri
                 Json.doubleValue(json, "defenderStrength", 0));
     }
 
-    /** The players on one side are a map keyed by UUID, so the head count is its size. */
-    private static int count(JsonObject json, String key) {
-        JsonObject side = Json.object(json, key);
-        return side == null ? 0 : side.size();
+    public int attackerCount() {
+        return attackers.present();
+    }
+
+    public int defenderCount() {
+        return defenders.present();
     }
 
     public String continent() {
@@ -55,6 +93,31 @@ public record ScheduledFight(String territoryId, String name, String world, Stri
     }
 
     public int total() {
-        return attackerCount + defenderCount;
+        return attackers.present() + defenders.present();
+    }
+
+    /**
+     * The fight's own name, made readable.
+     *
+     * <p>Loka writes these as identifiers — {@code lilboi-9}, {@code the_verdant_hallows} — and a
+     * raw one on screen tells nobody anything. Used only when the sides cannot be named.
+     */
+    public String readableName() {
+        String source = relocatedName != null && !relocatedName.isBlank() ? relocatedName : name;
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder(source.length());
+        boolean startOfWord = true;
+        for (char character : source.toCharArray()) {
+            if (character == '_' || character == '-') {
+                out.append(' ');
+                startOfWord = true;
+                continue;
+            }
+            out.append(startOfWord ? Character.toUpperCase(character) : character);
+            startOfWord = false;
+        }
+        return out.toString();
     }
 }

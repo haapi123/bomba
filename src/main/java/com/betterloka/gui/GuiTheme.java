@@ -33,6 +33,16 @@ public final class GuiTheme {
         context.fill(x + width - 1, y + 1, x + width, y + height - 1, color);
     }
 
+    /**
+     * A fight's turnout: how many warped in, against how many signed up for it.
+     *
+     * <p>Not "online": Loka publishes nothing about who is logged in — a town member's record is
+     * literally {@code {"subowner": false}} — so the pair here is who came against who was down for
+     * it, which its battle records do say.
+     */
+    public static final int TURNOUT_PRESENT = 0xFF8CE99A;
+    public static final int TURNOUT_SIGNED_UP = 0xFFB03A3A;
+
     /** Enchantments, in the violet the game already associates with them. */
     public static final int ENCHANT = 0xFFB9A0FF;
 

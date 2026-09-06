@@ -49,6 +49,14 @@ public class FightManagerScreen extends Screen {
                        String attackerAlliance, String defenderAlliance, int defenderVulnHour) {
     }
 
+    /**
+     * Development only: list battles already fought rather than ones declared.
+     *
+     * <p>Loka often has nothing declared at all, and a screenshot of an empty screen shows nothing
+     * about how a battle is drawn. These are real records either way.
+     */
+    public static boolean devShowRecentBattles;
+
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
@@ -120,7 +128,9 @@ public class FightManagerScreen extends Screen {
     private List<Row> fetch() {
         List<ScheduledFight> fights;
         try {
-            fights = BetterLokaClient.lokaApi().fetchScheduledFights();
+            fights = devShowRecentBattles
+                    ? BetterLokaClient.lokaApi().fetchRecentBattles()
+                    : BetterLokaClient.lokaApi().fetchScheduledFights();
         } catch (ApiException e) {
             throw new java.util.concurrent.CompletionException(e);
         }
@@ -130,8 +140,10 @@ public class FightManagerScreen extends Screen {
             LokaTown attacker = BetterLokaClient.towns().byId(fight.attackerTownId());
             LokaTown defender = BetterLokaClient.towns().byId(fight.defenderTownId());
             built.add(new Row(fight,
-                    attacker == null ? null : attacker.name(),
-                    defender == null ? null : defender.name(),
+                    sideName(fight.attackerName(), allianceName(fight.attackerAllianceId()),
+                            attacker),
+                    sideName(fight.defenderName(), allianceName(fight.defenderAllianceId()),
+                            defender),
                     allianceName(fight.attackerAllianceId()),
                     allianceName(fight.defenderAllianceId()),
                     defender == null ? -1 : defender.vulnerabilityWindow()));
@@ -140,6 +152,23 @@ public class FightManagerScreen extends Screen {
         built.sort(Comparator.comparing((Row row) -> !row.fight().started())
                 .thenComparing(row -> -row.fight().total()));
         return List.copyOf(built);
+    }
+
+    /**
+     * What to call one side of a fight.
+     *
+     * <p>Loka names both sides on the battle record itself — "Justice League", "Helian League" —
+     * which is better than any id lookup and is what a person reads first. The alliance and the
+     * town are fallbacks for the rare record that names nobody.
+     */
+    private static String sideName(String published, String alliance, LokaTown town) {
+        if (published != null && !published.isBlank()) {
+            return published;
+        }
+        if (alliance != null && !alliance.isBlank()) {
+            return alliance;
+        }
+        return town == null ? null : town.name();
     }
 
     private static String allianceName(String allianceId) {
@@ -223,6 +252,31 @@ public class FightManagerScreen extends Screen {
         scrollPanel.render(context, mouseX, mouseY);
     }
 
+    /**
+     * One side: its name, then how many came against how many signed up.
+     *
+     * <p>Drawn in pieces because the two numbers carry different meanings and so different colours,
+     * while the name and the slash between them stay ordinary text.
+     *
+     * @return the x the next thing may start at
+     */
+    private int drawSide(DrawContext context, int x, int y, Text name,
+                         com.betterloka.api.model.ScheduledFight.Side side) {
+        context.drawTextWithShadow(this.textRenderer, name, x, y, GuiTheme.TEXT);
+        x += this.textRenderer.getWidth(name) + 4;
+
+        String present = String.valueOf(side.present());
+        context.drawTextWithShadow(this.textRenderer, present, x, y, GuiTheme.TURNOUT_PRESENT);
+        x += this.textRenderer.getWidth(present);
+
+        context.drawTextWithShadow(this.textRenderer, "/", x, y, GuiTheme.MUTED);
+        x += this.textRenderer.getWidth("/");
+
+        String signedUp = String.valueOf(side.signedUp());
+        context.drawTextWithShadow(this.textRenderer, signedUp, x, y, GuiTheme.TURNOUT_SIGNED_UP);
+        return x + this.textRenderer.getWidth(signedUp);
+    }
+
     private int renderFights(DrawContext context, int left, int y, int width) {
         int inner = width - CARD_PADDING * 2;
         for (Row row : rows) {
@@ -239,18 +293,21 @@ public class FightManagerScreen extends Screen {
             // Who is fighting whom, which is the first thing anybody wants off this screen.
             // Attacker red, defender green — which way round a fight is going is the first thing
             // anybody reads off this screen, so it is carried by colour rather than word order.
-            Text attacker = Text.literal(row.attacker() == null ? "?" : row.attacker())
-                    .formatted(Formatting.BOLD);
+            // Neither side named: fall back to the fight's own identifier, made readable, rather
+            // than showing "the_verdant_hallows" or a bare question mark.
+            String fallback = fight.readableName();
+            Text attacker = Text.literal(row.attacker() != null ? row.attacker()
+                    : fallback != null ? fallback : "?").formatted(Formatting.BOLD);
             Text defender = Text.literal(row.defender() == null ? "?" : row.defender())
                     .formatted(Formatting.BOLD);
-            String arrow = "  ->  ";
+            String arrow = "  vs  ";
 
             int attackerX = textX;
-            context.drawTextWithShadow(this.textRenderer, attacker, attackerX, textY, GuiTheme.BAD);
-            int arrowX = attackerX + this.textRenderer.getWidth(attacker);
+            int afterAttacker = drawSide(context, attackerX, textY, attacker, fight.attackers());
+            int arrowX = afterAttacker;
             context.drawTextWithShadow(this.textRenderer, arrow, arrowX, textY, GuiTheme.MUTED);
             int defenderX = arrowX + this.textRenderer.getWidth(arrow);
-            context.drawTextWithShadow(this.textRenderer, defender, defenderX, textY, GuiTheme.GOOD);
+            drawSide(context, defenderX, textY, defender, fight.defenders());
 
             Text when = fight.started()
                     ? Text.translatable("betterloka.fights.live")
@@ -271,18 +328,18 @@ public class FightManagerScreen extends Screen {
                         defenderX, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
-            String headcount = Text.translatable("betterloka.fights.headcount",
-                    fight.attackerCount(), fight.defenderCount()).getString();
-            context.drawTextWithShadow(this.textRenderer, headcount,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(headcount), textY + ROW_HEIGHT,
-                    fight.total() == 0 ? GuiTheme.MUTED : GuiTheme.TEXT);
-
-            String where = Text.translatable("betterloka.fights.where",
-                    fight.continent() == null ? "?" : fight.continent(),
-                    fight.territoryNumber() == null ? "?" : fight.territoryNumber()).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(where, inner - 90), textX, textY + ROW_HEIGHT * 2,
-                    GuiTheme.MUTED);
+            // Where it is being fought. Loka leaves the world off some records, and "? - territory
+            // #117" says nothing; the fight's own name, made readable, always says something.
+            String where = fight.continent() != null
+                    ? Text.translatable("betterloka.fights.where", fight.continent(),
+                            fight.territoryNumber() == null ? "?" : fight.territoryNumber())
+                            .getString()
+                    : fight.readableName();
+            if (where != null) {
+                context.drawTextWithShadow(this.textRenderer,
+                        this.textRenderer.trimToWidth(where, inner - 90), textX,
+                        textY + ROW_HEIGHT * 2, GuiTheme.MUTED);
+            }
 
             // Whether reinforcements can be called decides whether a fight stays the size it looks,
             // so it gets a chip rather than a line of grey text.

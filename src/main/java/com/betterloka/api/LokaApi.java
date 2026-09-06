@@ -310,6 +310,24 @@ public final class LokaApi {
      *
      * <p>The same endpoint the in-fight check uses, read for its schedule rather than its rosters.
      */
+    /**
+     * Battles Loka has on record, most recent first, finished ones included.
+     *
+     * <p>Development only, for photographing the Fight Manager when nothing is declared: the rows
+     * are real battles with real names and real turnouts, rather than numbers made up to fill a
+     * screenshot.
+     */
+    public List<ScheduledFight> fetchRecentBattles() throws ApiException {
+        List<ScheduledFight> fights = new ArrayList<>();
+        for (JsonElement element : embeddedArray(getObject(BASE_URL + "/battlezones"),
+                "battlezones")) {
+            if (element.isJsonObject()) {
+                fights.add(ScheduledFight.fromJson(element.getAsJsonObject()));
+            }
+        }
+        return fights;
+    }
+
     public List<ScheduledFight> fetchScheduledFights() throws ApiException {
         List<ScheduledFight> fights = new ArrayList<>();
         for (JsonElement element : embeddedArray(getObject(BASE_URL + "/battlezones/search/findBattles"),

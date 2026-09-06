@@ -1,4 +1,4 @@
-package com.betterloka.map;
+package com.betterloka.api;
 
 import java.util.Map;
 import java.util.regex.Matcher;

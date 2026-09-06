@@ -171,7 +171,6 @@
   "betterloka.fights.none": "No battles declared right now.",
   "betterloka.fights.matchup": "%s  ->  %s",
   "betterloka.fights.where": "%s - territory #%s",
-  "betterloka.fights.headcount": "%s v %s signed up",
   "betterloka.fights.live": "under way",
   "betterloka.fights.window_unknown": "window unknown",
   "betterloka.market.tab.deals": "Deals",

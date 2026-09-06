@@ -294,6 +294,25 @@ public final class MapDataStore {
         }
     }
 
+    /**
+     * Feeds a continent a territory list directly, as if it had just been fetched.
+     *
+     * <p>Development only. It goes through the same merge and diff as a real refresh, which is the
+     * point: it is how a capture can be shown to repaint one hex rather than the map.
+     */
+    public List<Change> devApply(Continent continent, List<MapTerritory> territories) {
+        Snapshot before = snapshot(continent);
+        Snapshot after = Snapshot.of(territories, before.towns(), System.currentTimeMillis());
+        synchronized (snapshots) {
+            snapshots.put(continent, after);
+        }
+        List<Change> changes = diff(continent, before, after);
+        for (Listener listener : listeners) {
+            listener.onChanged(continent, changes);
+        }
+        return changes;
+    }
+
     /** Which territories changed hands between two snapshots. */
     static List<Change> diff(Continent continent, Snapshot before, Snapshot after) {
         if (before.isEmpty()) {

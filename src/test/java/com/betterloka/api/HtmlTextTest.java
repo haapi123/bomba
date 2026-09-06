@@ -1,4 +1,4 @@
-package com.betterloka.map;
+package com.betterloka.api;
 
 import org.junit.jupiter.api.Test;
 

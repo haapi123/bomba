@@ -401,10 +401,24 @@ public class LokaMapScreen extends Screen {
         if (!insideMap(screenX, screenY)) {
             return null;
         }
+        double worldX = worldXAt(screenX);
+        double worldZ = worldZAt(screenY);
+        if (devLinearHitTest) {
+            // The old way, kept only so the new one can be measured against it in the same run.
+            for (MapTerritory territory : territories()) {
+                if (territory.contains(worldX, worldZ)) {
+                    return territory;
+                }
+            }
+            return null;
+        }
         // Through the snapshot's grid rather than by walking the continent: this runs every frame
         // while dragging, and 143 polygons of twenty-six edges apiece is what made that stutter.
-        return snapshot.index().at(worldXAt(screenX), worldZAt(screenY));
+        return snapshot.index().at(worldX, worldZ);
     }
+
+    /** Development only: forces the pre-index hit test, so the two can be timed side by side. */
+    public static boolean devLinearHitTest;
 
     // --- drawing ---
 
@@ -441,7 +455,9 @@ public class LokaMapScreen extends Screen {
         drawMap(context, mouseX, mouseY);
 
         // Outside the map's scissor: the card may reach past the panel, and should.
-        MapTerritory describing = hovered != null ? hovered : selected;
+        // While the bubble is up it is what the pointer is about; two panels over one spot is
+        // just noise.
+        MapTerritory describing = pinned ? null : hovered != null ? hovered : selected;
         if (describing != null) {
             drawInfoCard(context, describing, mouseX, mouseY, hovered != null);
         }
@@ -1082,6 +1098,16 @@ public class LokaMapScreen extends Screen {
     public int[] devZoomInButton() {
         return new int[] {zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2,
                 zoomInY() + MapStyle.ZOOM_BUTTON_SIZE / 2};
+    }
+
+    /** Development only: the middle of the coordinate bubble's Copy button, if it is showing. */
+    public int[] devCopyButton() {
+        if (!pinned) {
+            return null;
+        }
+        return new int[] {pinBubbleX() + pinBubbleWidth() / 2,
+                pinBubbleY() + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3
+                        + MapStyle.PIN_BUTTON_HEIGHT / 2};
     }
 
     /** Development only: the middle of the zoom-out button. */

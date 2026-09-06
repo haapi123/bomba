@@ -67,7 +67,17 @@ public final class DevShots {
 
         // The tutorial toast owns the top right and would sit over the map's card.
         step(5, () -> client().getToastManager().clear());
-        step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        // How long the map takes to have something to draw, now that the data is not fetched on
+        // opening it. Measured across the open itself, not from a warm cache read.
+        step(5, () -> {
+            // Asked of the store, not of the screen: the screen has not laid itself out until its
+            // first render, so anything that needs its geometry would report a false negative.
+            int held = BetterLokaClient.mapData().snapshot(Continent.KALROS).territories().size();
+            long before = System.nanoTime();
+            client().setScreen(new LokaMapScreen(null));
+            BetterLoka.LOGGER.info("SHOT map opened in {} ms with {} territories already in hand",
+                    String.format("%.2f", (System.nanoTime() - before) / 1_000_000.0), held);
+        });
         step(300, () -> { });
         // The ground arrives a tile at a time; give it long enough to cover the window.
         step(1200, () -> { });
@@ -106,9 +116,54 @@ public final class DevShots {
         step(600, () -> { });
         shot(20, "map-zoomed-out");
 
+        // How the map holds up while being dragged, measured both ways in the same conditions.
+        // Absolute numbers here are software rendering under a headless X server; the comparison
+        // between them is the part that means anything.
+        step(5, () -> LokaMapScreen.devLinearHitTest = true);
+        step(60, () -> { });
+        step(5, () -> BetterLoka.LOGGER.info("SHOT fps dragging, linear hit test: {}",
+                client().getCurrentFps()));
+        step(5, () -> LokaMapScreen.devLinearHitTest = false);
+        step(60, () -> { });
+        step(5, () -> BetterLoka.LOGGER.info("SHOT fps dragging, indexed hit test: {}",
+                client().getCurrentFps()));
+
         step(5, () -> click(client().currentScreen, "Balak"));
         step(1200, () -> { });
         shot(20, "map-balak");
+
+        step(5, () -> click(client().currentScreen, "Rivina"));
+        step(1200, () -> { });
+        shot(20, "map-rivina");
+
+        // The card on Rivina, the one continent that publishes conquest points.
+        step(5, () -> bringUnderCursor(MapTerritory::hasConquestPoints));
+        step(20, () -> { });
+        shot(20, "card-rivina-cp");
+
+        // A right click anywhere asks where that is, and offers to copy it.
+        step(5, () -> rightClickMiddle());
+        step(20, () -> { });
+        shot(20, "map-coordinates");
+        step(5, () -> checkClipboard());
+
+        // A capture, fed through the same merge a real refresh uses. The bubble is dismissed and
+        // the whole continent framed first, or its own fading "Copied" would be the only thing the
+        // two screenshots differ by — which is exactly what happened the first time.
+        step(5, () -> dismissBubble());
+        step(5, () -> click(client().currentScreen, "Fit continent"));
+        step(60, () -> { });
+        shot(20, "capture-before");
+        step(5, () -> simulateCapture());
+        step(20, () -> { });
+        shot(20, "capture-after");
+
+        // Nothing is usually declared on Loka, so the screenshot is taken over battles already
+        // fought — real names, real turnouts, drawn by the same code.
+        step(5, () -> com.betterloka.gui.FightManagerScreen.devShowRecentBattles = true);
+        step(5, () -> client().setScreen(new com.betterloka.gui.FightManagerScreen(null)));
+        step(600, () -> { });
+        shot(20, "fight-manager");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
@@ -225,6 +280,59 @@ public final class DevShots {
         map.mouseDragged(new Click(cursorX, cursorY, new MouseInput(0, 0)),
                 cursorX - point[0], cursorY - point[1]);
         map.mouseReleased(new Click(cursorX, cursorY, new MouseInput(0, 0)));
+    }
+
+    private static void dismissBubble() {
+        if (client().currentScreen instanceof LokaMapScreen map) {
+            map.keyPressed(new net.minecraft.client.input.KeyInput(
+                    org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0));
+        }
+    }
+
+    private static void rightClickMiddle() {
+        if (client().currentScreen instanceof LokaMapScreen map) {
+            double x = client().mouse.getScaledX(client().getWindow());
+            double y = client().mouse.getScaledY(client().getWindow());
+            map.mouseClicked(new Click(x, y, new MouseInput(1, 0)), false);
+        }
+    }
+
+    /** Presses the bubble's Copy button and reads the clipboard back. */
+    private static void checkClipboard() {
+        if (!(client().currentScreen instanceof LokaMapScreen map)) {
+            return;
+        }
+        int[] point = map.devCopyButton();
+        if (point == null) {
+            BetterLoka.LOGGER.warn("SHOT no coordinate bubble to copy from");
+            return;
+        }
+        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
+        BetterLoka.LOGGER.info("SHOT clipboard now holds: '{}'", client().keyboard.getClipboard());
+    }
+
+    /** Hands the store a captured territory and reports what it noticed. */
+    private static void simulateCapture() {
+        var store = BetterLokaClient.mapData();
+        var snapshot = store.snapshot(Continent.RIVINA);
+        List<MapTerritory> changed = new ArrayList<>();
+        boolean done = false;
+        for (MapTerritory territory : snapshot.territories()) {
+            if (!done && territory.neutral()) {
+                changed.add(new MapTerritory(territory.number(), territory.areaName(),
+                        "BetterLoka Test Co", "BetterLoka Test Co", territory.mutator(),
+                        territory.xs(), territory.zs(), territory.centerX(), territory.centerZ(),
+                        territory.fillColor(), territory.strokeColor(), "territory_owned",
+                        territory.conquestPoints()));
+                done = true;
+            } else {
+                changed.add(territory);
+            }
+        }
+        var changes = store.devApply(Continent.RIVINA, changed);
+        BetterLoka.LOGGER.info("SHOT capture simulated: {} of {} territories changed{}",
+                changes.size(), changed.size(),
+                changes.isEmpty() ? "" : " (" + changes.get(0).after().label() + ")");
     }
 
     private static void clickZoom(boolean in) {
