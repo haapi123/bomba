@@ -12,11 +12,11 @@ package com.betterloka.map;
  * other three and they hold claimed territory like any of them.
  */
 public enum Continent {
-    KALROS("Kalros", "kalros", "north", 3717, 4234),
-    ASCALON("Ascalon", "ascalon", "west", 5760, 5255),
-    GARAMA("Garama", "garama", "south", 4382, 2097),
-    RIVINA("Rivina", "conquest", "lilboi", 2385, 1041),
-    BALAK("Balak", "conquest", "bigboi", 2302, 3010);
+    KALROS("Kalros", "kalros", "north", 4184, 2204),
+    ASCALON("Ascalon", "ascalon", "west", 3776, 4540),
+    GARAMA("Garama", "garama", "south", 4216, 2636),
+    RIVINA("Rivina", "conquest", "lilboi", 2136, 1326),
+    BALAK("Balak", "conquest", "bigboi", 2128, 1766);
 
     private final String displayName;
     private final String instance;
@@ -35,10 +35,10 @@ public enum Continent {
     /**
      * Where Loka's own map opens this continent.
      *
-     * <p>Worth having rather than using the middle of the territory outlines: Loka has only rendered
-     * ground in patches, and this is the patch it rendered. Opening on the geometric centre of the
-     * territories put the view over bare sea floor with no tiles at all — 0 of 169 where its own
-     * centre has 40.
+     * <p>These are the coordinates its website passes to the map, not the centres Dynmap reports.
+     * They differ, and by a lot — Dynmap puts Balak's centre at {@code 2302, 3010} against the
+     * website's {@code 2128, 1766}, better than a thousand blocks off the island — because Dynmap's
+     * is wherever the world spawned and the website's is where a person would want to be looking.
      */
     public double centerX() {
         return centerX;

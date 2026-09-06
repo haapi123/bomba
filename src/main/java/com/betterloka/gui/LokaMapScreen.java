@@ -21,9 +21,9 @@ import java.util.Locale;
 /**
  * Loka's map, brought into the game: its outlines, its colours, its markers.
  *
- * <p>It opens zoomed in and is dragged with the mouse, the way its website is used. That is not only
- * a nicety — the ground under the territories is fetched a tile at a time for whatever is on screen,
- * and only a zoomed-in window is few enough tiles to be worth fetching at all.
+ * <p>It opens on the whole island and is dragged and scrolled with the mouse, the way its website is
+ * used. Loka's own ground is drawn underneath and the claims are washed over it, so the desert, the
+ * lava and the coastline stay readable through the colours.
  */
 public class LokaMapScreen extends Screen {
     /** Below the toast strip, which owns the top right and would clip the last tabs. */
@@ -56,14 +56,18 @@ public class LokaMapScreen extends Screen {
     private static final double DEFAULT_BLOCKS_PER_PIXEL = 6;
 
     /**
-     * Past this the ground is not drawn, and that is a limit of Loka's map rather than a choice.
+     * How much of the hex's colour survives over the ground.
      *
-     * <p>Its tiles are 32 blocks each and it has only rendered about a quarter of them even in its
-     * best areas. A view wide enough to read as a map — six territories, near 3500 blocks — would be
-     * seven thousand tiles for a picture that would still be three-quarters holes. Close in on one
-     * territory it is a couple of hundred and worth having, which is where it stays.
+     * <p>The ground is the point of the map — the desert, the lava, the coastline — so the claim
+     * colours sit over it as a wash rather than a coat of paint, and the outlines are left strong so
+     * the borders still read at a glance. Loka's own map does the same.
      */
-    private static final double TERRAIN_UNTIL = 1.5;
+    private static final int FILL_ALPHA_NEUTRAL = 0x40;
+    private static final int FILL_ALPHA_OWNED = 0x55;
+    private static final int FILL_ALPHA_SELECTED = 0x70;
+
+    /** Space left around the island when the map opens, as a fraction of the span. */
+    private static final double FIT_MARGIN = 1.12;
 
     /** Guard against a stray drag while a continent is still loading. */
     private static final int DRAG_SLOP = 2;
@@ -198,16 +202,34 @@ public class LokaMapScreen extends Screen {
     }
 
     /**
-     * Opens where Loka's own map opens.
+     * Opens on the whole island, the way Loka's own map opens.
      *
-     * <p>Not the middle of the territory outlines, which sounds right and is not: Loka has rendered
-     * ground only in patches, and the geometric centre of Kalros lands on one with no tiles at all.
-     * Its published centre lands on the patch it did render.
+     * <p>The middle comes from Loka's website and the zoom from the territories, which is the pair
+     * that frames it: its centre says where a person wants to be looking, and the outlines say how
+     * much has to fit for the continent to read as one place.
      */
     private void centreOnContinent() {
         centerX = continent.centerX();
         centerZ = continent.centerZ();
+        blocksPerPixel = DEFAULT_BLOCKS_PER_PIXEL;
+
+        double halfWidth = 0;
+        double halfHeight = 0;
+        for (MapTerritory territory : territories) {
+            halfWidth = Math.max(halfWidth, Math.abs(territory.maxX() - centerX));
+            halfWidth = Math.max(halfWidth, Math.abs(centerX - territory.minX()));
+            halfHeight = Math.max(halfHeight, Math.abs(territory.maxZ() - centerZ));
+            halfHeight = Math.max(halfHeight, Math.abs(centerZ - territory.minZ()));
+        }
+        if (halfWidth > 0 && mapWidth > 0 && mapHeight > 0) {
+            blocksPerPixel = clampZoom(Math.max(2 * halfWidth / mapWidth,
+                    2 * halfHeight / mapHeight) * FIT_MARGIN);
+        }
         centred = true;
+    }
+
+    private static double clampZoom(double value) {
+        return Math.max(MIN_BLOCKS_PER_PIXEL, Math.min(MAX_BLOCKS_PER_PIXEL, value));
     }
 
     /** Zooms out until the whole continent fits, for when panning has lost the plot. */
@@ -388,15 +410,12 @@ public class LokaMapScreen extends Screen {
 
         // Fill, then every outline, then the markers. A neighbour's fill drawn after a border paints
         // over it, and the hexes run together into one blob.
-        boolean overTerrain = blocksPerPixel <= TERRAIN_UNTIL;
         for (MapTerritory territory : territories) {
             int alpha;
             if (territory == selected) {
-                alpha = overTerrain ? 0x99 : 0xFF;
-            } else if (overTerrain) {
-                alpha = territory.neutral() ? 0x3C : 0x66;
+                alpha = FILL_ALPHA_SELECTED;
             } else {
-                alpha = territory.neutral() ? 0xB0 : 0xD8;
+                alpha = territory.neutral() ? FILL_ALPHA_NEUTRAL : FILL_ALPHA_OWNED;
             }
             fill(context, territory, (alpha << 24) | territory.fillColor());
         }
@@ -459,34 +478,52 @@ public class LokaMapScreen extends Screen {
     }
 
     /**
-     * Loka's own ground, one tile per 32 blocks, for the window on screen.
+     * Loka's own ground, in two layers.
      *
-     * <p>Only close in: zoomed out this would be thousands of tiles for a picture too small to read.
-     * A tile that has not arrived, or that Loka never rendered, simply leaves the background showing.
+     * <p>The coarse one is drawn first and covers the whole continent in a few dozen tiles, so the
+     * island is there complete the moment the map opens. The sharp one is drawn over it and only for
+     * the window being looked at, so zooming in gains detail without ever asking for a continent's
+     * worth of it. Where a sharp tile has not arrived the coarse one is simply left showing, which
+     * is why closing in never flashes holes.
      */
     private void drawTerrain(DrawContext context) {
-        if (blocksPerPixel > TERRAIN_UNTIL) {
-            return;
-        }
         MapTerrain terrain = BetterLokaClient.mapTerrain();
         terrain.beginFrame();
 
-        int firstX = MapTerrain.tileXAt(worldLeft());
-        int lastX = MapTerrain.tileXAt(worldXAt(mapX + mapWidth));
-        int firstY = MapTerrain.tileYAt(worldZAt(mapY + mapHeight));
-        int lastY = MapTerrain.tileYAt(worldTop());
+        drawTerrainLayer(context, terrain, MapTerrain.BASE_LEVEL);
+        int detail = MapTerrain.levelFor(blocksPerPixel);
+        if (detail < MapTerrain.BASE_LEVEL) {
+            drawTerrainLayer(context, terrain, detail);
+        }
+    }
 
-        int size = (int) Math.ceil(MapTerrain.BLOCKS_PER_TILE / blocksPerPixel);
-        for (int tileX = firstX; tileX <= lastX; tileX++) {
-            for (int tileY = firstY; tileY <= lastY; tileY++) {
-                var id = terrain.tile(continent, tileX, tileY);
+    private void drawTerrainLayer(DrawContext context, MapTerrain terrain, int level) {
+        int step = 1 << level;
+        int firstX = MapTerrain.tileXAt(worldLeft(), level);
+        int lastX = MapTerrain.tileXAt(worldXAt(mapX + mapWidth), level);
+        int firstY = MapTerrain.tileYAt(worldZAt(mapY + mapHeight), level);
+        int lastY = MapTerrain.tileYAt(worldTop(), level);
+
+        double blocks = MapTerrain.blocksPerTile(level);
+        for (int tileX = firstX; tileX <= lastX; tileX += step) {
+            for (int tileY = firstY; tileY <= lastY; tileY += step) {
+                var id = terrain.tile(continent, level, tileX, tileY);
                 if (id == null) {
                     continue;
                 }
                 int x = screenXOf(MapTerrain.tileWorldX(tileX));
                 int y = screenYOf(MapTerrain.tileWorldZ(tileY));
+                // Sized from the far corner rather than by rounding the width, or neighbouring
+                // tiles disagree by a pixel and the ground is drawn with a grid of seams through it.
+                int width = screenXOf(MapTerrain.tileWorldX(tileX) + blocks) - x;
+                int height = screenYOf(MapTerrain.tileWorldZ(tileY) + blocks) - y;
+                if (width <= 0 || height <= 0) {
+                    continue;
+                }
                 context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
-                        x, y, 0f, 0f, size, size, size, size, size, size, 0xFFFFFFFF);
+                        x, y, 0f, 0f, width, height,
+                        MapTerrain.TILE_PIXELS, MapTerrain.TILE_PIXELS,
+                        MapTerrain.TILE_PIXELS, MapTerrain.TILE_PIXELS, 0xFFFFFFFF);
             }
         }
     }
@@ -569,13 +606,10 @@ public class LokaMapScreen extends Screen {
         }
     }
 
-    /** A quiet line saying how close in the view is, and where the middle of it sits. */
+    /** A quiet line saying where the middle of the view sits. */
     private void drawScaleNote(DrawContext context) {
         String note = String.format(Locale.ROOT, "X %d, Z %d",
                 Math.round(centerX), Math.round(centerZ));
-        if (blocksPerPixel > TERRAIN_UNTIL) {
-            note += "  ·  " + Text.translatable("betterloka.map.zoom_hint").getString();
-        }
         context.drawTextWithShadow(this.textRenderer, note,
                 mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
     }

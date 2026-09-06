@@ -63,10 +63,14 @@ public final class DevShots {
         step(5, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(300, () -> { });
         // The ground arrives a tile at a time; give it long enough to cover the window.
-        step(2600, () -> { });
+        step(1200, () -> { });
         step(5, () -> centreCursor());
         step(20, () -> { });
         shot(20, "map-kalros");
+
+        step(5, () -> click(client().currentScreen, "Balak"));
+        step(1200, () -> { });
+        shot(20, "map-balak");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
