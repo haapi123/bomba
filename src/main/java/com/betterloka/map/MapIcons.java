@@ -29,7 +29,10 @@ public final class MapIcons {
     /** Only these are ever requested, so a bad icon name in the marker data cannot drive fetches. */
     private static final Set<String> KNOWN = Set.of(
             "territory_neutral", "territory_owned", "territory_mutator",
-            "town1", "town2", "town3", "yellowskull", "redskull", "cap", "anchor", "world");
+            "town1", "town2", "town3", "yellowskull", "redskull", "anchor", "world",
+            // Capitals and the Conquest maps' own markers. "worldcap" is Garama's world capital,
+            // and without it the one town on the server that holds that title had no icon at all.
+            "cap", "worldcap", "ship", "territory_buff");
 
     private final HttpTransport transport;
     private final Path cacheDir;

@@ -483,6 +483,7 @@ public class LokaMapScreen extends Screen {
                 continue;
             }
             int alpha = territory == selected ? MapStyle.FILL_ALPHA_SELECTED
+                    : territory.seat() ? MapStyle.FILL_ALPHA_SEAT
                     : territory.neutral() ? MapStyle.FILL_ALPHA_NEUTRAL : MapStyle.FILL_ALPHA_OWNED;
             fill(context, territory, (alpha << 24) | territory.fillColor());
         }
@@ -499,8 +500,11 @@ public class LokaMapScreen extends Screen {
                 continue;
             }
             int color = 0xFF000000 | snapshot.palette().colorOf(territory.owner());
-            drawBorder(context, territory, color,
-                    MapStyle.BORDER_INNER_WIDTH, MapStyle.BORDER_OUTER_WIDTH, true);
+            // A town's own hex is ringed all the way round rather than having its seams thinned
+            // away: it is the thing on the map somebody is looking for.
+            int inner = territory.seat() ? MapStyle.BORDER_SEAT_WIDTH : MapStyle.BORDER_INNER_WIDTH;
+            int outer = territory.seat() ? MapStyle.BORDER_SEAT_WIDTH : MapStyle.BORDER_OUTER_WIDTH;
+            drawBorder(context, territory, color, inner, outer, true);
         }
         // Last, so the selection is never buried under a neighbour's border.
         if (selected != null && !offScreen(selected)) {
@@ -770,6 +774,9 @@ public class LokaMapScreen extends Screen {
             lines.add(CardLine.seat(Text.translatable("betterloka.map.town_seat",
                     Text.literal(seat.name()).formatted(Formatting.BOLD, Formatting.WHITE)),
                     territory.icon()));
+            if (seat.hasTitle()) {
+                lines.add(CardLine.owner(Text.literal(seat.title()), MapStyle.CONQUEST_POINTS));
+            }
         }
 
         lines.add(CardLine.separator());

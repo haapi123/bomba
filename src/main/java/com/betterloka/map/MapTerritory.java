@@ -19,6 +19,9 @@ package com.betterloka.map;
  *                    separates one hex from the next
  * @param icon        the marker Loka draws in the middle: a keep for a held territory, a plainer
  *                    one for neutral ground
+ * @param seat whether the town holding this is built on it — its capital hex rather than one of
+ *             its outlying claims. Loka marks it by drawing the hex at a higher opacity and putting
+ *             a keep on it.
  * @param conquestPoints what holding this is worth per day, or {@code -1} where Loka does not say.
  *                    Only the Conquest continents carry it — Rivina publishes it on all eighteen of
  *                    its territories, and Kalros, Ascalon, Garama and Balak on none of theirs.
@@ -26,7 +29,7 @@ package com.betterloka.map;
 public record MapTerritory(String number, String areaName, String owner, String alliance,
                            String mutator, double[] xs, double[] zs,
                            double centerX, double centerZ, int fillColor, int strokeColor,
-                           String icon, int conquestPoints) {
+                           String icon, int conquestPoints, boolean seat) {
 
     /** Whether Loka published a conquest-point value for this territory. */
     public boolean hasConquestPoints() {

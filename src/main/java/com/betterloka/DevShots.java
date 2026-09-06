@@ -130,6 +130,36 @@ public final class DevShots {
         step(5, () -> BetterLoka.LOGGER.info("SHOT fps dragging, indexed hit test: {}",
                 client().getCurrentFps()));
 
+        // Tyralnia's seat on Ascalon: the hex this was reported on.
+        step(5, () -> click(client().currentScreen, "Ascalon"));
+        step(1200, () -> { });
+        step(5, () -> bringUnderCursor(t -> t.seat() && "Tyralnia".equals(t.owner())));
+        step(20, () -> { });
+        shot(20, "card-capital");
+        // Close in, so the seat's heavier ring against its ordinary claims is visible.
+        step(5, () -> {
+            for (int i = 0; i < 6; i++) {
+                clickZoom(true);
+            }
+        });
+        step(5, () -> bringUnderCursor(t -> t.seat() && "Tyralnia".equals(t.owner())));
+        step(400, () -> { });
+        shot(20, "map-capital-close");
+        step(5, () -> {
+            var snap = BetterLokaClient.mapData().snapshot(Continent.ASCALON);
+            for (MapTerritory t : snap.territories()) {
+                if (t.seat()) {
+                    BetterLoka.LOGGER.info("SHOT seat #{} owner={} alliance={} icon={}",
+                            t.number(), t.owner(), t.alliance(), t.icon());
+                }
+            }
+            for (var town : snap.towns()) {
+                if (town.hasTitle()) {
+                    BetterLoka.LOGGER.info("SHOT capital: {} - {}", town.name(), town.title());
+                }
+            }
+        });
+
         step(5, () -> click(client().currentScreen, "Balak"));
         step(1200, () -> { });
         shot(20, "map-balak");
@@ -325,7 +355,7 @@ public final class DevShots {
                         "BetterLoka Test Co", "BetterLoka Test Co", territory.mutator(),
                         territory.xs(), territory.zs(), territory.centerX(), territory.centerZ(),
                         territory.fillColor(), territory.strokeColor(), "territory_owned",
-                        territory.conquestPoints()));
+                        territory.conquestPoints(), territory.seat()));
                 done = true;
             } else {
                 changed.add(territory);

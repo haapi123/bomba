@@ -60,8 +60,20 @@ public final class DynmapApi {
     /** {@code <h1>80 CP</h1>} — only the Conquest continents publish it, and only Rivina today. */
     private static final Pattern CONQUEST_POINTS = Pattern.compile("<h1>\\s*(\\d+)\\s*CP\\s*</h1>");
 
-    /** A town card: {@code <h2>Vanguard<br/><small>ChickenCurry_0 Alliance - 183 strength...} */
-    private static final Pattern TOWN_NAME = Pattern.compile("<h2>\\s*([^<]+?)\\s*<br/>");
+    /**
+     * A town card's heading: {@code <h2>Vanguard<br/>}, or {@code <h2><strong>Tyralnia - Capital of
+     * Ascalon</strong><br/>}.
+     *
+     * <p>Everything up to the first break, tags and all, because a capital's name is wrapped in
+     * {@code <strong>} and a pattern that stopped at the first angle bracket matched none of the
+     * three capitals Loka has. The capture is sanitised, so crossing those tags is safe here in a
+     * way it would not be if the result were used raw.
+     */
+    private static final Pattern TOWN_NAME = Pattern.compile("<h2>(.*?)<br/>");
+
+    /** {@code Tyralnia - Capital of Ascalon}, {@code New Lothlaan - World Capital of Loka}. */
+    private static final Pattern CAPITAL_TITLE =
+            Pattern.compile("^(.*?)\\s+-\\s+((?:World\\s+)?Capital\\s+of\\s+.+)$");
     /**
      * Anchored to the {@code <small>} the card's detail line opens with.
      *
@@ -219,8 +231,10 @@ public final class DynmapApi {
                 continue;
             }
             JsonObject marker = entry.getValue().getAsJsonObject();
-            String icon = Json.string(marker, "icon");
-            if (icon == null || !icon.startsWith("town")) {
+            // Judged by the card, not by the icon. Filtering on an icon name beginning "town" left
+            // out every capital on the server — they are drawn with "cap" and "worldcap" — so
+            // Tyralnia, Targon and New Lothlaan were three towns the mod could not see at all.
+            if (!looksLikeTownCard(Json.string(marker, "label"))) {
                 continue;
             }
             MapTown town = parseTown(Json.string(marker, "label"),
@@ -230,6 +244,19 @@ public final class DynmapApi {
             }
         }
         return List.copyOf(towns);
+    }
+
+    /**
+     * Whether a marker's label is a town's card rather than a territory's.
+     *
+     * <p>A town card counts its members and territories; a territory card names an owner and never
+     * does. Reading the shape rather than the icon means a new icon does not hide a town.
+     */
+    static boolean looksLikeTownCard(String label) {
+        if (label == null || label.contains("Owner:")) {
+            return false;
+        }
+        return TOWN_COUNTS.matcher(label).find() || TOWN_STRENGTH.matcher(label).find();
     }
 
     static MapTown parseTown(String label, double x, double z) {
@@ -243,6 +270,13 @@ public final class DynmapApi {
         String townName = HtmlText.plain(name.group(1));
         if (townName == null) {
             return null;
+        }
+        // "Tyralnia - Capital of Ascalon" is a town called Tyralnia wearing a title.
+        String title = null;
+        Matcher capital = CAPITAL_TITLE.matcher(townName);
+        if (capital.matches()) {
+            townName = capital.group(1);
+            title = capital.group(2);
         }
         String alliance = null;
         double strength = -1;
@@ -262,7 +296,7 @@ public final class DynmapApi {
             members = Integer.parseInt(counts.group(1));
             territories = Integer.parseInt(counts.group(2));
         }
-        return new MapTown(townName, alliance, strength, members, territories, x, z);
+        return new MapTown(townName, title, alliance, strength, members, territories, x, z);
     }
 
     /** Background work: a map nobody has opened yet must not queue in front of a search. */
@@ -297,6 +331,16 @@ public final class DynmapApi {
         String plain = label == null ? "" : label;
         String alliance = group(ALLIANCE, plain);
         String owner = holderOf(plain, alliance, icon);
+
+        // A town's own hex carries the town's card in place of a territory card, so it has no
+        // "Owner:" line and used to come out unclaimed — the one hex on the map that most obviously
+        // belongs to somebody. Loka draws it at 0.92 opacity against 0.65 for the rest of that
+        // town's land and 0.27 or less for neutral ground, so it is held, and emphatically.
+        MapTown seat = looksLikeTownCard(plain) ? parseTown(plain, 0, 0) : null;
+        if (seat != null) {
+            owner = seat.name();
+            alliance = seat.hasAlliance() ? seat.alliance() : alliance;
+        }
         String mutator = group(MUTATOR, plain);
         String areaName = areaName(plain);
 
@@ -305,7 +349,8 @@ public final class DynmapApi {
 
         return new MapTerritory(number, areaName, owner, alliance, mutator, xs, zs,
                 centerX, centerZ, color(Json.string(area, "fillcolor")),
-                color(Json.string(area, "color")), icon, conquestPoints(plain));
+                color(Json.string(area, "color")), icon, conquestPoints(plain),
+                seat != null);
     }
 
     /**

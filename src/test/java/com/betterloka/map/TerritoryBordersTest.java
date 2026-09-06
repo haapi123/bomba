@@ -14,7 +14,7 @@ class TerritoryBordersTest {
         return new MapTerritory(number, "Test", owner, null, null,
                 new double[] {x, x + 10, x + 10, x},
                 new double[] {0, 0, 10, 10},
-                x + 5, 5, 0x3AB3DA, 0x09090B, "territory_owned", -1);
+                x + 5, 5, 0x3AB3DA, 0x09090B, "territory_owned", -1, false);
     }
 
     @Test

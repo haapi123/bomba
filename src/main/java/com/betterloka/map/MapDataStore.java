@@ -105,7 +105,7 @@ public final class MapDataStore {
     private record StoredTerritory(String number, String areaName, String owner, String alliance,
                                    String mutator, List<Double> xs, List<Double> zs,
                                    double centerX, double centerZ, int fillColor, int strokeColor,
-                                   String icon, int conquestPoints) {
+                                   String icon, int conquestPoints, boolean seat) {
     }
 
     private final DynmapApi api;
@@ -187,6 +187,13 @@ public final class MapDataStore {
     public MapTown seatOf(Continent continent, MapTerritory territory) {
         if (territory == null) {
             return null;
+        }
+        // The territory carries the town's own card, so it says outright whose seat it is.
+        if (territory.seat()) {
+            MapTown named = town(continent, territory.owner());
+            if (named != null) {
+                return named;
+            }
         }
         for (MapTown town : snapshot(continent).towns()) {
             if (territory.contains(town.x(), town.z())) {
@@ -361,7 +368,7 @@ public final class MapDataStore {
                     territories.add(new MapTerritory(one.number(), one.areaName(), one.owner(),
                             one.alliance(), one.mutator(), toArray(one.xs()), toArray(one.zs()),
                             one.centerX(), one.centerZ(), one.fillColor(), one.strokeColor(),
-                            one.icon(), one.conquestPoints()));
+                            one.icon(), one.conquestPoints(), one.seat()));
                 }
                 // Dated deliberately: a restored map should read as old until the network confirms
                 // it, which is what puts the "as of" note on screen instead of a false all-clear.
@@ -383,7 +390,8 @@ public final class MapDataStore {
                     territory.owner(), territory.alliance(), territory.mutator(),
                     toList(territory.xs()), toList(territory.zs()),
                     territory.centerX(), territory.centerZ(), territory.fillColor(),
-                    territory.strokeColor(), territory.icon(), territory.conquestPoints()));
+                    territory.strokeColor(), territory.icon(), territory.conquestPoints(),
+                    territory.seat()));
         }
         try {
             storeFor(continent).write(new StoredContinent(stored, snapshot.towns()));

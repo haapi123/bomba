@@ -34,7 +34,7 @@ class MapPerformanceTest {
             }
             territories.add(new MapTerritory(String.valueOf(i), "Region", i % 5 == 0 ? null : "T" + (i % 7),
                     null, null, xs, zs, cx, cz, 0x3AB3DA, 0x09090B,
-                    i % 5 == 0 ? "territory_neutral" : "territory_owned", -1));
+                    i % 5 == 0 ? "territory_neutral" : "territory_owned", -1, false));
         }
         return territories;
     }

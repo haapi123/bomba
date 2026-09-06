@@ -7,13 +7,20 @@ package com.betterloka.map;
  * counts it, and how many territories it currently holds — so this is worth keeping even though the
  * API is the better source for everything else.
  *
+ * @param title    the standing Loka gives it — {@code Capital of Ascalon}, {@code World Capital of
+ *                 Loka} — or {@code null} for an ordinary town
  * @param strength the map's strength figure, or {@code -1} when the card did not give one
  * @param x        where the town's marker stands, world X: the territory it falls inside is that
  *                 town's seat, which the map has no other way of saying
  * @param z        the same marker's world Z
  */
-public record MapTown(String name, String alliance, double strength, int members, int territories,
-                      double x, double z) {
+public record MapTown(String name, String title, String alliance, double strength, int members,
+                      int territories, double x, double z) {
+
+    /** Whether Loka gives this town a capital's standing. */
+    public boolean hasTitle() {
+        return title != null && !title.isBlank();
+    }
 
     public boolean hasAlliance() {
         return alliance != null && !alliance.isBlank();

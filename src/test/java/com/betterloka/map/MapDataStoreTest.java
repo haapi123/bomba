@@ -17,7 +17,7 @@ class MapDataStoreTest {
                 new double[] {x, x + 100, x + 100, x},
                 new double[] {0, 0, 100, 100},
                 x + 50, 50, 0x3AB3DA, 0x09090B,
-                owner == null ? "territory_neutral" : "territory_owned", -1);
+                owner == null ? "territory_neutral" : "territory_owned", -1, false);
     }
 
     private static MapDataStore.Snapshot snapshot(List<MapTerritory> territories) {

@@ -30,6 +30,18 @@ public final class MapStyle {
     public static final int FILL_ALPHA_SELECTED = 0x66;
 
     /**
+     * The hex a town is actually built on, drawn heavier than its outlying claims.
+     *
+     * <p>Loka does the same thing and by the same margin — 0.92 opacity for a town's own hex against
+     * 0.65 for the rest of its land — because that one hex is the town, and everything else is
+     * territory it holds.
+     */
+    public static final int FILL_ALPHA_SEAT = 0x6E;
+
+    /** The seat's border is drawn as heavily as a town's outer boundary, and never hairline. */
+    public static final int BORDER_SEAT_WIDTH = 3;
+
+    /**
      * Neutral ground is outlined faintly and held ground firmly.
      *
      * <p>That contrast is the point: with every hex outlined alike, the eye has to read the fills to
