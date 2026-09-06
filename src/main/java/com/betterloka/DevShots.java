@@ -72,6 +72,16 @@ public final class DevShots {
         step(1200, () -> { });
         shot(20, "map-balak");
 
+        // Zoomed in, which is the only thing that exercises the sharp layer: the opening view is
+        // drawn entirely from the coarse one, so a shot of it proves nothing about the other.
+        step(5, () -> {
+            for (int i = 0; i < 8; i++) {
+                scroll(1);
+            }
+        });
+        step(1200, () -> { });
+        shot(20, "map-balak-close");
+
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
             client().scheduleStop();
