@@ -5,8 +5,7 @@ import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
-import com.betterloka.map.TerritoryBorders;
-import com.betterloka.map.TownPalette;
+import com.betterloka.map.MapDataStore;
 import com.betterloka.map.Waypoint;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -49,17 +48,30 @@ public class LokaMapScreen extends Screen {
 
     private static final Map<Continent, View> VIEWS = new EnumMap<>(Continent.class);
 
+    /** The continent last looked at, so reopening the map lands where it was left. */
+    private static Continent lastContinent = Continent.KALROS;
+
     private final Screen parent;
 
-    private Continent continent = Continent.KALROS;
-    private List<MapTerritory> territories = List.of();
-    private TerritoryBorders borders = TerritoryBorders.of(List.of());
-    private TownPalette palette = TownPalette.of(List.of());
-    private boolean loading;
-    private String error;
+    private Continent continent = lastContinent;
+
+    /**
+     * What this frame is drawing, taken from the store once per frame.
+     *
+     * <p>Read rather than owned: the store keeps it current in the background, so opening the
+     * screen costs nothing and a territory captured while it was shut is simply already there.
+     */
+    private MapDataStore.Snapshot snapshot = MapDataStore.Snapshot.empty();
+
+    /**
+     * The selection, held as a number rather than an object.
+     *
+     * <p>A refresh replaces every territory record, so a held reference would go on describing the
+     * state before the capture — the one thing this screen exists to show.
+     */
+    private String selectedNumber;
     private MapTerritory selected;
     private MapTerritory hovered;
-    private int generation;
 
     /** The view: which world point is in the middle, and how tight the zoom is. */
     private double centerX;
@@ -72,6 +84,15 @@ public class LokaMapScreen extends Screen {
     private double dragStartZ;
     private double dragOriginX;
     private double dragOriginY;
+
+    /** The spot a right click asked about: somewhere on the ground, not necessarily a territory. */
+    private boolean pinned;
+    private double pinWorldX;
+    private double pinWorldZ;
+    private int pinScreenX;
+    private int pinScreenY;
+    private long pinnedAt;
+    private long copiedAt;
 
     // Where the map was drawn this frame, so a click can be turned back into world coordinates.
     private int mapX;
@@ -127,9 +148,6 @@ public class LokaMapScreen extends Screen {
                 .dimensions(left + (quarter + 4) * 3, bottomY,
                         left + width - (left + (quarter + 4) * 3), 20).build());
 
-        if (territories.isEmpty() && !loading) {
-            load();
-        }
     }
 
     private Text tabLabel(Continent value) {
@@ -151,37 +169,31 @@ public class LokaMapScreen extends Screen {
         }
         rememberView();
         continent = target;
-        territories = List.of();
-        borders = TerritoryBorders.of(List.of());
-        palette = TownPalette.of(List.of());
+        lastContinent = target;
+        snapshot = BetterLokaClient.mapData().snapshot(target);
+        selectedNumber = null;
         selected = null;
-        error = null;
+        closePin();
         centred = false;
-        load();
         clearAndInit();
     }
 
-    private void load() {
-        loading = true;
-        int mine = ++generation;
-        BetterLokaClient.map().territories(continent).whenComplete((found, throwable) -> {
-            if (this.client == null) {
-                return;
+    /** The territories currently held, shorthand for the snapshot's list. */
+    private List<MapTerritory> territories() {
+        return snapshot.territories();
+    }
+
+    /** The selected territory as the current snapshot describes it, not as it was when picked. */
+    private MapTerritory resolveSelection() {
+        if (selectedNumber == null) {
+            return null;
+        }
+        for (MapTerritory territory : territories()) {
+            if (selectedNumber.equals(territory.number())) {
+                return territory;
             }
-            this.client.execute(() -> {
-                if (mine != generation) {
-                    return;
-                }
-                loading = false;
-                if (throwable != null || found == null) {
-                    error = Text.translatable("betterloka.map.unreachable").getString();
-                    return;
-                }
-                territories = found;
-                borders = TerritoryBorders.of(found);
-                palette = TownPalette.of(found.stream().map(MapTerritory::owner).toList());
-            });
-        });
+        }
+        return null;
     }
 
     // --- the view ---
@@ -216,12 +228,12 @@ public class LokaMapScreen extends Screen {
         centerX = continent.centerX();
         centerZ = continent.centerZ();
         centred = true;
-        if (territories.isEmpty() || mapWidth <= 0 || mapHeight <= 0) {
+        if (territories().isEmpty() || mapWidth <= 0 || mapHeight <= 0) {
             return;
         }
         double halfWidth = 0;
         double halfHeight = 0;
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             halfWidth = Math.max(halfWidth, Math.abs(territory.maxX() - centerX));
             halfWidth = Math.max(halfWidth, Math.abs(centerX - territory.minX()));
             halfHeight = Math.max(halfHeight, Math.abs(territory.maxZ() - centerZ));
@@ -308,6 +320,18 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
+        if (click.button() == 1) {
+            return rightClick(click.x(), click.y());
+        }
+        // A left click anywhere dismisses the coordinate bubble, including the click that lands on
+        // its own Copy button — which is handled first so the copy still happens.
+        if (pinned) {
+            if (overCopyButton(click.x(), click.y())) {
+                copyPinned();
+                return true;
+            }
+            closePin();
+        }
         // The zoom buttons sit over the map, so they get the click before panning does.
         if (mapWidth > 0 && overButton(click.x(), click.y(), zoomInY())) {
             if (canZoomIn()) {
@@ -351,6 +375,7 @@ public class LokaMapScreen extends Screen {
             if (Math.abs(click.x() - dragOriginX) <= DRAG_SLOP
                     && Math.abs(click.y() - dragOriginY) <= DRAG_SLOP) {
                 selected = territoryAt(click.x(), click.y());
+                selectedNumber = selected == null ? null : selected.number();
                 clearAndInit();
             }
             return true;
@@ -376,14 +401,9 @@ public class LokaMapScreen extends Screen {
         if (!insideMap(screenX, screenY)) {
             return null;
         }
-        double worldX = worldXAt(screenX);
-        double worldZ = worldZAt(screenY);
-        for (MapTerritory territory : territories) {
-            if (territory.contains(worldX, worldZ)) {
-                return territory;
-            }
-        }
-        return null;
+        // Through the snapshot's grid rather than by walking the continent: this runs every frame
+        // while dragging, and 143 polygons of twenty-six edges apiece is what made that stutter.
+        return snapshot.index().at(worldXAt(screenX), worldZAt(screenY));
     }
 
     // --- drawing ---
@@ -404,17 +424,13 @@ public class LokaMapScreen extends Screen {
 
         GuiTheme.panel(context, left, MAP_TOP - 4, width, mapHeight + 8);
 
-        if (loading) {
+        // One read per frame: the store may swap the snapshot under us at any moment, and half a
+        // frame drawn from each would tear.
+        snapshot = BetterLokaClient.mapData().snapshot(continent);
+        selected = resolveSelection();
+
+        if (territories().isEmpty()) {
             centered(context, "betterloka.map.loading", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
-            return;
-        }
-        if (error != null) {
-            context.drawCenteredTextWithShadow(this.textRenderer, error,
-                    this.width / 2, MAP_TOP + mapHeight / 2, GuiTheme.BAD);
-            return;
-        }
-        if (territories.isEmpty()) {
-            centered(context, "betterloka.map.empty", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
             return;
         }
 
@@ -429,6 +445,7 @@ public class LokaMapScreen extends Screen {
         if (describing != null) {
             drawInfoCard(context, describing, mouseX, mouseY, hovered != null);
         }
+        drawPin(context, mouseX, mouseY);
     }
 
     private void centered(DrawContext context, String key, int y, int color) {
@@ -445,7 +462,7 @@ public class LokaMapScreen extends Screen {
 
         // Fills first, then every border, then the markers. A neighbour's fill drawn after a border
         // paints over it, and the hexes run together into one blob.
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             if (offScreen(territory)) {
                 continue;
             }
@@ -454,18 +471,18 @@ public class LokaMapScreen extends Screen {
             fill(context, territory, (alpha << 24) | territory.fillColor());
         }
 
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             if (!territory.neutral() || offScreen(territory)) {
                 continue;
             }
             drawBorder(context, territory, MapStyle.BORDER_NEUTRAL,
                     MapStyle.BORDER_NEUTRAL_WIDTH, MapStyle.BORDER_NEUTRAL_WIDTH, false);
         }
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             if (territory.neutral() || offScreen(territory)) {
                 continue;
             }
-            int color = 0xFF000000 | palette.colorOf(territory.owner());
+            int color = 0xFF000000 | snapshot.palette().colorOf(territory.owner());
             drawBorder(context, territory, color,
                     MapStyle.BORDER_INNER_WIDTH, MapStyle.BORDER_OUTER_WIDTH, true);
         }
@@ -475,7 +492,7 @@ public class LokaMapScreen extends Screen {
                     MapStyle.BORDER_SELECTED_WIDTH, MapStyle.BORDER_SELECTED_WIDTH, false);
         }
 
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             if (!offScreen(territory)) {
                 drawIcon(context, territory);
             }
@@ -558,15 +575,25 @@ public class LokaMapScreen extends Screen {
         if (onScreenWidth < MapStyle.ICON_SIZE + 4) {
             return;
         }
+        int centreX = screenXOf(territory.centerX());
+        int centreY = screenYOf(territory.centerZ());
+
         var id = BetterLokaClient.mapIcons().get(territory.icon(), continent);
-        if (id == null) {
-            return;
+        if (id != null) {
+            context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
+                    centreX - MapStyle.ICON_SIZE / 2, centreY - MapStyle.ICON_SIZE / 2,
+                    0f, 0f, MapStyle.ICON_SIZE, MapStyle.ICON_SIZE,
+                    MapStyle.ICON_SIZE, MapStyle.ICON_SIZE, 0xFFFFFFFF);
         }
-        int x = screenXOf(territory.centerX()) - MapStyle.ICON_SIZE / 2;
-        int y = screenYOf(territory.centerZ()) - MapStyle.ICON_SIZE / 2;
-        context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
-                x, y, 0f, 0f, MapStyle.ICON_SIZE, MapStyle.ICON_SIZE,
-                MapStyle.ICON_SIZE, MapStyle.ICON_SIZE, 0xFFFFFFFF);
+
+        // What the hex is worth, on the hex — only where Loka publishes it, and only when there is
+        // room for it to be read rather than to be clutter.
+        if (territory.hasConquestPoints() && onScreenWidth >= MapStyle.CP_ON_HEX_MIN_WIDTH) {
+            String points = territory.conquestPoints() + " CP";
+            context.drawTextWithShadow(this.textRenderer, points,
+                    centreX - this.textRenderer.getWidth(points) / 2,
+                    centreY + MapStyle.ICON_SIZE / 2 + 1, MapStyle.CONQUEST_POINTS);
+        }
     }
 
     /**
@@ -620,7 +647,7 @@ public class LokaMapScreen extends Screen {
         double[] xs = territory.xs();
         double[] zs = territory.zs();
         for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-            boolean inner = borders.isInternal(xs[j], zs[j], xs[i], zs[i]);
+            boolean inner = snapshot.borders().isInternal(xs[j], zs[j], xs[i], zs[i]);
             int width = inner ? innerWidth : outerWidth;
             if (rimOuter && !inner) {
                 line(context, xs[j], zs[j], xs[i], zs[i], MapStyle.BORDER_RIM,
@@ -663,6 +690,14 @@ public class LokaMapScreen extends Screen {
                 Math.round(centerX), Math.round(centerZ));
         context.drawTextWithShadow(this.textRenderer, note,
                 mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
+
+        // Old data is shown rather than hidden, and said so rather than passed off as current.
+        if (snapshot.stale(System.currentTimeMillis())) {
+            Text age = Text.translatable("betterloka.map.as_of", TimeFormat.ago(snapshot.fetchedAt()));
+            context.drawTextWithShadow(this.textRenderer, age,
+                    mapX + mapWidth - this.textRenderer.getWidth(age) - 4,
+                    mapY + mapHeight - 10, GuiTheme.LIVE);
+        }
     }
 
     // --- the information card ---
@@ -711,10 +746,10 @@ public class LokaMapScreen extends Screen {
                     GuiTheme.MUTED));
         } else {
             lines.add(CardLine.owner(Text.literal(territory.owner()),
-                    0xFF000000 | palette.colorOf(territory.owner())));
+                    0xFF000000 | snapshot.palette().colorOf(territory.owner())));
         }
 
-        MapTown seat = BetterLokaClient.map().seatOf(continent, territory);
+        MapTown seat = BetterLokaClient.mapData().seatOf(continent, territory);
         if (seat != null) {
             lines.add(CardLine.seat(Text.translatable("betterloka.map.town_seat",
                     Text.literal(seat.name()).formatted(Formatting.BOLD, Formatting.WHITE)),
@@ -728,6 +763,11 @@ public class LokaMapScreen extends Screen {
                 GuiTheme.TEXT));
         lines.add(CardLine.row(Text.translatable("betterloka.map.distance"), distanceText(territory),
                 GuiTheme.LIVE));
+        if (territory.hasConquestPoints()) {
+            lines.add(CardLine.row(Text.translatable("betterloka.map.conquest_points"),
+                    Text.translatable("betterloka.map.cp_per_day", territory.conquestPoints()),
+                    MapStyle.CONQUEST_POINTS));
+        }
 
         List<CardLine> extra = new ArrayList<>();
         if (territory.alliance() != null) {
@@ -735,7 +775,7 @@ public class LokaMapScreen extends Screen {
                     territory.alliance())));
         }
         MapTown town = territory.neutral()
-                ? null : BetterLokaClient.map().town(continent, territory.owner());
+                ? null : BetterLokaClient.mapData().town(continent, territory.owner());
         if (town != null) {
             if (town.strength() >= 0) {
                 extra.add(CardLine.small(Text.translatable("betterloka.map.strength_of",
@@ -844,7 +884,7 @@ public class LokaMapScreen extends Screen {
                 Math.min(y, this.height - height - MapStyle.CARD_SCREEN_MARGIN));
 
         int border = territory.neutral()
-                ? GuiTheme.MUTED : 0xFF000000 | palette.colorOf(territory.owner());
+                ? GuiTheme.MUTED : 0xFF000000 | snapshot.palette().colorOf(territory.owner());
         MapStyle.card(context, x, y, width, height, border);
 
         int textX = x + MapStyle.CARD_PADDING;
@@ -889,6 +929,128 @@ public class LokaMapScreen extends Screen {
         }
     }
 
+    // --- the coordinate bubble ---
+
+    /**
+     * A right click asks "where is this?", anywhere on the map.
+     *
+     * <p>Left click is already spoken for by panning and picking a territory, and open sea has
+     * nothing to pick — so the question that has no answer on the left button gets its own.
+     */
+    private boolean rightClick(double screenX, double screenY) {
+        if (!insideMap(screenX, screenY)) {
+            return false;
+        }
+        pinned = true;
+        pinWorldX = worldXAt(screenX);
+        pinWorldZ = worldZAt(screenY);
+        pinScreenX = (int) Math.round(screenX);
+        pinScreenY = (int) Math.round(screenY);
+        pinnedAt = System.currentTimeMillis();
+        copiedAt = 0;
+        return true;
+    }
+
+    private void closePin() {
+        pinned = false;
+        copiedAt = 0;
+    }
+
+    /** What lands in the clipboard: two numbers, ready for chat, a command, or a note. */
+    private String pinnedCoordinates() {
+        return String.format(Locale.ROOT, "%d %d",
+                Math.round(pinWorldX), Math.round(pinWorldZ));
+    }
+
+    private void copyPinned() {
+        if (this.client != null) {
+            this.client.keyboard.setClipboard(pinnedCoordinates());
+            copiedAt = System.currentTimeMillis();
+        }
+    }
+
+    private int pinBubbleWidth() {
+        int text = this.textRenderer.getWidth(pinnedCoordinates());
+        int button = this.textRenderer.getWidth(
+                Text.translatable("betterloka.map.copy_here")) + MapStyle.PIN_BUTTON_PADDING * 2;
+        return Math.max(MapStyle.PIN_MIN_WIDTH,
+                MapStyle.CARD_PADDING * 2 + Math.max(text, button));
+    }
+
+    private int pinBubbleHeight() {
+        return MapStyle.CARD_PADDING * 2 + MapStyle.CARD_ROW_HEIGHT + MapStyle.PIN_BUTTON_HEIGHT + 3;
+    }
+
+    private int pinBubbleX() {
+        int width = pinBubbleWidth();
+        int x = pinScreenX + MapStyle.CARD_CURSOR_OFFSET;
+        if (x + width > this.width - MapStyle.CARD_SCREEN_MARGIN) {
+            x = pinScreenX - MapStyle.CARD_CURSOR_OFFSET - width;
+        }
+        return Math.max(MapStyle.CARD_SCREEN_MARGIN,
+                Math.min(x, this.width - width - MapStyle.CARD_SCREEN_MARGIN));
+    }
+
+    private int pinBubbleY() {
+        int height = pinBubbleHeight();
+        int y = pinScreenY + MapStyle.CARD_CURSOR_OFFSET;
+        if (y + height > this.height - MapStyle.CARD_SCREEN_MARGIN) {
+            y = pinScreenY - MapStyle.CARD_CURSOR_OFFSET - height;
+        }
+        return Math.max(MapStyle.CARD_SCREEN_MARGIN,
+                Math.min(y, this.height - height - MapStyle.CARD_SCREEN_MARGIN));
+    }
+
+    private boolean overCopyButton(double screenX, double screenY) {
+        if (!pinned) {
+            return false;
+        }
+        int x = pinBubbleX() + MapStyle.CARD_PADDING;
+        int y = pinBubbleY() + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3;
+        int width = pinBubbleWidth() - MapStyle.CARD_PADDING * 2;
+        return screenX >= x && screenX < x + width
+                && screenY >= y && screenY < y + MapStyle.PIN_BUTTON_HEIGHT;
+    }
+
+    private void drawPin(DrawContext context, int mouseX, int mouseY) {
+        if (!pinned) {
+            return;
+        }
+        if (System.currentTimeMillis() - pinnedAt > MapStyle.PIN_LIFETIME_MILLIS) {
+            closePin();
+            return;
+        }
+        int x = pinBubbleX();
+        int y = pinBubbleY();
+        int width = pinBubbleWidth();
+
+        // A cross on the spot itself, so the bubble beside it is clearly about that point.
+        context.fill(pinScreenX - 3, pinScreenY, pinScreenX + 4, pinScreenY + 1, MapStyle.PIN_MARK);
+        context.fill(pinScreenX, pinScreenY - 3, pinScreenX + 1, pinScreenY + 4, MapStyle.PIN_MARK);
+
+        MapStyle.card(context, x, y, width, pinBubbleHeight(), MapStyle.PIN_BORDER);
+        context.drawTextWithShadow(this.textRenderer, pinnedCoordinates(),
+                x + MapStyle.CARD_PADDING, y + MapStyle.CARD_PADDING, GuiTheme.TEXT);
+
+        boolean copied = copiedAt > 0
+                && System.currentTimeMillis() - copiedAt < MapStyle.COPIED_NOTICE_MILLIS;
+        MapStyle.wideButton(context, this.textRenderer,
+                x + MapStyle.CARD_PADDING,
+                y + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3,
+                width - MapStyle.CARD_PADDING * 2,
+                Text.translatable(copied ? "betterloka.map.copied" : "betterloka.map.copy_here"),
+                overCopyButton(mouseX, mouseY), copied);
+    }
+
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
+        if (pinned && input.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+            closePin();
+            return true;
+        }
+        return super.keyPressed(input);
+    }
+
     // --- development ---
 
     /**
@@ -899,7 +1061,7 @@ public class LokaMapScreen extends Screen {
      * here. {@link #zoomButtonX()} and {@link #zoomInY()} are what it aims at for the zoom buttons.
      */
     public int[] devPointAt(java.util.function.Predicate<MapTerritory> match) {
-        for (MapTerritory territory : territories) {
+        for (MapTerritory territory : territories()) {
             if (!match.test(territory)) {
                 continue;
             }

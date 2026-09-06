@@ -31,8 +31,14 @@ public final class DynmapApi {
     /** {@code <h2>Falcon Fury Territory<br/><small>Owner: Corvus</small>...} */
     private static final Pattern OWNER = Pattern.compile("Owner:\\s*([^<]+)");
 
-    /** The heading names the alliance when one holds it: {@code <h2>Falcon Fury Territory}. */
-    private static final Pattern ALLIANCE = Pattern.compile("<h2>\\s*(.+?)\\s+(?:Alliance\\s+)?Territory");
+    /**
+     * The heading names the holder: {@code <h2>Falcon Fury Territory}.
+     *
+     * <p>No angle bracket, for the same reason the area pattern has none — a heading is followed by
+     * markup, and a greedy hop over it reports tags as somebody's name.
+     */
+    private static final Pattern ALLIANCE =
+            Pattern.compile("<h2>\\s*([^<>]+?)\\s+(?:Alliance\\s+)?Territory");
 
     /** {@code <h3><b>Mutator: Air Support</b></h3>} */
     private static final Pattern MUTATOR = Pattern.compile("Mutator:\\s*([^<]+)");
@@ -49,6 +55,9 @@ public final class DynmapApi {
      * before its name, which is why only held territories showed it.
      */
     private static final Pattern AREA = Pattern.compile("<br/>\\s*([^<>]*?)\\s*(\\d+)\\s*<br/>");
+
+    /** {@code <h1>80 CP</h1>} — only the Conquest continents publish it, and only Rivina today. */
+    private static final Pattern CONQUEST_POINTS = Pattern.compile("<h1>\\s*(\\d+)\\s*CP\\s*</h1>");
 
     /** A town card: {@code <h2>Vanguard<br/><small>ChickenCurry_0 Alliance - 183 strength...} */
     private static final Pattern TOWN_NAME = Pattern.compile("<h2>\\s*([^<]+?)\\s*<br/>");
@@ -76,6 +85,53 @@ public final class DynmapApi {
     /** Everything one continent's marker file carries: its outlines and its town cards. */
     public record ContinentData(List<MapTerritory> territories, List<MapTown> towns) {
     }
+
+    /**
+     * What Dynmap says has happened since a moment.
+     *
+     * @param timestamp what to pass back next time
+     * @param worthRefetching whether anything arrived that could have moved a border
+     */
+    public record Pulse(long timestamp, boolean worthRefetching) {
+    }
+
+    /**
+     * The cheap question: has anything changed?
+     *
+     * <p>Loka publishes no websocket, but Dynmap's own polling endpoint answers this in about three
+     * hundred bytes against the hundred and twenty kilobytes of a marker file — so the map can be
+     * watched closely without the traffic that would imply.
+     *
+     * <p>Day and night and player movement arrive constantly and mean nothing here, so they are
+     * ignored; anything else is taken as a reason to refetch. The store also refetches on a timer
+     * regardless, because what Dynmap emits for a captured territory could not be observed from
+     * outside and guessing at it is not a basis for the map being right.
+     */
+    public Pulse pulse(Continent continent, long since) throws ApiException {
+        JsonObject json = getObject(BASE_URL + "/" + continent.instance()
+                + "/up/world/" + continent.world() + "/" + Math.max(0, since));
+        long stamp = Json.longValue(json, "timestamp", since);
+
+        boolean interesting = false;
+        JsonElement updates = json.get("updates");
+        if (updates != null && updates.isJsonArray()) {
+            for (JsonElement element : updates.getAsJsonArray()) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                String type = Json.string(element.getAsJsonObject(), "type");
+                if (type != null && !IGNORED_UPDATES.contains(type)) {
+                    interesting = true;
+                    break;
+                }
+            }
+        }
+        return new Pulse(stamp, interesting);
+    }
+
+    /** Update kinds that say nothing about who holds what. */
+    private static final java.util.Set<String> IGNORED_UPDATES =
+            java.util.Set.of("daynight", "playerupdate", "playerjoin", "playerquit", "chat");
 
     /** Both halves in one request — they live in the same file. */
     public ContinentData fetchContinent(Continent continent) throws ApiException {
@@ -238,8 +294,8 @@ public final class DynmapApi {
         }
 
         String plain = label == null ? "" : label;
-        String owner = group(OWNER, plain);
         String alliance = group(ALLIANCE, plain);
+        String owner = holderOf(plain, alliance, icon);
         String mutator = group(MUTATOR, plain);
         String areaName = areaName(plain);
 
@@ -248,7 +304,66 @@ public final class DynmapApi {
 
         return new MapTerritory(number, areaName, owner, alliance, mutator, xs, zs,
                 centerX, centerZ, color(Json.string(area, "fillcolor")),
-                color(Json.string(area, "color")), icon);
+                color(Json.string(area, "color")), icon, conquestPoints(plain));
+    }
+
+    /**
+     * One territory built from a marker card, for tests.
+     *
+     * <p>The polygon is a placeholder triangle: what these exercise is the reading of the card,
+     * which is where both card formats and every field on them are decided.
+     */
+    static MapTerritory parseForTest(String number, String label, String icon) {
+        JsonObject area = new JsonObject();
+        area.addProperty("label", number);
+        com.google.gson.JsonArray xs = new com.google.gson.JsonArray();
+        com.google.gson.JsonArray zs = new com.google.gson.JsonArray();
+        for (int[] point : new int[][] {{0, 0}, {1, 0}, {1, 1}}) {
+            xs.add(point[0]);
+            zs.add(point[1]);
+        }
+        area.add("x", xs);
+        area.add("z", zs);
+        return parse("test-" + number, area, label, null, icon);
+    }
+
+    /**
+     * Who holds a territory, across two card formats.
+     *
+     * <p>The regular continents name the town on an {@code Owner:} line under an alliance heading.
+     * The Conquest continents have no such line at all — not one of Rivina's or Balak's nineteen
+     * markers carries it — and put the holder in the heading instead:
+     * {@code <h2>Abuju Brotherhood Territory}. Reading only the first form left every territory on
+     * both of those continents drawn as unclaimed, which is why Balak's map had no colour on it.
+     *
+     * <p>The heading is only trusted when Dynmap's own icon agrees the ground is held, because a
+     * neutral card's heading is the region's name and would otherwise read as its owner.
+     */
+    private static String holderOf(String label, String alliance, String icon) {
+        String owner = group(OWNER, label);
+        if (owner != null) {
+            return owner;
+        }
+        return "territory_owned".equals(icon) ? alliance : null;
+    }
+
+    /**
+     * What a territory is worth per day, off the card Rivina's markers carry.
+     *
+     * <p>{@code <h1>80 CP</h1><h3>Worth 80 Conquest Points per day</h3>} — published by every one of
+     * Rivina's territories and by none on the other four continents, so this is absent rather than
+     * zero elsewhere and the screen can tell the difference.
+     */
+    private static int conquestPoints(String label) {
+        Matcher matcher = CONQUEST_POINTS.matcher(label);
+        if (!matcher.find()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /**

@@ -22,6 +22,15 @@ public final class HtmlText {
     private static final Pattern ENTITY = Pattern.compile("&(#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);");
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
+    /**
+     * Minecraft's own colour codes, which Loka's battle records carry.
+     *
+     * <p>A defending region comes back as {@code §6The Rivi Shores}. The section sign is not HTML
+     * and no tag stripper would touch it, but it is markup all the same and belongs off the screen
+     * with the rest of it.
+     */
+    private static final Pattern COLOR_CODE = Pattern.compile("§[0-9a-fk-orA-FK-OR]");
+
     /** The handful Loka's cards actually use, plus the ones any escaper emits. */
     private static final Map<String, String> NAMED = Map.of(
             "amp", "&", "lt", "<", "gt", ">", "quot", "\"",
@@ -43,6 +52,7 @@ public final class HtmlText {
         String text = LINE_BREAK.matcher(raw).replaceAll(" ");
         text = TAG.matcher(text).replaceAll("");
         text = decodeEntities(text);
+        text = COLOR_CODE.matcher(text).replaceAll("");
         text = WHITESPACE.matcher(text).replaceAll(" ").trim();
         return text.isEmpty() ? null : text;
     }

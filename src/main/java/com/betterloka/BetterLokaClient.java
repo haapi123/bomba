@@ -10,6 +10,7 @@ import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
 import com.betterloka.map.DynmapApi;
 import com.betterloka.map.MapIcons;
+import com.betterloka.map.MapDataStore;
 import com.betterloka.map.MapService;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.WaypointHud;
@@ -71,6 +72,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TownLogger townLogger;
     private static TownActivityStore townActivity;
     private static MapService map;
+    private static MapDataStore mapData;
     private static MapIcons mapIcons;
     private static MapTerrain mapTerrain;
     private static GrindTimers grindTimers;
@@ -97,8 +99,12 @@ public class BetterLokaClient implements ClientModInitializer {
         // The active count is the number Loka deletes towns on, and the only place it exists is the
         // /town info panel. Read passively: the mod never runs the command, it reads a screen the
         // player opened.
-        map = new MapService(new DynmapApi(transport), configDir().resolve("map.json"),
-                configDir().resolve("waypoints.json"));
+        map = new MapService(configDir().resolve("waypoints.json"));
+        // The map's own data lives on its own, refreshed in the background, so opening the screen
+        // is instant and a capture shows up whether or not anybody was looking.
+        mapData = new MapDataStore(new DynmapApi(transport), configDir().resolve("mapcache"),
+                config.mapRefreshSeconds());
+        mapData.start();
         mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         mapTerrain = new MapTerrain(transport, configDir().resolve("map-terrain"));
         new WaypointHud(map).register();
@@ -219,6 +225,11 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static MapService map() {
         return map;
+    }
+
+    /** Loka's map data, kept current in the background whether or not the screen is open. */
+    public static MapDataStore mapData() {
+        return mapData;
     }
 
     public static MapIcons mapIcons() {

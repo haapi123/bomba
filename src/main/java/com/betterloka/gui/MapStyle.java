@@ -103,6 +103,26 @@ public final class MapStyle {
     /** The secondary section's text, as a fraction of the normal size. */
     public static final float SMALL_SCALE = 0.75f;
 
+    // --- the coordinate bubble ---
+
+    /** How long the bubble stays up before it gets out of the way by itself. */
+    public static final long PIN_LIFETIME_MILLIS = 8000L;
+
+    /** How long "Copied" shows after the clipboard is written. */
+    public static final long COPIED_NOTICE_MILLIS = 1500L;
+
+    public static final int PIN_MIN_WIDTH = 84;
+    public static final int PIN_BUTTON_HEIGHT = 13;
+    public static final int PIN_BUTTON_PADDING = 6;
+    public static final int PIN_BORDER = 0xFF6FB6FF;
+    public static final int PIN_MARK = 0xFFFFFFFF;
+
+    /** Conquest points, in the gold Loka already uses for them. */
+    public static final int CONQUEST_POINTS = 0xFFFFC33D;
+
+    /** How wide a hex must be on screen before its point value is written on it. */
+    public static final int CP_ON_HEX_MIN_WIDTH = 34;
+
     /** The swatch that shows a town's colour beside its name. */
     public static final int SWATCH_WIDTH = 3;
     public static final int SWATCH_HEIGHT = 8;
@@ -151,6 +171,22 @@ public final class MapStyle {
         context.drawTextWithShadow(textRenderer, label,
                 x + (size - width) / 2, y + (size - textRenderer.fontHeight) / 2 + 1,
                 enabled ? BUTTON_TEXT : BUTTON_TEXT_DISABLED);
+    }
+
+    /** A full-width button, for the one inside the coordinate bubble. */
+    public static void wideButton(DrawContext context, TextRenderer textRenderer, int x, int y,
+                                  int width, Text label, boolean hovered, boolean confirmed) {
+        int fill = confirmed ? 0xE0204A2A : hovered ? BUTTON_FILL_HOVER : BUTTON_FILL;
+        int border = confirmed ? 0xFF5FD37A : hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
+        context.fill(x, y, x + width, y + PIN_BUTTON_HEIGHT, fill);
+        context.fill(x, y, x + width, y + 1, border);
+        context.fill(x, y + PIN_BUTTON_HEIGHT - 1, x + width, y + PIN_BUTTON_HEIGHT, border);
+        context.fill(x, y, x + 1, y + PIN_BUTTON_HEIGHT, border);
+        context.fill(x + width - 1, y, x + width, y + PIN_BUTTON_HEIGHT, border);
+
+        int textWidth = textRenderer.getWidth(label);
+        context.drawTextWithShadow(textRenderer, label, x + (width - textWidth) / 2,
+                y + (PIN_BUTTON_HEIGHT - textRenderer.fontHeight) / 2 + 1, BUTTON_TEXT);
     }
 
     /** Text at the secondary size, for the side notes under the main rows. */

@@ -39,6 +39,16 @@ public final class BetterLokaConfig {
      */
     private int townLogIntervalMinutes = 30;
 
+    /**
+     * Seconds between checks that Loka's map has changed.
+     *
+     * <p>A check is about three hundred bytes — Dynmap's own "anything since?" endpoint — and the
+     * hundred-and-twenty-kilobyte marker file is only refetched when the answer is yes or the data
+     * has gone five minutes old. Forty-five seconds is therefore cheap and keeps a capture visible
+     * within about a minute.
+     */
+    private int mapRefreshSeconds = 45;
+
     /** Start the shulker timer by itself when a shulker the player hit dies. */
     private boolean shulkerAutoStart = true;
 
@@ -141,6 +151,14 @@ public final class BetterLokaConfig {
     public void setTownLogIntervalMinutes(int minutes) {
         this.townLogIntervalMinutes = Math.max(1, minutes);
         save();
+    }
+
+    public int mapRefreshSeconds() {
+        return Math.max(15, mapRefreshSeconds);
+    }
+
+    public void setMapRefreshSeconds(int seconds) {
+        this.mapRefreshSeconds = Math.max(15, seconds);
     }
 
     public boolean shulkerAutoStart() {

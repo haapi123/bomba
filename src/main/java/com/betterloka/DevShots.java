@@ -80,12 +80,12 @@ public final class DevShots {
         shot(20, "card-held");
 
         step(5, () -> bringUnderCursor(territory ->
-                BetterLokaClient.map().seatOf(Continent.KALROS, territory) != null));
+                BetterLokaClient.mapData().seatOf(Continent.KALROS, territory) != null));
         step(20, () -> { });
         shot(20, "card-town-seat");
 
         step(5, () -> bringUnderCursor(territory -> territory.neutral()
-                && BetterLokaClient.map().seatOf(Continent.KALROS, territory) == null));
+                && BetterLokaClient.mapData().seatOf(Continent.KALROS, territory) == null));
         step(20, () -> { });
         shot(20, "card-unclaimed");
 
