@@ -24,6 +24,7 @@ sourceSets.main.java {
     include 'com/betterloka/BetterLoka.java'
     include 'com/betterloka/api/**'
     include 'com/betterloka/data/JsonStore.java'
+    include 'com/betterloka/data/LruCache.java'
     include 'com/betterloka/towns/FallenTowns.java'
     include 'com/betterloka/bot/**'
 }

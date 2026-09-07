@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -152,9 +154,148 @@ class ContentionDiagnosisTest {
         }
     }
 
+    /**
+     * The same flood, submitted the way the Market now submits it.
+     *
+     * <p>Seller lookups run on the bulk lane and as background work, so they no longer sit in front
+     * of a click nor reserve the budget out from under one. Same number of requests as above; the
+     * difference is which lane they are in and what they are allowed to take.
+     */
+    @Test
+    void backgroundFanOutNoLongerDelaysAnInteractiveLookup() throws Exception {
+        try (HttpTransport transport = new HttpTransport()) {
+            transport.get(base + "/warm");
+
+            long controlStart = System.nanoTime();
+            transport.get(base + "/battlezones");
+            System.out.println("=== control: a lone interactive request took "
+                    + (System.nanoTime() - controlStart) / 1_000_000 + " ms");
+
+            for (int sellers : new int[]{50, 150, 300}) {
+                drainLimiter(transport);
+
+                List<CompletableFuture<?>> fanOut = new ArrayList<>();
+                for (int i = 0; i < sellers; i++) {
+                    int id = i;
+                    fanOut.add(CompletableFuture.runAsync(() -> {
+                        try {
+                            transport.get(base + "/players/search/findByIdentityId?identityId=" + id,
+                                    true);
+                        } catch (ApiException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }, transport.bulkExecutor()));
+                }
+
+                long start = System.nanoTime();
+                CompletableFuture<Long> interactive = CompletableFuture.supplyAsync(() -> {
+                    long began = System.nanoTime();
+                    try {
+                        transport.get(base + "/battlezones");
+                    } catch (ApiException e) {
+                        throw new RuntimeException(e);
+                    }
+                    return began;
+                }, transport.executor());
+
+                long beganNanos = interactive.get(5, TimeUnit.MINUTES);
+                System.out.println("=== A/B) after " + sellers
+                        + " background lookups queued: refresh sat "
+                        + (beganNanos - start) / 1_000_000 + " ms in the pool queue, "
+                        + (System.nanoTime() - start) / 1_000_000 + " ms in total");
+
+                CompletableFuture.allOf(fanOut.toArray(new CompletableFuture[0])).join();
+            }
+        }
+    }
+
     /** Lets the token bucket refill so each round starts from the same place. */
     private static void drainLimiter(HttpTransport transport) throws InterruptedException {
         Thread.sleep(1200);
+    }
+
+    /**
+     * A host that accepts the connection and then says nothing.
+     *
+     * <p>The case a player sees as "the tab never loads". Five attempts at a thirty-second timeout
+     * was over two and a half minutes of looking identical to a slow load; the deadline turns it
+     * into an error the screen can show.
+     */
+    @Test
+    void anUnansweringHostFailsWithinTheBudget() throws Exception {
+        HttpServer silent = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        silent.createContext("/", exchange -> {
+            try {
+                Thread.sleep(120_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        silent.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
+        silent.start();
+        String url = "http://127.0.0.1:" + silent.getAddress().getPort() + "/never";
+
+        try (HttpTransport transport = new HttpTransport()) {
+            long start = System.nanoTime();
+            String outcome;
+            try {
+                transport.get(url);
+                outcome = "returned a body, which it should not have";
+            } catch (ApiException e) {
+                outcome = "failed with: " + e.getMessage();
+            }
+            long millis = (System.nanoTime() - start) / 1_000_000;
+            System.out.println("=== C) a host that never answers: " + millis + " ms, " + outcome);
+            System.out.println("        (old behaviour: 5 attempts x 30 s timeout plus backoff)");
+        } finally {
+            silent.stop(0);
+        }
+    }
+
+    /** A request whose view has gone must stop, not run on holding a worker and a permit. */
+    @Test
+    void cancellingAnInFlightRequestStopsIt() throws Exception {
+        HttpServer slow = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        slow.createContext("/", exchange -> {
+            try {
+                Thread.sleep(60_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        slow.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(2));
+        slow.start();
+        String url = "http://127.0.0.1:" + slow.getAddress().getPort() + "/slow";
+
+        try (HttpTransport transport = new HttpTransport()) {
+            CountDownLatch started = new CountDownLatch(1);
+            java.util.concurrent.Future<?> task = transport.executor().submit(() -> {
+                started.countDown();
+                try {
+                    transport.get(url);
+                } catch (ApiException e) {
+                    // Expected: the point is that it comes back at all.
+                }
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            Thread.sleep(300);
+
+            long start = System.nanoTime();
+            task.cancel(true);
+            // Timed to when the request itself gives up, not to when cancel() returns: cancel comes
+            // back at once whether or not the work stopped, which is exactly the difference between
+            // ignoring a request and cancelling one.
+            while (transport.cancelledCount() == 0
+                    && System.nanoTime() - start < TimeUnit.SECONDS.toNanos(10)) {
+                Thread.sleep(10);
+            }
+            long millis = (System.nanoTime() - start) / 1_000_000;
+            System.out.println("=== A) an in-flight request stopped " + millis
+                    + " ms after cancelling (cancelled counter: " + transport.cancelledCount() + ")");
+            assertTrue(transport.cancelledCount() > 0, "cancelling must actually stop the request");
+        } finally {
+            slow.stop(0);
+        }
     }
 
     /** Does repeating the scenario leave threads behind? */

@@ -1,10 +1,13 @@
 package com.betterloka.gui;
 
+import com.betterloka.BetterLoka;
 import com.betterloka.BetterLokaClient;
-import com.betterloka.api.ApiException;
 import com.betterloka.api.MarketApi;
 import com.betterloka.api.model.MarketDeal;
 import com.betterloka.api.model.MarketListing;
+import com.betterloka.async.AsyncSlot;
+import com.betterloka.async.Debounce;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -20,9 +23,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Browses Loka's market: what is on sale, from whom and for how much.
@@ -72,6 +72,16 @@ public class LokaMarketScreen extends Screen {
     /** How many enchantments to spell out before the rest are just counted. */
     private static final int MAX_ENCHANT_ROWS = 5;
 
+    /** How long the field must stand still before a lookup goes out. */
+    private static final long DEBOUNCE_MILLIS = 250;
+
+    /** How long the same query counts as already answered, so a retype does not refetch. */
+    private static final long DEDUPE_MILLIS = 2000;
+
+    /** What one search found: the type it settled on, and its offers. */
+    private record Found(String type, List<MarketListing> listings) {
+    }
+
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
@@ -79,30 +89,71 @@ public class LokaMarketScreen extends Screen {
     private TextFieldWidget queryField;
     private ButtonWidget searchButton;
 
-    private List<MarketListing> results = List.of();
-    private String resolvedType;
-    private Text message;
-    private boolean loading;
-    private int generation;
+    /**
+     * One slot per view, and that is the whole point.
+     *
+     * <p>All three views shared a single result field, a single loading flag and a single generation
+     * counter. Starting a search and switching to Deals before it landed put the search's answer in
+     * Deals — measured in seventeen of twenty attempts — while the shared flag made Deals' own load
+     * return without starting, leaving it permanently empty. Separate slots make both impossible
+     * rather than unlikely: a slot only ever writes its own view, and an answer whose view has moved
+     * on is dropped before it is applied.
+     */
+    private final AsyncSlot<Found> searchSlot = new AsyncSlot<>("market search", this::onClientThread);
+    private final AsyncSlot<MarketApi.Snapshot> dealsSlot =
+            new AsyncSlot<>("market deals", this::onClientThread);
+    private final AsyncSlot<MarketApi.Snapshot> specialSlot =
+            new AsyncSlot<>("market special", this::onClientThread);
+    private final AsyncSlot<List<String>> suggestSlot =
+            new AsyncSlot<>("market suggestions", this::onClientThread);
 
-    private MarketApi.Snapshot snapshot;
+    private final Debounce suggestDebounce = new Debounce(DEBOUNCE_MILLIS, DEDUPE_MILLIS);
+
     private int snapshotPages;
     /** Worked out once per snapshot: a sweep of every listing is not something to redo each frame. */
     private List<MarketDeal> cachedDeals;
+    private MarketApi.Snapshot cachedDealsFor;
+    private List<MarketListing> cachedSpecial;
+    private MarketApi.Snapshot cachedSpecialFor;
 
     /** Type names matching what has been typed, offered under the field. */
-    private List<String> suggestions = List.of();
-    private String suggestedFor = "";
     private final List<int[]> suggestionBounds = new ArrayList<>();
     private int lastMouseX;
     private int lastMouseY;
 
-    /** Seller names arrive after the listings; render reads whatever has landed. */
-    private final Map<String, String> sellers = new ConcurrentHashMap<>();
+    /** Identity IDs of the rows actually drawn this frame, so only those are looked up. */
+    private final List<String> visibleOwners = new ArrayList<>();
 
     public LokaMarketScreen(Screen parent) {
         super(Text.translatable("betterloka.module.loka_market"));
         this.parent = parent;
+    }
+
+    /**
+     * Runs an action on the client thread, and only while this screen is still the open one.
+     *
+     * <p>Every slot replies through here, which is what keeps their state single-threaded: it is
+     * read from {@code render} on every frame and written only from this queue.
+     */
+    private void onClientThread(Runnable action) {
+        MinecraftClient client = this.client;
+        if (client == null) {
+            return;
+        }
+        client.execute(() -> {
+            if (client.currentScreen == this) {
+                action.run();
+            }
+        });
+    }
+
+    /** The slot behind whatever is on screen. */
+    private AsyncSlot<?> currentSlot() {
+        return switch (tab) {
+            case SEARCH -> searchSlot;
+            case DEALS -> dealsSlot;
+            case SPECIAL -> specialSlot;
+        };
     }
 
     private int contentWidth() {
@@ -160,151 +211,135 @@ public class LokaMarketScreen extends Screen {
         return value == tab ? label.copy().formatted(Formatting.YELLOW) : label;
     }
 
+    /**
+     * Moves to another view, abandoning what the one being left was fetching.
+     *
+     * <p>Cancelling rather than ignoring is the difference that matters: an ignored request still
+     * holds a worker and a permit from the budget every screen shares, and that is how one abandoned
+     * search used to make every other tab slow.
+     */
     private void selectTab(Tab target) {
         if (tab == target) {
+            // Pressing the open tab again is the retry. A view that failed says so and says this,
+            // which beats a button that only exists in the one state it is needed.
+            if (currentSlot().failed()) {
+                currentSlot().reset();
+                loadCurrentTab();
+            }
             return;
         }
+        currentSlot().cancel();
         tab = target;
         scrollPanel.reset();
-        message = null;
-        suggestions = List.of();
+        suggestSlot.cancel();
+        suggestDebounce.clear();
         clearAndInit();
-        if (target != Tab.SEARCH) {
-            loadSnapshot();
+        loadCurrentTab();
+    }
+
+    /** Starts the open view's own fetch, if it has not got one and is not already loading. */
+    private void loadCurrentTab() {
+        switch (tab) {
+            case DEALS -> loadSweep(dealsSlot);
+            case SPECIAL -> loadSweep(specialSlot);
+            case SEARCH -> { }
         }
     }
 
-
-
+    /**
+     * Loads the market-wide sweep into one view's slot.
+     *
+     * <p>Deals and Special get a slot each, so neither can write into the other and each shows its
+     * own loading and error state. They cost one sweep between them regardless: {@link
+     * MarketApi#snapshot} hands both the same in-flight request.
+     */
+    private void loadSweep(AsyncSlot<MarketApi.Snapshot> slot) {
+        if (slot.value() != null || slot.loading()) {
+            return;
+        }
+        snapshotPages = 0;
+        MarketApi market = BetterLokaClient.market();
+        slot.start(market.executor(),
+                // get, not join: join ignores interruption, and cancelling has to actually stop it.
+                () -> market.snapshot(pages -> snapshotPages = pages).get());
+    }
 
     private void search() {
         String query = queryField.getText().trim();
-        if (query.isEmpty() || loading) {
+        if (query.isEmpty()) {
             return;
         }
         tab = Tab.SEARCH;
-        suggestions = List.of();
-        loading = true;
-        message = null;
-        results = List.of();
-        resolvedType = null;
+        suggestSlot.cancel();
+        suggestDebounce.accept(query, System.currentTimeMillis());
         scrollPanel.reset();
-        int mine = ++generation;
 
         MarketApi market = BetterLokaClient.market();
-        CompletableFuture.supplyAsync(() -> {
-            try {
-                List<String> matches = market.matchTypes(query, 1);
-                if (matches.isEmpty()) {
-                    return null;
-                }
-                String type = matches.get(0);
-                return Map.entry(type, market.fetchListings(type));
-            } catch (ApiException e) {
-                throw new java.util.concurrent.CompletionException(e);
+        searchSlot.start(market.executor(), () -> {
+            List<String> matches = market.matchTypes(query, 1);
+            if (matches.isEmpty()) {
+                return null;
             }
-        }, market.executor()).whenComplete((found, error) -> onClientThread(mine, () -> {
-            loading = false;
-            if (error != null) {
-                message = Text.translatable("betterloka.market.unreachable").formatted(Formatting.RED);
-            } else if (found == null) {
-                message = Text.translatable("betterloka.market.no_type", query).formatted(Formatting.RED);
-            } else {
-                resolvedType = found.getKey();
-                results = found.getValue();
-                if (results.isEmpty()) {
-                    message = Text.translatable("betterloka.market.no_offers", resolvedType);
-                }
-                resolveSellers(results);
-            }
-        }));
-    }
-
-    private void loadSnapshot() {
-        if (snapshot != null || loading) {
-            return;
-        }
-        loading = true;
-        snapshotPages = 0;
-        int mine = ++generation;
-
-        BetterLokaClient.market().snapshot(pages -> snapshotPages = pages)
-                .whenComplete((loaded, error) -> onClientThread(mine, () -> {
-                    loading = false;
-                    if (error != null) {
-                        message = Text.translatable("betterloka.market.unreachable").formatted(Formatting.RED);
-                        return;
-                    }
-                    snapshot = loaded;
-                    cachedDeals = null;
-                    resolveSellers(specialRows());
-                    resolveSellers(dealListings());
-                }));
+            String type = matches.get(0);
+            return new Found(type, market.fetchListings(type));
+        });
     }
 
     /**
      * The underpriced listings across the whole market.
      *
-     * <p>Off the same snapshot the Special tab uses, so switching between them costs nothing.
+     * <p>Worked out once per snapshot rather than per frame, and keyed on the snapshot itself so a
+     * refreshed sweep replaces it without anybody having to remember to clear it.
      */
     private List<MarketDeal> deals() {
+        MarketApi.Snapshot snapshot = dealsSlot.value();
         if (snapshot == null) {
             return List.of();
         }
-        if (cachedDeals == null) {
+        if (cachedDeals == null || cachedDealsFor != snapshot) {
+            long start = System.nanoTime();
             cachedDeals = MarketDeal.find(snapshot.listings());
+            cachedDealsFor = snapshot;
+            timing("parse deals", snapshot.listings().size(), start);
         }
         return cachedDeals;
     }
 
-    /** Every named item on sale, dearest first — the gear worth looking at. */
-    private List<MarketListing> specialListings() {
+    /**
+     * Every named item on sale, dearest first — the gear worth looking at.
+     *
+     * <p>Cached like the deals are. This used to be rebuilt and re-sorted on every frame the Special
+     * tab was open, which is work the answer to does not change between frames.
+     */
+    private List<MarketListing> specialRows() {
+        MarketApi.Snapshot snapshot = specialSlot.value();
         if (snapshot == null) {
             return List.of();
         }
-        List<MarketListing> special = new ArrayList<>();
-        for (MarketListing listing : snapshot.listings()) {
-            if (listing.isSpecial()) {
-                special.add(listing);
+        if (cachedSpecial == null || cachedSpecialFor != snapshot) {
+            long start = System.nanoTime();
+            List<MarketListing> special = new ArrayList<>();
+            for (MarketListing listing : snapshot.listings()) {
+                if (listing.isSpecial()) {
+                    special.add(listing);
+                }
             }
+            special.sort(Comparator.comparingDouble(MarketListing::price).reversed());
+            cachedSpecial = special.size() > MAX_SPECIAL_ROWS
+                    ? List.copyOf(special.subList(0, MAX_SPECIAL_ROWS))
+                    : List.copyOf(special);
+            cachedSpecialFor = snapshot;
+            timing("parse special", snapshot.listings().size(), start);
         }
-        special.sort(Comparator.comparingDouble(MarketListing::price).reversed());
-        return special;
+        return cachedSpecial;
     }
 
-    /** The Special tab's rows, capped so a huge market cannot make the screen crawl. */
-    private List<MarketListing> specialRows() {
-        List<MarketListing> special = specialListings();
-        return special.size() > MAX_SPECIAL_ROWS ? special.subList(0, MAX_SPECIAL_ROWS) : special;
-    }
-
-    /** Listings carry only the seller's identity ID, so names are looked up behind the rendering. */
-    private void resolveSellers(List<MarketListing> listings) {
-        MarketApi market = BetterLokaClient.market();
-        List<String> pending = new ArrayList<>();
-        for (MarketListing listing : listings) {
-            String owner = listing.ownerId();
-            if (owner != null && !sellers.containsKey(owner) && !pending.contains(owner)) {
-                pending.add(owner);
-            }
+    /** Where the time went, for tracing a slow screen. */
+    private static void timing(String phase, int items, long startNanos) {
+        if (BetterLoka.LOGGER.isDebugEnabled()) {
+            BetterLoka.LOGGER.debug("[betterloka] timing {} {} items {} ms", phase, items,
+                    (System.nanoTime() - startNanos) / 1_000_000);
         }
-        for (String owner : pending) {
-            CompletableFuture.runAsync(() -> {
-                String name = market.sellerName(owner);
-                sellers.put(owner, name == null ? "" : name);
-            }, market.executor());
-        }
-    }
-
-    private void onClientThread(int mine, Runnable action) {
-        if (this.client == null) {
-            return;
-        }
-        this.client.execute(() -> {
-            if (mine == generation && this.client.currentScreen == this) {
-                action.run();
-            }
-        });
     }
 
     @Override
@@ -324,14 +359,14 @@ public class LokaMarketScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        for (int i = 0; i < suggestionBounds.size(); i++) {
+        List<String> suggestions = suggestions();
+        for (int i = 0; i < suggestionBounds.size() && i < suggestions.size(); i++) {
             int[] bounds = suggestionBounds.get(i);
             if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
                     && click.y() >= bounds[1] && click.y() < bounds[1] + bounds[3]) {
                 queryField.setText(suggestions.get(i));
-                // Marked as already suggested for, or the list would reopen on the text just chosen.
-                suggestedFor = queryField.getText().trim();
-                suggestions = List.of();
+                // Dropped, or the list would reopen on the very text just chosen.
+                suggestSlot.reset();
                 search();
                 return true;
             }
@@ -352,11 +387,14 @@ public class LokaMarketScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        long frameStart = System.nanoTime();
         super.render(context, mouseX, mouseY, delta);
-        searchButton.active = !loading && !queryField.getText().trim().isEmpty();
+        AsyncSlot<?> slot = currentSlot();
+        searchButton.active = !searchSlot.loading() && !queryField.getText().trim().isEmpty();
         lastMouseX = mouseX;
         lastMouseY = mouseY;
         refreshSuggestions();
+        visibleOwners.clear();
 
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
@@ -368,18 +406,25 @@ public class LokaMarketScreen extends Screen {
         int cardWidth = scrollPanel.contentWidth();
         int used;
 
-        if (loading) {
+        if (slot.loading()) {
             String text = tab == Tab.SEARCH
                     ? Text.translatable("betterloka.market.searching").getString()
                     : Text.translatable("betterloka.market.loading", snapshotPages).getString();
             context.drawTextWithShadow(this.textRenderer, text, left, y + 4, GuiTheme.MUTED);
             used = 20;
-        } else if (message != null && tab == Tab.SEARCH && results.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer, message, left, y + 4, GuiTheme.BAD);
-            used = 20;
+        } else if (slot.failed()) {
+            // A failed view says so and offers the way out, rather than sitting on "loading" for a
+            // request that is never coming back.
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.market.unreachable").formatted(Formatting.RED),
+                    left, y + 4, GuiTheme.BAD);
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.market.retry_hint").formatted(Formatting.GRAY),
+                    left, y + 4 + ROW_HEIGHT + 2, GuiTheme.MUTED);
+            used = 20 + ROW_HEIGHT;
         } else {
             used = switch (tab) {
-                case SEARCH -> renderListings(context, left, y, cardWidth, results, resolvedType);
+                case SEARCH -> renderSearch(context, left, y, cardWidth);
                 case DEALS -> renderDeals(context, left, y, cardWidth);
                 case SPECIAL -> renderListings(context, left, y, cardWidth, specialRows(), null);
             } - y;
@@ -391,15 +436,38 @@ public class LokaMarketScreen extends Screen {
 
         // Drawn after the content so the list sits over it rather than under.
         renderSuggestions(context, left, width);
+
+        // Only the rows that were actually drawn. Resolving every seller on the market was 147
+        // requests admitted by one click; a screenful is about fifteen.
+        if (!visibleOwners.isEmpty()) {
+            BetterLokaClient.market().requestSellerNames(visibleOwners);
+        }
+        timing("render " + tab, used, frameStart);
     }
 
-    /** The listings behind the deals, so their sellers can be resolved with everything else. */
-    private List<MarketListing> dealListings() {
-        List<MarketListing> listings = new ArrayList<>();
-        for (MarketDeal deal : deals()) {
-            listings.add(deal.listing());
+    /** The Search view: its offers, or why there are none. */
+    private int renderSearch(DrawContext context, int left, int y, int width) {
+        Found found = searchSlot.value();
+        if (found == null) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable(searchSlot.state() == AsyncSlot.State.READY
+                            ? "betterloka.market.no_type" : "betterloka.market.hint",
+                            queryField.getText().trim()),
+                    left, y + 4, GuiTheme.MUTED);
+            return y + 20;
         }
-        return listings;
+        if (found.listings().isEmpty()) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.market.no_offers", found.type()),
+                    left, y + 4, GuiTheme.MUTED);
+            return y + 20;
+        }
+        return renderListings(context, left, y, width, found.listings(), found.type());
+    }
+
+    /** Whether a card at this y is inside the viewport, so off-screen rows cost nothing to skip. */
+    private boolean visible(int y, int height) {
+        return y + height >= scrollPanel.viewportTop() && y <= scrollPanel.viewportBottom();
     }
 
     /**
@@ -412,7 +480,8 @@ public class LokaMarketScreen extends Screen {
         if (deals.isEmpty()) {
             GuiTheme.panel(context, left, y, width, CARD_PADDING * 2 + ROW_HEIGHT);
             context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(snapshot == null ? "betterloka.market.hint" : "betterloka.market.no_deals"),
+                    Text.translatable(dealsSlot.value() == null
+                            ? "betterloka.market.hint" : "betterloka.market.no_deals"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
         }
@@ -425,6 +494,13 @@ public class LokaMarketScreen extends Screen {
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 2;
         for (MarketDeal deal : deals) {
             MarketListing listing = deal.listing();
+            // Cards are a fixed height here, so anything off-screen can be stepped over rather than
+            // formatted and drawn into a scissor that throws it away.
+            if (!visible(y, height)) {
+                y += height + CARD_GAP;
+                continue;
+            }
+            noteOwner(listing);
             GuiTheme.panel(context, left, y, width, height);
             context.fill(left, y, left + 2, y + height, GuiTheme.GOOD);
 
@@ -464,36 +540,31 @@ public class LokaMarketScreen extends Screen {
      */
     private void refreshSuggestions() {
         String query = queryField.getText().trim();
-        if (query.equals(suggestedFor)) {
+        if (query.length() < 2 || !queryField.isFocused()) {
+            suggestSlot.reset();
+            suggestDebounce.clear();
             return;
         }
-        suggestedFor = query;
-        if (query.length() < 2 || !queryField.isFocused()) {
-            suggestions = List.of();
+        long now = System.currentTimeMillis();
+        suggestDebounce.offer(query, now);
+        String due = suggestDebounce.take(now);
+        if (due == null) {
             return;
         }
         MarketApi market = BetterLokaClient.market();
-        CompletableFuture.supplyAsync(() -> {
-            try {
-                return market.matchTypes(query, MAX_SUGGESTIONS);
-            } catch (ApiException e) {
-                return List.<String>of();
-            }
-        }, market.executor()).thenAccept(found -> {
-            if (this.client != null) {
-                this.client.execute(() -> {
-                    if (this.client.currentScreen == this && query.equals(suggestedFor)) {
-                        suggestions = found;
-                    }
-                });
-            }
-        });
+        suggestSlot.start(market.executor(), () -> market.matchTypes(due, MAX_SUGGESTIONS));
+    }
+
+    /** What the field currently offers, if anything landed. */
+    private List<String> suggestions() {
+        return suggestSlot.valueOr(List.of());
     }
 
     /** Draws the suggestion list over the content, and remembers where each row landed. */
     private void renderSuggestions(DrawContext context, int left, int width) {
         suggestionBounds.clear();
-        if (suggestions.isEmpty()) {
+        List<String> suggestions = suggestions();
+        if (suggestions.isEmpty() || !queryField.isFocused()) {
             return;
         }
         int rowHeight = ROW_HEIGHT + 2;
@@ -551,6 +622,18 @@ public class LokaMarketScreen extends Screen {
         int inner = width - CARD_PADDING * 2;
         for (MarketListing listing : listings) {
             boolean special = listing.isSpecial();
+            List<String> enchantLines = enchantLines(listing.enchantments());
+
+            // Worked out before anything is formatted, because a card off-screen should cost the
+            // height arithmetic and nothing else. Rows here vary in height with their enchantments,
+            // so the height has to come first.
+            int rows = Math.max(2, Math.max(special ? 3 : 2, enchantLines.size()));
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+            if (!visible(y, height)) {
+                y += height + CARD_GAP;
+                continue;
+            }
+            noteOwner(listing);
 
             // Three columns: what it is and who is selling it on the left, its enchantments down the
             // middle, what it costs on the right.
@@ -560,8 +643,6 @@ public class LokaMarketScreen extends Screen {
             if (special) {
                 leftLines.add(listing.prettyType());
             }
-
-            List<String> enchantLines = enchantLines(listing.enchantments());
 
             String price = money(listing.price());
             String stock = Text.translatable("betterloka.market.stock", listing.quantity()).getString()
@@ -573,8 +654,6 @@ public class LokaMarketScreen extends Screen {
                     : Math.max(MIN_ENCHANT_WIDTH, (inner - rightWidth) * 2 / 5);
             int leftWidth = Math.max(40, inner - rightWidth - middleWidth - (middleWidth == 0 ? 0 : COLUMN_GAP));
 
-            int rows = Math.max(2, Math.max(leftLines.size(), enchantLines.size()));
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
             GuiTheme.panel(context, left, y, width, height);
 
             int textX = left + CARD_PADDING;
@@ -626,12 +705,26 @@ public class LokaMarketScreen extends Screen {
         return shown;
     }
 
+    /**
+     * The seller's name if it has landed, without asking for it here.
+     *
+     * <p>Never blocks and never starts a request: this runs while drawing, and the lookups are
+     * started once per frame from {@link #render} for the rows that were actually on screen.
+     */
     private String sellerOf(MarketListing listing) {
-        String name = listing.ownerId() == null ? null : sellers.get(listing.ownerId());
+        String name = BetterLokaClient.market().sellerNameIfKnown(listing.ownerId());
         if (name == null) {
             return "...";
         }
         return name.isEmpty() ? "?" : name;
+    }
+
+    /** Remembers a drawn row's seller, to be looked up once the frame is done. */
+    private void noteOwner(MarketListing listing) {
+        String owner = listing.ownerId();
+        if (owner != null && !owner.isEmpty() && !visibleOwners.contains(owner)) {
+            visibleOwners.add(owner);
+        }
     }
 
     /** Loka's prices run to the millions, so large numbers are abbreviated. */
@@ -643,6 +736,23 @@ public class LokaMarketScreen extends Screen {
             return String.format(Locale.ROOT, "%.1fk", amount / 1_000);
         }
         return String.format(Locale.ROOT, "%.0f", amount);
+    }
+
+    /**
+     * Drops everything in flight when the screen goes away.
+     *
+     * <p>Screens register no global listeners — every widget goes through {@code addDrawableChild},
+     * which Minecraft clears itself — so requests are the only thing that outlives a closed screen,
+     * and this is where they stop. Without it, closing the Market left its work holding a worker and
+     * a permit for an answer that had nowhere to go.
+     */
+    @Override
+    public void removed() {
+        searchSlot.cancel();
+        dealsSlot.cancel();
+        specialSlot.cancel();
+        suggestSlot.cancel();
+        super.removed();
     }
 
     @Override

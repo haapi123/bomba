@@ -38,6 +38,20 @@ public final class RateLimiter {
     /** How long a background caller waits at the back of the queue before taking its permit. */
     private static final long BACKGROUND_YIELD_MILLIS = 120;
 
+    /**
+     * How many permits background work must leave in the bucket.
+     *
+     * <p>Yielding for a moment was not enough. Permits may be reserved into the future, so a sweep
+     * with a hundred pages to fetch could take the bucket a hundred permits into debt in a burst,
+     * and an interactive request arriving a moment later inherited the whole of that debt as its own
+     * wait — measured at nineteen seconds for the last of two hundred callers. Holding a floor for
+     * work somebody is watching bounds that wait at roughly one request.
+     */
+    private static final double INTERACTIVE_RESERVE = 3.0;
+
+    /** How long a background caller sleeps before looking at the bucket again. */
+    private static final long BACKGROUND_RETRY_MILLIS = 60;
+
     /** Blocks until this caller is allowed to send one request. */
     public void acquire() throws InterruptedException {
         acquire(false);
@@ -53,24 +67,41 @@ public final class RateLimiter {
             // not to hold every other caller off while waiting.
             TimeUnit.MILLISECONDS.sleep(BACKGROUND_YIELD_MILLIS);
         }
-        long sleepNanos;
-        synchronized (this) {
-            long now = System.nanoTime();
-            double elapsedSeconds = Math.max(0, now - lastRefillNanos) / 1_000_000_000.0;
-            lastRefillNanos = now;
-            tokens = Math.min(burst, tokens + elapsedSeconds * permitsPerSecond);
+        while (true) {
+            long sleepNanos;
+            synchronized (this) {
+                refill();
+                long now = System.nanoTime();
+                // Background work waits for a real permit rather than reserving one it has not got,
+                // so it can never put an interactive caller into its debt.
+                if (background && tokens < INTERACTIVE_RESERVE) {
+                    sleepNanos = -1;
+                } else {
+                    long waitForTokenNanos = tokens >= 1.0
+                            ? 0L
+                            : (long) Math.ceil((1.0 - tokens) / permitsPerSecond * 1_000_000_000.0);
+                    tokens -= 1.0;
 
-            long waitForTokenNanos = tokens >= 1.0
-                    ? 0L
-                    : (long) Math.ceil((1.0 - tokens) / permitsPerSecond * 1_000_000_000.0);
-            tokens -= 1.0;
+                    long waitForPenaltyNanos = Math.max(0L, resumeAtNanos - now);
+                    sleepNanos = Math.max(waitForTokenNanos, waitForPenaltyNanos);
+                }
+            }
+            if (sleepNanos < 0) {
+                TimeUnit.MILLISECONDS.sleep(BACKGROUND_RETRY_MILLIS);
+                continue;
+            }
+            if (sleepNanos > 0) {
+                TimeUnit.NANOSECONDS.sleep(sleepNanos);
+            }
+            return;
+        }
+    }
 
-            long waitForPenaltyNanos = Math.max(0L, resumeAtNanos - now);
-            sleepNanos = Math.max(waitForTokenNanos, waitForPenaltyNanos);
-        }
-        if (sleepNanos > 0) {
-            TimeUnit.NANOSECONDS.sleep(sleepNanos);
-        }
+    private void refill() {
+        long now = System.nanoTime();
+        double elapsedSeconds = Math.max(0, now - lastRefillNanos) / 1_000_000_000.0;
+        lastRefillNanos = now;
+        tokens = Math.min(burst, tokens + elapsedSeconds * permitsPerSecond);
     }
 
     /** Holds all callers off for at least {@code duration}, after the server answered 429. */

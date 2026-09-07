@@ -26,8 +26,33 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@link #bulkExecutor()}, never on the render thread.
  */
 public final class HttpTransport implements AutoCloseable {
-    private static final int MAX_ATTEMPTS = 5;
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final int MAX_ATTEMPTS = 3;
+
+    /** How long to wait for a connection before giving up on the host entirely. */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+
+    /** How long one attempt may take. */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+
+    /**
+     * How long {@link #get} may spend in total, retries and backoff included.
+     *
+     * <p>Attempts alone are not a bound: five attempts at a thirty-second timeout with backoff
+     * between them is over two and a half minutes, which is why a failing tab used to sit on
+     * "loading" rather than ever saying so. A deadline turns that into a message a person can act on.
+     */
+    private static final Duration TOTAL_BUDGET = Duration.ofSeconds(20);
+
+    /**
+     * How many requests may be on the wire at once, across every screen.
+     *
+     * <p>The worker pools already bound this, but they are two, and the limit that matters is on the
+     * host rather than on either pool.
+     */
+    private static final int MAX_CONCURRENT_REQUESTS = 6;
+
+    /** Threads for the HTTP client's own callbacks. Bounded: a cached pool has no ceiling. */
+    private static final int HTTP_THREADS = 8;
 
     /**
      * Default sustained rate per host. A profile lookup is about a dozen requests rather than the
@@ -51,6 +76,11 @@ public final class HttpTransport implements AutoCloseable {
 
     private final AtomicLong requestCount = new AtomicLong();
     private final AtomicLong throttleCount = new AtomicLong();
+    private final AtomicLong cancelledCount = new AtomicLong();
+
+    /** The ceiling on requests in flight, so no burst of work can hold the host on its own. */
+    private final java.util.concurrent.Semaphore inFlight =
+            new java.util.concurrent.Semaphore(MAX_CONCURRENT_REQUESTS, true);
 
     public HttpTransport() {
         this(4, DEFAULT_PERMITS_PER_SECOND);
@@ -58,15 +88,14 @@ public final class HttpTransport implements AutoCloseable {
 
     public HttpTransport(int bulkWorkers, double permitsPerSecond) {
         this.permitsPerSecond = permitsPerSecond;
-        // Four, not two: the modules are independent screens, and two means opening one while
-        // another is still loading queues the second behind the first for no reason.
+        // Two lanes rather than one shared pool, and that is the point rather than an oversight: a
+        // single pool is what let one screen's sweep sit in front of another screen's click, which
+        // is the fault this exists to prevent. Both are fixed size and made once.
         this.executor = Executors.newFixedThreadPool(4, daemonFactory("BetterLoka-API-"));
-        // Interactive lookups get their own pool. Sharing one with bulk work means a search queues
-        // behind every background task and appears to hang.
         this.bulkExecutor = Executors.newFixedThreadPool(bulkWorkers, daemonFactory("BetterLoka-Bulk-"));
-        this.httpExecutor = Executors.newCachedThreadPool(daemonFactory("BetterLoka-HTTP-"));
+        this.httpExecutor = Executors.newFixedThreadPool(HTTP_THREADS, daemonFactory("BetterLoka-HTTP-"));
         this.http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
+                .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 // HTTP/1.1 on purpose. Over HTTP/2 the client multiplexes every request onto a
                 // single connection per host and parallel work serialises behind it — measured at
@@ -104,6 +133,11 @@ public final class HttpTransport implements AutoCloseable {
         return throttleCount.get();
     }
 
+    /** How many requests were abandoned because their view moved on, for diagnostics. */
+    public long cancelledCount() {
+        return cancelledCount.get();
+    }
+
     /**
      * @return the response body.
      * @throws ApiException on 404 ({@link ApiException#notFound()}), on a redirect away from the
@@ -129,8 +163,13 @@ public final class HttpTransport implements AutoCloseable {
         try {
             limiterFor(URI.create(url).getHost()).acquire(background);
             requestCount.incrementAndGet();
-            HttpResponse<byte[]> response =
-                    http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response;
+            inFlight.acquire();
+            try {
+                response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            } finally {
+                inFlight.release();
+            }
             if (response.statusCode() != 200) {
                 throw new ApiException("HTTP " + response.statusCode() + " from " + url,
                         response.statusCode() == 404);
@@ -157,16 +196,24 @@ public final class HttpTransport implements AutoCloseable {
                 .build();
 
         RateLimiter limiter = limiterFor(URI.create(url).getHost());
+        long startNanos = System.nanoTime();
+        long deadlineNanos = startNanos + TOTAL_BUDGET.toNanos();
 
         ApiException last = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            // Checked before every attempt: a request whose view has gone should stop here rather
+            // than keep a worker and a permit for an answer nobody will read.
+            abortIfCancelled(url);
+
             long backoffMillis;
             try {
                 limiter.acquire(background);
+                abortIfCancelled(url);
                 requestCount.incrementAndGet();
-                HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                HttpResponse<String> response = send(request);
                 int status = response.statusCode();
                 if (status == 200) {
+                    timing("request", url, startNanos);
                     return response.body();
                 }
                 if (status == 404) {
@@ -191,19 +238,57 @@ public final class HttpTransport implements AutoCloseable {
                 backoffMillis = 400L * attempt;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new ApiException("Interrupted while fetching " + url, e);
+                cancelledCount.incrementAndGet();
+                throw new ApiException("Cancelled while fetching " + url, e);
             }
 
-            if (attempt < MAX_ATTEMPTS) {
-                try {
-                    Thread.sleep(backoffMillis);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new ApiException("Interrupted while fetching " + url, e);
-                }
+            // Retrying past the budget only delays the message; the caller is told now instead.
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (attempt >= MAX_ATTEMPTS || remainingNanos <= 0
+                    || remainingNanos < backoffMillis * 1_000_000L) {
+                break;
+            }
+            try {
+                Thread.sleep(backoffMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                cancelledCount.incrementAndGet();
+                throw new ApiException("Cancelled while fetching " + url, e);
             }
         }
+        timing("failed", url, startNanos);
         throw last;
+    }
+
+    /** One attempt, counted against the ceiling on requests in flight. */
+    private HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException {
+        inFlight.acquire();
+        try {
+            return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } finally {
+            inFlight.release();
+        }
+    }
+
+    /**
+     * Stops a request whose caller has gone away.
+     *
+     * <p>A cancelled slot interrupts its worker; every blocking call below checks for it, but the
+     * gaps between them would otherwise run a whole extra attempt for nothing.
+     */
+    private void abortIfCancelled(String url) throws ApiException {
+        if (Thread.currentThread().isInterrupted()) {
+            cancelledCount.incrementAndGet();
+            throw new ApiException("Cancelled before fetching " + url, true);
+        }
+    }
+
+    /** Where the time went, for tracing a slow screen. Debug: one line per request is a lot. */
+    private static void timing(String phase, String url, long startNanos) {
+        if (BetterLoka.LOGGER.isDebugEnabled()) {
+            BetterLoka.LOGGER.debug("[betterloka] timing {} {} {} ms", phase, url,
+                    (System.nanoTime() - startNanos) / 1_000_000);
+        }
     }
 
     private RateLimiter limiterFor(String host) {

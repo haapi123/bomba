@@ -4,8 +4,8 @@ import com.betterloka.BetterLoka;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.EldritchApi;
 import com.betterloka.api.model.EldritchStats;
+import com.betterloka.data.LruCache;
 
-import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,8 +32,21 @@ public final class NameplateKdService {
         }
     }
 
+    /**
+     * How many players' K/D to keep.
+     *
+     * <p>One entry per distinct name seen on a nameplate, so the ceiling is however many players
+     * walk past over a session. Comfortably more than a full server, and no longer unbounded.
+     */
+    private static final int MAX_CACHED_PLAYERS = 2000;
+
     private final EldritchApi api;
-    private final Map<String, Entry> cache = new ConcurrentHashMap<>();
+    /**
+     * No expiry here on purpose: {@link Entry} carries its own, and a stale value is deliberately
+     * still shown while its refresh runs so the nameplate does not flicker back to blank. The cache
+     * bounds how many are kept; the entry decides when one is out of date.
+     */
+    private final LruCache<String, Entry> cache = new LruCache<>(MAX_CACHED_PLAYERS, 0);
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
     public NameplateKdService(EldritchApi api) {

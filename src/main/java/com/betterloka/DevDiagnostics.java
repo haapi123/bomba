@@ -111,6 +111,27 @@ public final class DevDiagnostics {
         step(1, () -> log("after 20 rounds of scenario A"));
         step(1, () -> dumpBetterLokaThreads("after 20 rounds of scenario A"));
 
+        // Rendering was reworked alongside the queueing — off-screen rows are skipped and seller
+        // names now fill in behind the drawing — so each view is photographed with real data on it.
+        step(2, () -> client().setScreen(new LokaMarketScreen(null)));
+        step(2, () -> click(client().currentScreen, "Deals"));
+        step(200, () -> { });
+        shot(20, "perf-market-deals");
+        step(2, () -> click(client().currentScreen, "Special"));
+        step(100, () -> { });
+        shot(20, "perf-market-special");
+        step(2, () -> click(client().currentScreen, "Search"));
+        step(2, () -> {
+            type(client().currentScreen, "Diamond Sword");
+            click(client().currentScreen, "Search");
+        });
+        step(120, () -> { });
+        shot(20, "perf-market-search");
+        step(1, () -> marketState("search settled"));
+        step(2, () -> client().setScreen(new FightManagerScreen(null)));
+        step(120, () -> { });
+        shot(20, "perf-fight-manager");
+
         step(2, () -> client().setScreen(null));
         step(60, () -> { });
         step(1, () -> fps("no screen open, after everything"));
@@ -140,12 +161,24 @@ public final class DevDiagnostics {
                     screen == null ? "null" : screen.getClass().getSimpleName());
             return;
         }
-        BetterLoka.LOGGER.info(
-                "DIAG {} [+{} ms]: tab={} loading={} snapshot={} results={} sellersResolved={} message={}",
-                label, sinceTimerMillis(), field(market, "tab"), field(market, "loading"),
-                field(market, "snapshot") == null ? "null" : "loaded",
-                sizeOf(field(market, "results")), sizeOf(field(market, "sellers")),
-                field(market, "message"));
+        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: tab={} search={} deals={} special={}",
+                label, sinceTimerMillis(), field(market, "tab"),
+                slot(field(market, "searchSlot")), slot(field(market, "dealsSlot")),
+                slot(field(market, "specialSlot")));
+    }
+
+    /**
+     * One view's slot: what state it is in and what it holds.
+     *
+     * <p>The whole question the fix turns on is whether a view's own data is its own, so each slot
+     * is read separately rather than through a shared field that no longer exists.
+     */
+    private static String slot(Object slot) {
+        if (slot == null) {
+            return "absent";
+        }
+        Object value = field(slot, "value");
+        return field(slot, "state") + "/" + sizeOf(value);
     }
 
     private void fightState(String label) {
@@ -154,9 +187,8 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG {}: fight manager not open", label);
             return;
         }
-        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: loading={} rows={} message={}", label,
-                sinceTimerMillis(), field(fights, "loading"), sizeOf(field(fights, "rows")),
-                field(fights, "message"));
+        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: slot={}", label, sinceTimerMillis(),
+                slot(field(fights, "slot")));
     }
 
     /** How much work is sitting in each shared pool — the queue a new screen has to get through. */
@@ -228,14 +260,24 @@ public final class DevDiagnostics {
         }
     }
 
+    /** How much a slot holds, in one word. Never the value's own toString: a snapshot is enormous. */
     private static String sizeOf(Object value) {
+        if (value == null) {
+            return "null";
+        }
         if (value instanceof List<?> list) {
-            return String.valueOf(list.size());
+            return list.size() + " rows";
         }
         if (value instanceof Map<?, ?> map) {
-            return String.valueOf(map.size());
+            return map.size() + " entries";
         }
-        return String.valueOf(value);
+        if (value instanceof com.betterloka.api.MarketApi.Snapshot snapshot) {
+            return snapshot.listings().size() + " listings";
+        }
+        if (value instanceof Boolean || value instanceof Number || value instanceof Enum<?>) {
+            return String.valueOf(value);
+        }
+        return value.getClass().getSimpleName();
     }
 
     private static void log(String label) {
@@ -250,18 +292,22 @@ public final class DevDiagnostics {
                 threads.merge(name.replaceAll("\\d+$", ""), 1, Integer::sum);
             }
         }
+        BetterLoka.LOGGER.info(
+                "DIAG {}: modThreads={} allThreads={} heap={} MB httpRequests={} cancelled={}",
+                label, threads, total, usedMb, counter("requestCount"), counter("cancelledCount"));
+    }
+
+    private static String counter(String method) {
         Object transport = transport();
-        String requests = "?";
-        if (transport != null) {
-            try {
-                requests = String.valueOf(
-                        transport.getClass().getMethod("requestCount").invoke(transport));
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-                // Left as "?" — a missing counter is not worth failing a diagnostic run over.
-            }
+        if (transport == null) {
+            return "?";
         }
-        BetterLoka.LOGGER.info("DIAG {}: modThreads={} allThreads={} heap={} MB httpRequests={}",
-                label, threads, total, usedMb, requests);
+        try {
+            return String.valueOf(transport.getClass().getMethod(method).invoke(transport));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // A missing counter is not worth failing a diagnostic run over.
+            return "?";
+        }
     }
 
     private void tick() {
@@ -283,6 +329,12 @@ public final class DevDiagnostics {
     private void step(int wait, Runnable action) {
         waits.add(wait);
         steps.add(action);
+    }
+
+    private void shot(int wait, String name) {
+        step(wait, () -> net.minecraft.client.util.ScreenshotRecorder.saveScreenshot(
+                client().runDirectory, name + ".png", client().getFramebuffer(), 1,
+                message -> BetterLoka.LOGGER.info("DIAG shot {} -> {}", name, message.getString())));
     }
 
     private static MinecraftClient client() {

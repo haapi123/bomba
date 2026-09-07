@@ -3,6 +3,7 @@ package com.betterloka.api;
 import com.betterloka.BetterLoka;
 import com.betterloka.api.model.Json;
 import com.betterloka.api.model.MarketListing;
+import com.betterloka.data.LruCache;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -46,10 +47,31 @@ public final class MarketApi {
         }
     }
 
+    /** How many seller names to keep. The market has about 150 sellers; this is room to spare. */
+    private static final int SELLER_CACHE_SIZE = 600;
+
+    /** A player can be renamed, so a name is not kept for the whole session. */
+    private static final long SELLER_TTL_MILLIS = 30 * 60 * 1000L;
+
+    /**
+     * How many seller names may be looked up at once.
+     *
+     * <p>There is no bulk endpoint — {@code /players/search} offers findByUuid, findByName and
+     * findByIdentityId, all single — so this is the only lever. Resolving every seller on the market
+     * was 147 requests behind one click; a screen shows about fifteen rows, and a cap keeps a fast
+     * scroll from queueing the whole market again.
+     */
+    private static final int MAX_SELLER_LOOKUPS_IN_FLIGHT = 8;
+
     private final HttpTransport transport;
 
     /** Seller names by identity ID. Listings only carry the ID, and many share a seller. */
-    private final Map<String, String> sellerNames = new ConcurrentHashMap<>();
+    private final LruCache<String, String> sellerNames =
+            new LruCache<>(SELLER_CACHE_SIZE, SELLER_TTL_MILLIS);
+
+    /** Identity IDs being looked up right now, so the same one is never fetched twice at once. */
+    private final java.util.Set<String> sellersInFlight = ConcurrentHashMap.newKeySet();
+
     private volatile List<String> types;
     private volatile Snapshot snapshot;
     private CompletableFuture<Snapshot> inFlightSnapshot;
@@ -127,13 +149,15 @@ public final class MarketApi {
         if (inFlightSnapshot != null && !inFlightSnapshot.isDone()) {
             return inFlightSnapshot;
         }
+        // On the bulk lane, not the interactive one: a sweep waits on fifty-odd pages, and doing
+        // that from an interactive worker holds a quarter of the lane every screen shares.
         inFlightSnapshot = CompletableFuture.supplyAsync(() -> {
             try {
                 return loadSnapshot(onProgress);
             } catch (ApiException e) {
                 throw new java.util.concurrent.CompletionException(e);
             }
-        }, transport.executor());
+        }, transport.bulkExecutor());
         return inFlightSnapshot;
     }
 
@@ -150,8 +174,10 @@ public final class MarketApi {
             int target = page;
             tasks.add(CompletableFuture.supplyAsync(() -> {
                 try {
+                    // Background: fifty-odd pages must never sit in front of a click elsewhere.
                     return readListings(getObject(
-                            BASE_URL + "/market_sales?size=" + LokaApi.PAGE_SIZE + "&page=" + target));
+                            BASE_URL + "/market_sales?size=" + LokaApi.PAGE_SIZE + "&page=" + target,
+                            true));
                 } catch (ApiException e) {
                     BetterLoka.LOGGER.debug("Market page {} failed", target, e);
                     return List.<MarketListing>of();
@@ -169,6 +195,50 @@ public final class MarketApi {
         return fresh;
     }
 
+    /**
+     * The seller's name if it is already known, without going anywhere for it.
+     *
+     * <p>Safe to call while drawing: it never blocks and never starts a request.
+     *
+     * @return the name, {@code ""} if the lookup came back with nobody, or {@code null} if it has
+     *         not been looked up
+     */
+    public String sellerNameIfKnown(String ownerId) {
+        return ownerId == null || ownerId.isEmpty() ? null : sellerNames.get(ownerId);
+    }
+
+    /**
+     * Starts looking up the names among {@code ownerIds} that are not known yet.
+     *
+     * <p>Called with the rows actually on screen. Everything on the market used to be resolved the
+     * moment a sweep finished — 147 requests admitted by one click, into the same four-thread pool
+     * and 10-per-second budget every other screen shares, which is what made a Fight Manager refresh
+     * take half a minute. Names are wanted for what is being looked at, and that is what is fetched.
+     *
+     * <p>Runs as background work: a name that fills in a moment later is worth less than the request
+     * somebody is actually waiting on.
+     */
+    public void requestSellerNames(Iterable<String> ownerIds) {
+        for (String ownerId : ownerIds) {
+            if (ownerId == null || ownerId.isEmpty() || sellerNames.has(ownerId)) {
+                continue;
+            }
+            if (sellersInFlight.size() >= MAX_SELLER_LOOKUPS_IN_FLIGHT) {
+                return;
+            }
+            if (!sellersInFlight.add(ownerId)) {
+                continue;
+            }
+            transport.bulkExecutor().execute(() -> {
+                try {
+                    sellerName(ownerId);
+                } finally {
+                    sellersInFlight.remove(ownerId);
+                }
+            });
+        }
+    }
+
     /** @return the seller's name, or {@code null} if it cannot be resolved. Cached per identity. */
     public String sellerName(String ownerId) {
         if (ownerId == null || ownerId.isEmpty()) {
@@ -180,7 +250,8 @@ public final class MarketApi {
         }
         String resolved = "";
         try {
-            JsonObject json = getObject(BASE_URL + "/players/search/findByIdentityId?identityId=" + encode(ownerId));
+            JsonObject json = getObject(
+                    BASE_URL + "/players/search/findByIdentityId?identityId=" + encode(ownerId), true);
             JsonObject embedded = Json.object(json, "_embedded");
             JsonElement players = embedded == null ? null : embedded.get("players");
             if (players != null && players.isJsonArray() && !players.getAsJsonArray().isEmpty()) {
@@ -212,7 +283,15 @@ public final class MarketApi {
     }
 
     private JsonObject getObject(String url) throws ApiException {
-        String body = transport.get(url);
+        return getObject(url, false);
+    }
+
+    /**
+     * @param background true for a sweep or a name filling in behind the rendering, which then
+     *                   yields its place in the queue to whatever a player is waiting on
+     */
+    private JsonObject getObject(String url, boolean background) throws ApiException {
+        String body = transport.get(url, background);
         try {
             JsonElement parsed = JsonParser.parseString(body);
             if (!parsed.isJsonObject()) {

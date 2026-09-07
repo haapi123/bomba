@@ -5,7 +5,9 @@ import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.ScheduledFight;
+import com.betterloka.async.AsyncSlot;
 import com.betterloka.stats.PlayerTrait;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -60,15 +62,29 @@ public class FightManagerScreen extends Screen {
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
-    private List<Row> rows = List.of();
-    private Text message;
-    private boolean loading;
+    /** This screen's own state, which no other screen's answer can write into. */
+    private final AsyncSlot<List<Row>> slot = new AsyncSlot<>("fight manager", this::onClientThread);
+
+    private ButtonWidget refreshButton;
     private long loadedAt;
-    private int generation;
 
     public FightManagerScreen(Screen parent) {
         super(Text.translatable("betterloka.module.fight_manager"));
         this.parent = parent;
+    }
+
+    /** Runs an action on the client thread, and only while this screen is still the open one. */
+    private void onClientThread(Runnable action) {
+        MinecraftClient client = this.client;
+        if (client == null) {
+            return;
+        }
+        client.execute(() -> {
+            if (client.currentScreen == this) {
+                loadedAt = System.currentTimeMillis();
+                action.run();
+            }
+        });
     }
 
     private int contentWidth() {
@@ -90,8 +106,9 @@ public class FightManagerScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.fights.refresh"), button -> load())
-                .dimensions(left, CONTROL_ROW_Y, width, CONTROL_ROW_HEIGHT).build());
+        refreshButton = ButtonWidget.builder(Text.translatable("betterloka.fights.refresh"), button -> load())
+                .dimensions(left, CONTROL_ROW_Y, width, CONTROL_ROW_HEIGHT).build();
+        addDrawableChild(refreshButton);
 
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
                 .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
@@ -99,24 +116,21 @@ public class FightManagerScreen extends Screen {
         load();
     }
 
+    /**
+     * Fetches the battles.
+     *
+     * <p>Safe to press twice: the second press cancels the first rather than being swallowed, so a
+     * refresh always means the button did something. The button is disabled while it runs and says
+     * so, which is the honest version of the old behaviour — where a second press returned silently
+     * and looked like the screen had stopped responding.
+     */
     private void load() {
-        if (loading) {
+        // init also calls this, and a resize re-runs init; restarting a load that is already going
+        // would throw away a good request for an identical one.
+        if (slot.loading()) {
             return;
         }
-        loading = true;
-        message = null;
-        int mine = ++generation;
-
-        CompletableFuture.supplyAsync(this::fetch, BetterLokaClient.lokaExecutor())
-                .whenComplete((found, error) -> onClientThread(mine, () -> {
-                    loading = false;
-                    loadedAt = System.currentTimeMillis();
-                    if (error != null) {
-                        message = Text.translatable("betterloka.fights.unreachable").formatted(Formatting.RED);
-                        return;
-                    }
-                    rows = found;
-                }));
+        slot.start(BetterLokaClient.lokaExecutor(), this::fetch);
     }
 
     /**
@@ -125,15 +139,10 @@ public class FightManagerScreen extends Screen {
      * <p>Towns come from the shared cache and alliances from the Town Logger's standing read, so a
      * refresh is one request however many battles come back.
      */
-    private List<Row> fetch() {
-        List<ScheduledFight> fights;
-        try {
-            fights = devShowRecentBattles
-                    ? BetterLokaClient.lokaApi().fetchRecentBattles()
-                    : BetterLokaClient.lokaApi().fetchScheduledFights();
-        } catch (ApiException e) {
-            throw new java.util.concurrent.CompletionException(e);
-        }
+    private List<Row> fetch() throws ApiException {
+        List<ScheduledFight> fights = devShowRecentBattles
+                ? BetterLokaClient.lokaApi().fetchRecentBattles()
+                : BetterLokaClient.lokaApi().fetchScheduledFights();
 
         List<Row> built = new ArrayList<>();
         for (ScheduledFight fight : fights) {
@@ -183,17 +192,6 @@ public class FightManagerScreen extends Screen {
         return null;
     }
 
-    private void onClientThread(int mine, Runnable action) {
-        if (this.client == null) {
-            return;
-        }
-        this.client.execute(() -> {
-            if (mine == generation && this.client.currentScreen == this) {
-                action.run();
-            }
-        });
-    }
-
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         return scrollPanel.mouseScrolled(mouseX, mouseY, verticalAmount)
@@ -221,6 +219,14 @@ public class FightManagerScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
+        boolean loading = slot.loading();
+        List<Row> rows = slot.valueOr(List.of());
+        // Disabled while it runs, and labelled for what it is doing, so a refresh that is under way
+        // looks like one rather than like a button that stopped working.
+        refreshButton.active = !loading;
+        refreshButton.setMessage(Text.translatable(loading
+                ? "betterloka.fights.refreshing" : "betterloka.fights.refresh"));
+
         int left = contentLeft();
         int width = contentWidth();
 
@@ -234,9 +240,14 @@ public class FightManagerScreen extends Screen {
         int cardWidth = scrollPanel.contentWidth();
         int used;
 
-        if (message != null) {
-            context.drawTextWithShadow(this.textRenderer, message, left, y + 4, GuiTheme.BAD);
-            used = 20;
+        if (slot.failed()) {
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.fights.unreachable").formatted(Formatting.RED),
+                    left, y + 4, GuiTheme.BAD);
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable("betterloka.fights.retry_hint"),
+                    left, y + 4 + ROW_HEIGHT + 2, GuiTheme.MUTED);
+            used = 20 + ROW_HEIGHT;
         } else if (rows.isEmpty()) {
             GuiTheme.panel(context, left, y, cardWidth, CARD_PADDING * 2 + ROW_HEIGHT);
             context.drawTextWithShadow(this.textRenderer,
@@ -244,7 +255,7 @@ public class FightManagerScreen extends Screen {
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             used = CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
         } else {
-            used = renderFights(context, left, y, cardWidth) - y;
+            used = renderFights(context, left, y, cardWidth, rows) - y;
         }
         context.disableScissor();
 
@@ -277,11 +288,16 @@ public class FightManagerScreen extends Screen {
         return x + this.textRenderer.getWidth(signedUp);
     }
 
-    private int renderFights(DrawContext context, int left, int y, int width) {
+    private int renderFights(DrawContext context, int left, int y, int width, List<Row> rows) {
         int inner = width - CARD_PADDING * 2;
         for (Row row : rows) {
             ScheduledFight fight = row.fight();
             int height = CARD_PADDING * 2 + ROW_HEIGHT * 3;
+            // Off-screen cards cost the arithmetic and nothing else.
+            if (y + height < scrollPanel.viewportTop() || y > scrollPanel.viewportBottom()) {
+                y += height + CARD_GAP;
+                continue;
+            }
             GuiTheme.panel(context, left, y, width, height);
             if (fight.started()) {
                 context.fill(left, y, left + 2, y + height, GuiTheme.LIVE);
@@ -369,6 +385,13 @@ public class FightManagerScreen extends Screen {
             return Text.translatable("betterloka.fights.window_unknown").getString();
         }
         return String.format(Locale.ROOT, "%02d:00 – %02d:00", hour, (hour + VULN_HOURS) % 24);
+    }
+
+    /** Stops the refresh when the screen goes away, so it stops holding a worker and a permit. */
+    @Override
+    public void removed() {
+        slot.cancel();
+        super.removed();
     }
 
     @Override
