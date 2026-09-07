@@ -159,6 +159,9 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
+        if ("1".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            DevDiagnostics.register();
+        }
 
         BetterLoka.LOGGER.info("BetterLoka {} ready — press the BetterLoka key to open the menu", BetterLoka.VERSION);
     }
