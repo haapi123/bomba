@@ -2,6 +2,7 @@ package com.betterloka;
 
 import com.betterloka.gui.FightManagerScreen;
 import com.betterloka.gui.LokaMarketScreen;
+import com.betterloka.gui.PlayerFinderScreen;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Element;
@@ -43,6 +44,7 @@ public final class DevDiagnostics {
         step(5, this::createWorld);
         step(300, () -> { });
 
+        step(1, () -> heldPerContinent());
         step(1, () -> log("baseline, no screen open"));
         step(40, () -> { });
         step(1, () -> fps("baseline, no screen open"));
@@ -56,38 +58,38 @@ public final class DevDiagnostics {
         step(1, () -> fightState("3 s after opening (control)"));
         step(1, () -> fps("fight manager, idle"));
 
-        // One honest Market load, so the seller fan-out this screen really produces is measured
-        // rather than guessed at.
+        // A search, which is the whole Market now.
         step(2, () -> client().setScreen(new LokaMarketScreen(null)));
-        step(2, () -> click(client().currentScreen, "Deals"));
+        step(2, () -> {
+            type(client().currentScreen, "Diamond Sword");
+            click(client().currentScreen, "Search");
+        });
         step(1, this::startTimer);
         step(20, () -> { });
-        step(1, () -> { marketState("1 s into a clean Deals load"); pools("1 s in"); });
+        step(1, () -> { marketState("1 s into a search"); pools("1 s in"); });
         step(100, () -> { });
-        step(1, () -> { marketState("6 s into a clean Deals load"); pools("6 s in"); });
-        step(200, () -> { });
-        step(1, () -> { marketState("16 s into a clean Deals load"); pools("16 s in"); });
-        step(1, () -> dumpBetterLokaThreads("16 s into a clean Deals load"));
-        step(1, () -> fps("market, deals loading"));
+        step(1, () -> { marketState("6 s into a search"); pools("6 s in"); });
+        step(1, () -> dumpBetterLokaThreads("6 s into a search"));
+        step(1, () -> fps("market, search loaded"));
 
-        // Scenario B measured where it actually hurts: a refresh submitted while that fan-out is
-        // still draining the shared pool.
+        // A refresh submitted straight after the Market has been used, which is where the two
+        // screens used to collide.
         step(2, () -> client().setScreen(new FightManagerScreen(null)));
         step(1, this::startTimer);
         step(2, () -> { });
-        step(1, () -> fightState("2 ticks after opening, during the Market fan-out"));
+        step(1, () -> fightState("2 ticks after opening, after using the Market"));
         step(60, () -> { });
-        step(1, () -> fightState("3 s after opening, during the Market fan-out"));
+        step(1, () -> fightState("3 s after opening, after using the Market"));
         step(200, () -> { });
-        step(1, () -> fightState("13 s after opening, during the Market fan-out"));
+        step(1, () -> fightState("13 s after opening, after using the Market"));
         step(400, () -> { });
-        step(1, () -> fightState("33 s after opening, during the Market fan-out"));
+        step(1, () -> fightState("33 s after opening, after using the Market"));
         step(1, () -> pools("33 s in"));
 
         step(400, () -> { });
-        step(1, () -> { log("after the fan-out has drained"); pools("drained"); });
+        step(1, () -> { log("after everything has drained"); pools("drained"); });
 
-        // Scenario A twenty times: search, then switch view before the answer comes back.
+        // Scenario A twenty times: search, then move the view before the answer comes back.
         for (int round = 1; round <= 20; round++) {
             int number = round;
             step(2, () -> client().setScreen(new LokaMarketScreen(null)));
@@ -95,8 +97,9 @@ public final class DevDiagnostics {
                 type(client().currentScreen, "Diamond Sword");
                 click(client().currentScreen, "Search");
             });
-            // Deliberately no wait: switching before the search lands is the reported trigger.
-            step(1, () -> click(client().currentScreen, "Deals"));
+            // Deliberately no wait: changing the order before the answer lands is the same
+            // shape as the reported trigger — the view moves under an in-flight request.
+            step(1, () -> click(client().currentScreen, "Oldest"));
             step(60, () -> { });
             step(1, () -> {
                 marketState("scenario A round " + number);
@@ -111,23 +114,33 @@ public final class DevDiagnostics {
         step(1, () -> log("after 20 rounds of scenario A"));
         step(1, () -> dumpBetterLokaThreads("after 20 rounds of scenario A"));
 
-        // Rendering was reworked alongside the queueing — off-screen rows are skipped and seller
-        // names now fill in behind the drawing — so each view is photographed with real data on it.
+        // Each order photographed with real offers on it, and the profile without the alts
+        // section, so the screens are checked rather than assumed.
         step(2, () -> client().setScreen(new LokaMarketScreen(null)));
-        step(2, () -> click(client().currentScreen, "Deals"));
-        step(200, () -> { });
-        shot(20, "perf-market-deals");
-        step(2, () -> click(client().currentScreen, "Special"));
-        step(100, () -> { });
-        shot(20, "perf-market-special");
-        step(2, () -> click(client().currentScreen, "Search"));
         step(2, () -> {
             type(client().currentScreen, "Diamond Sword");
             click(client().currentScreen, "Search");
         });
         step(120, () -> { });
-        shot(20, "perf-market-search");
-        step(1, () -> marketState("search settled"));
+        shot(20, "market-cheapest");
+        step(2, () -> click(client().currentScreen, "Dearest"));
+        step(20, () -> { });
+        shot(20, "market-dearest");
+        step(2, () -> click(client().currentScreen, "Newest"));
+        step(20, () -> { });
+        shot(20, "market-newest");
+        step(2, () -> click(client().currentScreen, "Oldest"));
+        step(20, () -> { });
+        shot(20, "market-oldest");
+        step(1, () -> marketState("after cycling every order"));
+        step(2, () -> client().setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> {
+            type(client().currentScreen, "haapi");
+            click(client().currentScreen, "Search");
+        });
+        step(200, () -> { });
+        step(5, () -> scroll(-4000));
+        shot(20, "player-finder-no-alts");
         step(2, () -> client().setScreen(new FightManagerScreen(null)));
         step(120, () -> { });
         shot(20, "perf-fight-manager");
@@ -143,6 +156,29 @@ public final class DevDiagnostics {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+    }
+
+    /** How many hexes each continent now reads as held, against what Loka draws as held. */
+    private static void heldPerContinent() {
+        for (com.betterloka.map.Continent continent : com.betterloka.map.Continent.values()) {
+            var snapshot = BetterLokaClient.mapData().snapshot(continent);
+            int held = 0;
+            int seats = 0;
+            var owners = new java.util.TreeSet<String>();
+            for (var territory : snapshot.territories()) {
+                if (!territory.neutral()) {
+                    held++;
+                    if (territory.owner() != null) {
+                        owners.add(territory.owner());
+                    }
+                }
+                if (territory.seat()) {
+                    seats++;
+                }
+            }
+            BetterLoka.LOGGER.info("DIAG map {}: {} territories, {} held, {} seats, holders={}",
+                    continent.displayName(), snapshot.territories().size(), held, seats, owners);
+        }
     }
 
     private void startTimer() {
@@ -161,10 +197,10 @@ public final class DevDiagnostics {
                     screen == null ? "null" : screen.getClass().getSimpleName());
             return;
         }
-        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: tab={} search={} deals={} special={}",
-                label, sinceTimerMillis(), field(market, "tab"),
-                slot(field(market, "searchSlot")), slot(field(market, "dealsSlot")),
-                slot(field(market, "specialSlot")));
+        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: search={} sort={} suggestions={}",
+                label, sinceTimerMillis(),
+                slot(field(market, "searchSlot")), field(market, "sort"),
+                slot(field(market, "suggestSlot")));
     }
 
     /**
@@ -271,9 +307,6 @@ public final class DevDiagnostics {
         if (value instanceof Map<?, ?> map) {
             return map.size() + " entries";
         }
-        if (value instanceof com.betterloka.api.MarketApi.Snapshot snapshot) {
-            return snapshot.listings().size() + " listings";
-        }
         if (value instanceof Boolean || value instanceof Number || value instanceof Enum<?>) {
             return String.valueOf(value);
         }
@@ -335,6 +368,15 @@ public final class DevDiagnostics {
         step(wait, () -> net.minecraft.client.util.ScreenshotRecorder.saveScreenshot(
                 client().runDirectory, name + ".png", client().getFramebuffer(), 1,
                 message -> BetterLoka.LOGGER.info("DIAG shot {} -> {}", name, message.getString())));
+    }
+
+    /** Scrolls the open screen, for a profile whose interesting part is below the fold. */
+    private static void scroll(int amount) {
+        Screen screen = client().currentScreen;
+        if (screen != null) {
+            screen.mouseScrolled(client().getWindow().getScaledWidth() / 2.0,
+                    client().getWindow().getScaledHeight() / 2.0, 0, amount);
+        }
     }
 
     private static MinecraftClient client() {

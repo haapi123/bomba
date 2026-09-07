@@ -37,9 +37,13 @@ public final class DynmapApi {
      *
      * <p>No angle bracket, for the same reason the area pattern has none — a heading is followed by
      * markup, and a greedy hop over it reports tags as somebody's name.
+     *
+     * <p>The word before {@code Territory} is part of the name, not a label to drop. Treating
+     * "Alliance" as one turned {@code <h2>JachowskiMC Alliance Territory} into "JachowskiMC", and
+     * four of Loka's nine alliances — JachowskiMC, nuxva, kameraTwT and Veiyn — really are called
+     * "... Alliance", so the map named three of them wrongly wherever they held ground.
      */
-    private static final Pattern ALLIANCE =
-            Pattern.compile("<h2>\\s*([^<>]+?)\\s+(?:Alliance\\s+)?Territory");
+    private static final Pattern ALLIANCE = Pattern.compile("<h2>\\s*([^<>]+?)\\s+Territory");
 
     /** {@code <h3><b>Mutator: Air Support</b></h3>} */
     private static final Pattern MUTATOR = Pattern.compile("Mutator:\\s*([^<]+)");
@@ -330,7 +334,8 @@ public final class DynmapApi {
 
         String plain = label == null ? "" : label;
         String alliance = group(ALLIANCE, plain);
-        String owner = holderOf(plain, alliance, icon);
+        boolean held = Json.doubleValue(area, "fillopacity", 0) >= HELD_OPACITY;
+        String owner = holderOf(plain, alliance, held);
 
         // A town's own hex carries the town's card in place of a territory card, so it has no
         // "Owner:" line and used to come out unclaimed — the one hex on the map that most obviously
@@ -360,8 +365,15 @@ public final class DynmapApi {
      * which is where both card formats and every field on them are decided.
      */
     static MapTerritory parseForTest(String number, String label, String icon) {
+        // Held, as most cards under test are. Loka's own opacity is what decides it now.
+        return parseForTest(number, label, icon, 0.65);
+    }
+
+    /** @param fillOpacity how Loka draws the hex: 0.92 a town seat, 0.65 held, 0.5 or less neutral */
+    static MapTerritory parseForTest(String number, String label, String icon, double fillOpacity) {
         JsonObject area = new JsonObject();
         area.addProperty("label", number);
+        area.addProperty("fillopacity", fillOpacity);
         com.google.gson.JsonArray xs = new com.google.gson.JsonArray();
         com.google.gson.JsonArray zs = new com.google.gson.JsonArray();
         for (int[] point : new int[][] {{0, 0}, {1, 0}, {1, 1}}) {
@@ -374,23 +386,36 @@ public final class DynmapApi {
     }
 
     /**
+     * How opaque Loka draws a hex it considers held.
+     *
+     * <p>Its own encoding, and the same one the town seats are read from: 0.92 for a town's own hex,
+     * 0.65 for the rest of that town's land, and 0.5 or less for neutral ground. Across all five
+     * continents there is no hex in between, so this separates held from neutral exactly.
+     */
+    private static final double HELD_OPACITY = 0.6;
+
+    /**
      * Who holds a territory, across two card formats.
      *
      * <p>The regular continents name the town on an {@code Owner:} line under an alliance heading.
      * The Conquest continents have no such line at all — not one of Rivina's or Balak's nineteen
      * markers carries it — and put the holder in the heading instead:
-     * {@code <h2>Abuju Brotherhood Territory}. Reading only the first form left every territory on
-     * both of those continents drawn as unclaimed, which is why Balak's map had no colour on it.
+     * {@code <h2>Abuju Brotherhood Territory}.
      *
-     * <p>The heading is only trusted when Dynmap's own icon agrees the ground is held, because a
-     * neutral card's heading is the region's name and would otherwise read as its owner.
+     * <p>The heading is trusted when Loka draws the ground as held. It used to be trusted only when
+     * the icon was {@code territory_owned}, and that hid every hex whose icon says something else
+     * about it: a territory carrying a buff, a mutator, or an attack is still somebody's. Balak was
+     * the worst of it — four {@code territory_buff} and one {@code territory_attack} out of seven
+     * held hexes, so five sevenths of the continent's claimed ground drew as neutral — with five
+     * more {@code territory_mutator} hexes on Ascalon. An icon says what is happening on a hex, not
+     * who owns it, and reading opacity instead means the next icon Loka invents hides nothing.
      */
-    private static String holderOf(String label, String alliance, String icon) {
+    private static String holderOf(String label, String alliance, boolean held) {
         String owner = group(OWNER, label);
         if (owner != null) {
             return owner;
         }
-        return "territory_owned".equals(icon) ? alliance : null;
+        return held ? alliance : null;
     }
 
     /**

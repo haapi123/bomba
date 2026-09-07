@@ -16,36 +16,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.function.IntConsumer;
 
 /** Client for Loka's market endpoints: what is on sale, from whom, and for how much. */
 public final class MarketApi {
     private static final String BASE_URL = LokaApi.BASE_URL;
-
-    /** How long a full sweep of the market stays fresh before it is worth pulling again. */
-    private static final long SNAPSHOT_TTL_MILLIS = 5 * 60 * 1000L;
-
-    /** Everything on sale right now, with what it is collectively worth. */
-    public record Snapshot(List<MarketListing> listings, long fetchedAt) {
-        public double totalValue() {
-            return listings.stream().mapToDouble(MarketListing::price).sum();
-        }
-
-        public int totalItems() {
-            return listings.stream().mapToInt(MarketListing::quantity).sum();
-        }
-
-        public long distinctSellers() {
-            return listings.stream().map(MarketListing::ownerId).filter(java.util.Objects::nonNull).distinct().count();
-        }
-
-        boolean stale() {
-            return System.currentTimeMillis() - fetchedAt > SNAPSHOT_TTL_MILLIS;
-        }
-    }
 
     /** How many seller names to keep. The market has about 150 sellers; this is room to spare. */
     private static final int SELLER_CACHE_SIZE = 600;
@@ -73,8 +49,6 @@ public final class MarketApi {
     private final java.util.Set<String> sellersInFlight = ConcurrentHashMap.newKeySet();
 
     private volatile List<String> types;
-    private volatile Snapshot snapshot;
-    private CompletableFuture<Snapshot> inFlightSnapshot;
 
     public MarketApi(HttpTransport transport) {
         this.transport = transport;
@@ -133,66 +107,6 @@ public final class MarketApi {
         List<MarketListing> sorted = new ArrayList<>(listings);
         sorted.sort(Comparator.comparingDouble(MarketListing::pricePerUnit));
         return List.copyOf(sorted);
-    }
-
-    /**
-     * The whole market. About fifty requests, so it is cached for a few minutes and shared between
-     * callers rather than re-fetched per tab.
-     *
-     * @param onProgress called with the number of pages fetched so far.
-     */
-    public synchronized CompletableFuture<Snapshot> snapshot(IntConsumer onProgress) {
-        Snapshot cached = snapshot;
-        if (cached != null && !cached.stale()) {
-            return CompletableFuture.completedFuture(cached);
-        }
-        if (inFlightSnapshot != null && !inFlightSnapshot.isDone()) {
-            return inFlightSnapshot;
-        }
-        // On the bulk lane, not the interactive one: a sweep waits on fifty-odd pages, and doing
-        // that from an interactive worker holds a quarter of the lane every screen shares.
-        inFlightSnapshot = CompletableFuture.supplyAsync(() -> {
-            try {
-                return loadSnapshot(onProgress);
-            } catch (ApiException e) {
-                throw new java.util.concurrent.CompletionException(e);
-            }
-        }, transport.bulkExecutor());
-        return inFlightSnapshot;
-    }
-
-    private Snapshot loadSnapshot(IntConsumer onProgress) throws ApiException {
-        JsonObject first = getObject(BASE_URL + "/market_sales?size=" + LokaApi.PAGE_SIZE + "&page=0");
-        int totalPages = Json.integer(Json.object(first, "page"), "totalPages", 1);
-
-        List<MarketListing> all = new ArrayList<>(readListings(first));
-        onProgress.accept(1);
-
-        List<CompletableFuture<List<MarketListing>>> tasks = new ArrayList<>();
-        java.util.concurrent.atomic.AtomicInteger done = new java.util.concurrent.atomic.AtomicInteger(1);
-        for (int page = 1; page < totalPages; page++) {
-            int target = page;
-            tasks.add(CompletableFuture.supplyAsync(() -> {
-                try {
-                    // Background: fifty-odd pages must never sit in front of a click elsewhere.
-                    return readListings(getObject(
-                            BASE_URL + "/market_sales?size=" + LokaApi.PAGE_SIZE + "&page=" + target,
-                            true));
-                } catch (ApiException e) {
-                    BetterLoka.LOGGER.debug("Market page {} failed", target, e);
-                    return List.<MarketListing>of();
-                } finally {
-                    onProgress.accept(done.incrementAndGet());
-                }
-            }, transport.bulkExecutor()));
-        }
-        for (CompletableFuture<List<MarketListing>> task : tasks) {
-            all.addAll(task.join());
-        }
-
-        Snapshot fresh = new Snapshot(List.copyOf(all), System.currentTimeMillis());
-        snapshot = fresh;
-        return fresh;
     }
 
     /**

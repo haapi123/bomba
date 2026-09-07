@@ -10,7 +10,6 @@ import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
-import com.betterloka.stats.PlayerIdentity;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.stats.PlayerTrait;
 import net.minecraft.client.gui.Click;
@@ -91,8 +90,7 @@ public class PlayerFinderScreen extends Screen {
     private boolean arenaLoading;
     private boolean arenaHistoryLoading;
 
-    /** Other accounts this person plays on, and names they have gone by. */
-    private List<PlayerIdentity.Account> alts = List.of();
+    /** Names this player has gone by, newest first. */
     private List<com.betterloka.stats.NameHistoryService.FormerName> previousNames = List.of();
     private boolean identityLoading;
 
@@ -198,7 +196,6 @@ public class PlayerFinderScreen extends Screen {
         arenaBest = List.of();
         arenaLoading = true;
         arenaHistoryLoading = true;
-        alts = List.of();
         previousNames = List.of();
         identityLoading = true;
         scrollPanel.reset();
@@ -213,11 +210,6 @@ public class PlayerFinderScreen extends Screen {
         }));
 
         PlayerStatsService stats = BetterLokaClient.stats();
-        stats.alts(name).whenComplete((found, throwable) -> applyOnClientThread(generation, () -> {
-            identityLoading = false;
-            alts = throwable != null || found == null ? List.of() : found;
-        }));
-
         stats.lookup(name, headline -> applyOnClientThread(generation, () -> {
             // Career totals are in; the fight rows below fill in as their pages land.
             searching = false;
@@ -420,42 +412,14 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /**
-     * Other accounts and older names, at the bottom of the profile.
+     * Older names, at the bottom of the profile.
      *
-     * <p>The alts are Loka's own grouping — the same fact {@code /find} reports — so they are as
-     * good as that command. The old names are only as good as the ranked ladders: Mojang stopped
-     * publishing name history and Loka keeps only the current name, so a player who has never
-     * duelled has none to show, and the header says where they came from.
+     * <p>Names come from Laby.net, which kept crawling after Mojang withdrew its own history in
+     * 2022 and has more of them than the game's {@code /find} does.
      */
     private int renderIdentity(DrawContext context, int left, int y, int width, int inner) {
-        // Both sections are always drawn, empty or not. Most players have no alts and no rename on
-        // record, and a section that vanishes in that case looks exactly like a section that is
-        // broken — which is how this read the first time round.
-        context.drawTextWithShadow(this.textRenderer,
-                alts.isEmpty() ? Text.translatable("betterloka.finder.alts")
-                        : Text.translatable("betterloka.finder.alts_count", alts.size()),
-                left, y + 2, GuiTheme.MUTED);
-        y += ROW_HEIGHT + 3;
-
-        if (alts.isEmpty()) {
-            y = card(context, left, y, width, 1, (x, rowY) ->
-                    context.drawTextWithShadow(this.textRenderer,
-                            label(identityLoading ? "betterloka.finder.loading" : "betterloka.finder.alts_none"),
-                            x, rowY, GuiTheme.MUTED));
-        } else {
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * alts.size();
-            GuiTheme.panel(context, left, y, width, height);
-            int textX = left + CARD_PADDING;
-            int textY = y + CARD_PADDING;
-            for (PlayerIdentity.Account account : alts) {
-                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, account.name(),
-                        account.rank() == null ? "" : account.rank().toUpperCase(Locale.ROOT),
-                        GuiTheme.MUTED);
-                textY += ROW_HEIGHT;
-            }
-            y += height + CARD_GAP;
-        }
-
+        // Drawn empty or not: most players have no rename on record, and a section that vanishes in
+        // that case looks exactly like a section that is broken.
         context.drawTextWithShadow(this.textRenderer,
                 previousNames.isEmpty()
                         ? Text.translatable("betterloka.finder.previous_names")

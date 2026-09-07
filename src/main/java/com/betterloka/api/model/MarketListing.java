@@ -2,6 +2,7 @@ package com.betterloka.api.model;
 
 import com.google.gson.JsonObject;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -99,6 +100,18 @@ public final class MarketListing {
 
     public double pricePerUnit() {
         return quantity <= 0 ? price : price / quantity;
+    }
+
+    /**
+     * When the offer went up.
+     *
+     * <p>Loka publishes no such field, but its ids are MongoDB ObjectIds and those open with the
+     * document's creation time, so the date is recoverable from the id the listing already carries.
+     *
+     * @return when it was listed, or {@code null} if the id is not an ObjectId
+     */
+    public Instant listedAt() {
+        return ObjectIds.timestamp(id);
     }
 
     /**
