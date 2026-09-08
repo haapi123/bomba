@@ -153,12 +153,11 @@
   "betterloka.town_finder.loading_towns": "Wczytuję listę townów...",
   "betterloka.finder.tab.profile": "Profil",
   "betterloka.finder.tab.month": "Miesiąc",
-  "betterloka.finder.split": "Wg formatu, ostatnie %s walk",
   "betterloka.finder.rivi": "RIVI (%s)",
   "betterloka.finder.conquest": "Conquest (%s)",
   "betterloka.finder.rivi_short": "Walki RIVI",
   "betterloka.finder.conquest_short": "Walki Conquest",
-  "betterloka.finder.month_of": "%s, z walk które podaje EldritchBot",
+  "betterloka.finder.month_of": "%s, wszystkie stoczone walki",
   "betterloka.finder.no_month_fights": "Brak walk w tym miesiącu.",
   "betterloka.fights.refresh": "Odśwież",
   "betterloka.fights.refreshing": "Odświeżanie...",
@@ -250,5 +249,11 @@
   "betterloka.market.order.cheapest": "od najtańszej za sztukę",
   "betterloka.market.order.dearest": "od najdroższej za sztukę",
   "betterloka.market.order.newest": "od najnowszej wystawionej",
-  "betterloka.market.order.oldest": "od najdłużej wiszącej"
+  "betterloka.market.order.oldest": "od najdłużej wiszącej",
+  "betterloka.map.bonus": "Bonus terytorium",
+  "betterloka.finder.split_all": "Wszystkie walki - stoczonych %s",
+  "betterloka.finder.split_indexing": "Wszystkie walki - na razie %s, czytam archiwum (%s%%)",
+  "betterloka.finder.indexing_wait": "Czytam archiwum walk Loki...",
+  "betterloka.finder.no_battles": "Brak walk w archiwum.",
+  "betterloka.finder.month_detail": "Szczegóły, z %s wciąż publikowanych walk"
 }

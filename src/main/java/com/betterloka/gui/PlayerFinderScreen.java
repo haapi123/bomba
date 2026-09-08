@@ -7,6 +7,7 @@ import com.betterloka.api.model.ArenaEntry;
 import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.stats.ArenaService;
+import com.betterloka.stats.BattleIndex;
 import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
@@ -208,6 +209,10 @@ public class PlayerFinderScreen extends Screen {
             arenaLoading = false;
             arenaCurrent = throwable != null ? List.of() : standings;
         }));
+
+        // The battle archive is what the format split and the month are taken from, and it is built
+        // on demand: a search is the first sign anybody wants it.
+        BetterLokaClient.battleIndex().startIndexing(BetterLokaClient.lokaBulkExecutor());
 
         PlayerStatsService stats = BetterLokaClient.stats();
         stats.lookup(name, headline -> applyOnClientThread(generation, () -> {
@@ -677,28 +682,53 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /**
-     * RIVI against ordinary Conquest, over the fights EldritchBot lists.
+     * RIVI against ordinary Conquest, over every battle either side has ever fought.
      *
-     * <p>Career totals cannot be split — they are published as one number and the map a fight was on
-     * lives on the fight's own page — so this is a sample, and the header says how many fights it is
-     * over rather than letting the numbers pass for a career.
+     * <p>This used to be a sample of the last nine fights, because that is all EldritchBot lists and
+     * which map a fight was on lives on the fight's own page. Loka's battle archive carries every
+     * battle ever fought with a line per player, so the split is now the whole career rather than a
+     * sample of it — and the header says how far the index has read when it is still reading.
+     *
+     * <p>No wins here: Loka's battle records name no winner, so the career win rate stays on the
+     * card above, where it comes from EldritchBot and covers both formats together.
      */
     private int renderFormatSplit(DrawContext context, int left, int y, int width, int inner) {
-        List<FightSummary> fights = profile.recentFights();
-        if (fights.isEmpty()) {
-            return y;
-        }
-        FightBreakdown rivi = FightBreakdown.of(FightBreakdown.select(fights, true));
-        FightBreakdown conquest = FightBreakdown.of(FightBreakdown.select(fights, false));
-        if (rivi.isEmpty() && conquest.isEmpty()) {
-            return y;
-        }
+        BattleIndex index = BetterLokaClient.battleIndex();
+        BattleIndex.PlayerRecord record = index.of(profile.uuid());
+        BattleIndex.Progress progress = index.progress();
+        BattleIndex.Bucket rivi = record.riviTotal();
+        BattleIndex.Bucket conquest = record.conquestTotal();
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.split", rivi.fights() + conquest.fights()),
+        context.drawTextWithShadow(this.textRenderer, splitHeader(rivi, conquest, progress),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
+        if (rivi.isEmpty() && conquest.isEmpty()) {
+            int height = CARD_PADDING * 2 + ROW_HEIGHT;
+            GuiTheme.panel(context, left, y, width, height);
+            context.drawTextWithShadow(this.textRenderer,
+                    Text.translatable(progress.sweeping()
+                            ? "betterloka.finder.indexing_wait" : "betterloka.finder.no_battles"),
+                    left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
+            return y + height + CARD_GAP;
+        }
+
+        return renderSplitCard(context, left, y, width, inner, rivi, conquest);
+    }
+
+    /** How many battles the split is over, and how much of the archive it has been taken from. */
+    private Text splitHeader(BattleIndex.Bucket rivi, BattleIndex.Bucket conquest,
+                             BattleIndex.Progress progress) {
+        int fights = rivi.fights() + conquest.fights();
+        if (progress.sweeping() && !progress.complete()) {
+            return Text.translatable("betterloka.finder.split_indexing", fights, progress.percent());
+        }
+        return Text.translatable("betterloka.finder.split_all", fights);
+    }
+
+    /** The two-column card: Rivi on the left, Conquest on the right. */
+    private int renderSplitCard(DrawContext context, int left, int y, int width, int inner,
+                                BattleIndex.Bucket rivi, BattleIndex.Bucket conquest) {
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 5;
         GuiTheme.panel(context, left, y, width, height);
         int textX = left + CARD_PADDING;
@@ -713,14 +743,14 @@ public class PlayerFinderScreen extends Screen {
                 textX + column + 10, textY, GuiTheme.TEXT);
 
         splitRow(context, textX, textY + ROW_HEIGHT, column, "betterloka.finder.stat.kills",
-                rivi.isEmpty() ? "—" : String.valueOf(rivi.kills()),
-                conquest.isEmpty() ? "—" : String.valueOf(conquest.kills()), GuiTheme.GOOD);
+                value(rivi.isEmpty(), rivi.kills()), value(conquest.isEmpty(), conquest.kills()),
+                GuiTheme.GOOD);
         splitRow(context, textX, textY + ROW_HEIGHT * 2, column, "betterloka.finder.stat.deaths",
-                rivi.isEmpty() ? "—" : String.valueOf(rivi.deaths()),
-                conquest.isEmpty() ? "—" : String.valueOf(conquest.deaths()), GuiTheme.BAD);
-        splitRow(context, textX, textY + ROW_HEIGHT * 3, column, "betterloka.finder.stat.assists",
-                rivi.isEmpty() ? "—" : String.valueOf(rivi.assists()),
-                conquest.isEmpty() ? "—" : String.valueOf(conquest.assists()), GuiTheme.TEXT);
+                value(rivi.isEmpty(), rivi.deaths()), value(conquest.isEmpty(), conquest.deaths()),
+                GuiTheme.BAD);
+        splitRow(context, textX, textY + ROW_HEIGHT * 3, column, "betterloka.finder.stat.fights",
+                value(rivi.isEmpty(), rivi.fights()), value(conquest.isEmpty(), conquest.fights()),
+                GuiTheme.TEXT);
 
         GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, column,
                 label("betterloka.finder.stat.kd"), rivi.isEmpty() ? "—" : rivi.killDeathText(),
@@ -730,6 +760,11 @@ public class PlayerFinderScreen extends Screen {
                 conquest.isEmpty() ? GuiTheme.MUTED : GuiTheme.ratioColor(conquest.killDeathRatio()));
 
         return y + height + CARD_GAP;
+    }
+
+    /** A dash rather than a zero where there is nothing to report at all. */
+    private static String value(boolean empty, int number) {
+        return empty ? "—" : String.valueOf(number);
     }
 
     private void splitRow(DrawContext context, int x, int y, int column, String key,
@@ -747,8 +782,14 @@ public class PlayerFinderScreen extends Screen {
     private int renderMonth(DrawContext context, int left, int top, int width) {
         int inner = width - CARD_PADDING * 2;
         int y = top;
-        List<FightSummary> month = FightBreakdown.thisMonth(profile.recentFights(), LocalDate.now());
-        FightBreakdown totals = FightBreakdown.of(month);
+
+        BattleIndex index = BetterLokaClient.battleIndex();
+        BattleIndex.PlayerRecord record = index.of(profile.uuid());
+        BattleIndex.Progress progress = index.progress();
+        String month = BattleIndex.monthKey(LocalDate.now());
+        BattleIndex.Bucket rivi = record.rivi(month);
+        BattleIndex.Bucket conquest = record.conquest(month);
+        BattleIndex.Bucket totals = rivi.plus(conquest);
 
         context.drawTextWithShadow(this.textRenderer,
                 Text.translatable("betterloka.finder.month_of", monthName()), left, y + 2, GuiTheme.MUTED);
@@ -758,44 +799,47 @@ public class PlayerFinderScreen extends Screen {
             int height = CARD_PADDING * 2 + ROW_HEIGHT;
             GuiTheme.panel(context, left, y, width, height);
             context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(profile.fightsState() == PlayerProfile.FightsState.LOADING
-                            ? "betterloka.finder.loading" : "betterloka.finder.no_month_fights"),
+                    Text.translatable(progress.sweeping() && !progress.complete()
+                            ? "betterloka.finder.indexing_wait" : "betterloka.finder.no_month_fights"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + height + CARD_GAP;
         }
 
-        FightBreakdown rivi = FightBreakdown.of(FightBreakdown.select(month, true));
-        FightBreakdown conquest = FightBreakdown.of(FightBreakdown.select(month, false));
+        // Every battle this month, from the archive rather than from the handful EldritchBot lists.
+        y = card(context, left, y, width, 2, (x, rowY) -> {
+            twoColumns(context, x, rowY, inner,
+                    label("betterloka.finder.stat.fights"), String.valueOf(totals.fights()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.kd"), totals.killDeathText(),
+                    GuiTheme.ratioColor(totals.killDeathRatio()));
+            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
+                    label("betterloka.finder.stat.kills"), String.valueOf(totals.kills()), GuiTheme.GOOD,
+                    label("betterloka.finder.stat.deaths"), String.valueOf(totals.deaths()), GuiTheme.BAD);
+        });
+
+        y = renderSplitCard(context, left, y, width, inner, rivi, conquest);
+
+        // What a fight page carries and a battle record does not — the consumables and the wins.
+        // Only the fights EldritchBot still lists have it, so it is a separate card that says so.
+        List<FightSummary> detailed = FightBreakdown.thisMonth(profile.recentFights(), LocalDate.now());
+        FightBreakdown sample = FightBreakdown.of(detailed);
+        if (sample.isEmpty()) {
+            return y;
+        }
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.month_detail", sample.fights()),
+                left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
 
         y = card(context, left, y, width, 3, (x, rowY) -> {
             twoColumns(context, x, rowY, inner,
-                    label("betterloka.finder.stat.fights"), String.valueOf(totals.fights()), GuiTheme.TEXT,
-                    label("betterloka.finder.stat.winrate"), totals.winRateText(), GuiTheme.TEXT);
+                    label("betterloka.finder.stat.wins"), String.valueOf(sample.wins()), GuiTheme.GOOD,
+                    label("betterloka.finder.stat.losses"), String.valueOf(sample.losses()), GuiTheme.BAD);
             twoColumns(context, x, rowY + ROW_HEIGHT, inner,
-                    label("betterloka.finder.stat.wins"), String.valueOf(totals.wins()), GuiTheme.GOOD,
-                    label("betterloka.finder.stat.losses"), String.valueOf(totals.losses()), GuiTheme.BAD);
+                    label("betterloka.finder.stat.assists"), String.valueOf(sample.assists()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.golems"), String.valueOf(sample.golems()), GuiTheme.TEXT);
             twoColumns(context, x, rowY + ROW_HEIGHT * 2, inner,
-                    label("betterloka.finder.stat.kd"), totals.killDeathText(),
-                    GuiTheme.ratioColor(totals.killDeathRatio()),
-                    label("betterloka.finder.stat.assists"), String.valueOf(totals.assists()), GuiTheme.TEXT);
-        });
-
-        y = card(context, left, y, width, 2, (x, rowY) -> {
-            twoColumns(context, x, rowY, inner,
-                    label("betterloka.finder.stat.kills"), String.valueOf(totals.kills()), GuiTheme.GOOD,
-                    label("betterloka.finder.stat.deaths"), String.valueOf(totals.deaths()), GuiTheme.BAD);
-            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
-                    label("betterloka.finder.stat.golems"), String.valueOf(totals.golems()), GuiTheme.TEXT,
-                    label("betterloka.finder.stat.lamps"), String.valueOf(totals.lamps()), GuiTheme.TEXT);
-        });
-
-        y = card(context, left, y, width, 2, (x, rowY) -> {
-            twoColumns(context, x, rowY, inner,
-                    label("betterloka.finder.stat.potions"), String.valueOf(totals.potions()), GuiTheme.TEXT,
-                    label("betterloka.finder.stat.pearls"), String.valueOf(totals.pearls()), GuiTheme.TEXT);
-            twoColumns(context, x, rowY + ROW_HEIGHT, inner,
-                    label("betterloka.finder.rivi_short"), String.valueOf(rivi.fights()), GuiTheme.ACCENT,
-                    label("betterloka.finder.conquest_short"), String.valueOf(conquest.fights()), GuiTheme.TEXT);
+                    label("betterloka.finder.stat.potions"), String.valueOf(sample.potions()), GuiTheme.TEXT,
+                    label("betterloka.finder.stat.pearls"), String.valueOf(sample.pearls()), GuiTheme.TEXT);
         });
 
         return y;

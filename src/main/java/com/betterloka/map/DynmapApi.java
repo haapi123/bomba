@@ -49,6 +49,15 @@ public final class DynmapApi {
     private static final Pattern MUTATOR = Pattern.compile("Mutator:\\s*([^<]+)");
 
     /**
+     * What holding a territory grants, where it grants anything.
+     *
+     * <p>{@code <he2>Ancient Ingots repair full durability on use</h2>} — the opening tag is Loka's
+     * own typo and the block closes as {@code </h2>}, so the pattern has to match what is published
+     * rather than what was meant. Only Balak carries these, on six of its eighteen hexes.
+     */
+    private static final Pattern BONUS = Pattern.compile("<he2>(.*?)</h2>", Pattern.DOTALL);
+
+    /**
      * {@code <br/>Cherry Grove 129<br/>} — the region name and the territory number together.
      *
      * <p>The name may hold no angle bracket, which looks like a detail and is the whole point. A
@@ -355,7 +364,7 @@ public final class DynmapApi {
         return new MapTerritory(number, areaName, owner, alliance, mutator, xs, zs,
                 centerX, centerZ, color(Json.string(area, "fillcolor")),
                 color(Json.string(area, "color")), icon, conquestPoints(plain),
-                seat != null);
+                seat != null, group(BONUS, plain));
     }
 
     /**

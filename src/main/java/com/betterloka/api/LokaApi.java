@@ -357,6 +357,37 @@ public final class LokaApi {
         return battles;
     }
 
+    /** One page of the battle archive, newest finished battle first. */
+    public record BattlePage(List<BattleZone> battles, int totalPages, int totalElements) {
+    }
+
+    /**
+     * A page of every battle Loka has on record.
+     *
+     * <p>Newest first, which is what makes the archive worth indexing: a refresh reads until it
+     * meets a battle it already has rather than starting over. The page size is fixed by the server
+     * at twenty however large a size is asked for — 8,445 battles is 423 pages — so this is
+     * deliberately background work.
+     */
+    public BattlePage fetchBattlePage(int page) throws ApiException {
+        JsonObject json = getObject(BASE_URL + "/battlezones?size=" + PAGE_SIZE
+                + "&page=" + page + "&sort=timeEnded,desc", true);
+        List<BattleZone> battles = new ArrayList<>();
+        for (JsonElement element : embeddedArray(json, "battlezones")) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            BattleZone battle = BattleZone.fromJson(element.getAsJsonObject());
+            if (battle != null) {
+                battles.add(battle);
+            }
+        }
+        JsonObject pageInfo = Json.object(json, "page");
+        return new BattlePage(List.copyOf(battles),
+                Json.integer(pageInfo, "totalPages", 0),
+                Json.integer(pageInfo, "totalElements", 0));
+    }
+
     /** Spring Data REST wraps collections in {@code _embedded.<name>}. */
     private static Iterable<JsonElement> embeddedArray(JsonObject json, String name) {
         JsonObject embedded = Json.object(json, "_embedded");

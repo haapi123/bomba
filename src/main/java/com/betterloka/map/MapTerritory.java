@@ -25,15 +25,24 @@ package com.betterloka.map;
  * @param conquestPoints what holding this is worth per day, or {@code -1} where Loka does not say.
  *                    Only the Conquest continents carry it — Rivina publishes it on all eighteen of
  *                    its territories, and Kalros, Ascalon, Garama and Balak on none of theirs.
+ * @param bonus what holding this territory grants, spelled out — "Ancient Ingots repair full
+ *              durability on use" — or {@code null} where it grants nothing. Balak alone publishes
+ *              these, on six of its eighteen hexes, and on neutral ground as well as held: the
+ *              bonus belongs to the hex, and whoever takes it gets it.
  */
 public record MapTerritory(String number, String areaName, String owner, String alliance,
                            String mutator, double[] xs, double[] zs,
                            double centerX, double centerZ, int fillColor, int strokeColor,
-                           String icon, int conquestPoints, boolean seat) {
+                           String icon, int conquestPoints, boolean seat, String bonus) {
 
     /** Whether Loka published a conquest-point value for this territory. */
     public boolean hasConquestPoints() {
         return conquestPoints >= 0;
+    }
+
+    /** Whether holding this territory grants something beyond the ground itself. */
+    public boolean hasBonus() {
+        return bonus != null && !bonus.isBlank();
     }
 
     public boolean neutral() {

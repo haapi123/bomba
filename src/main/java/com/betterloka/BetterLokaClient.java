@@ -22,6 +22,7 @@ import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
+import com.betterloka.stats.BattleIndex;
 import com.betterloka.stats.NameplateKdService;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.towns.TownActivityStore;
@@ -68,6 +69,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TownCache towns;
     private static PlayerStatsService stats;
     private static ArenaService arenaStats;
+    private static BattleIndex battleIndex;
     private static NameplateKdService nameplateKd;
     private static TranslationService translations;
     private static ChatLog chatLog;
@@ -93,6 +95,9 @@ public class BetterLokaClient implements ClientModInitializer {
         towns = new TownCache(loka, configDir().resolve("towns.json"));
         stats = new PlayerStatsService(loka, eldritch, towns, configDir().resolve("fights.json"));
         arenaStats = new ArenaService(arena, configDir().resolve("arena-history.json"));
+        // Loka's battle archive is the only place a career splits by format. Built on demand rather
+        // than at startup — it is 77 MB the first time — and kept once built.
+        battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
         nameplateKd = new NameplateKdService(eldritch);
         translations = new TranslationService(transport);
         chatLog = new ChatLog(translations, config);
@@ -213,6 +218,11 @@ public class BetterLokaClient implements ClientModInitializer {
         return arenaStats;
     }
 
+    /** Every battle on Loka's books, folded into per-player totals. */
+    public static BattleIndex battleIndex() {
+        return battleIndex;
+    }
+
     public static GrindTimers grindTimers() {
         return grindTimers;
     }
@@ -265,6 +275,11 @@ public class BetterLokaClient implements ClientModInitializer {
     /** For screens that need to run a Loka lookup off the render thread. */
     public static java.util.concurrent.ExecutorService lokaExecutor() {
         return loka.executor();
+    }
+
+    /** The lane for work nobody is watching, such as building the battle archive. */
+    public static java.util.concurrent.ExecutorService lokaBulkExecutor() {
+        return transport.bulkExecutor();
     }
 
     public static NameplateKdService nameplateKd() {

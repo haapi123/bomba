@@ -812,6 +812,19 @@ public class LokaMapScreen extends Screen {
             extra.add(CardLine.small(Text.translatable("betterloka.map.mutator_of",
                     territory.mutator())));
         }
+
+        // What taking this hex actually buys. Wrapped rather than trimmed: a bonus cut off halfway
+        // through its own sentence is worse than not showing it, and the card sizes to its widest
+        // line so one long sentence would otherwise stretch it across the map.
+        if (territory.hasBonus()) {
+            extra.add(CardLine.separator());
+            extra.add(CardLine.small(Text.translatable("betterloka.map.bonus")
+                    .copy().formatted(Formatting.GOLD)));
+            for (String line : MapStyle.wrapSmall(this.textRenderer, territory.bonus(),
+                    MapStyle.SMALL_WRAP_WIDTH)) {
+                extra.add(CardLine.small(Text.literal(line).formatted(Formatting.YELLOW)));
+            }
+        }
         if (!extra.isEmpty()) {
             lines.add(CardLine.separator());
             lines.addAll(extra);

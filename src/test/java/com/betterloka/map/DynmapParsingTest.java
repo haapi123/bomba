@@ -12,7 +12,7 @@ class DynmapParsingTest {
         return new MapTerritory("1", "Test", null, null, null,
                 new double[] {x, x + size, x + size, x},
                 new double[] {z, z, z + size, z + size},
-                x + size / 2, z + size / 2, 0x3AB3DA, 0x09090B, "territory_neutral", -1, false);
+                x + size / 2, z + size / 2, 0x3AB3DA, 0x09090B, "territory_neutral", -1, false, null);
     }
 
     @Test
@@ -34,7 +34,7 @@ class DynmapParsingTest {
         MapTerritory shape = new MapTerritory("2", "L", null, null, null,
                 new double[] {0, 100, 100, 50, 50, 0},
                 new double[] {0, 0, 50, 50, 100, 100},
-                25, 25, 0x000000, 0x09090B, "territory_neutral", -1, false);
+                25, 25, 0x000000, 0x09090B, "territory_neutral", -1, false, null);
 
         assertTrue(shape.contains(25, 25), "inside the thick part");
         assertTrue(shape.contains(25, 75), "inside the tall part");
@@ -54,12 +54,12 @@ class DynmapParsingTest {
     @Test
     void labelsFallBackToTheNumberWhenTheAreaHasNoName() {
         MapTerritory named = new MapTerritory("129", "Cherry Grove", "Corvus", "Falcon Fury", null,
-                new double[] {0, 1, 1}, new double[] {0, 0, 1}, 0, 0, 0, 0, "territory_owned", -1, false);
+                new double[] {0, 1, 1}, new double[] {0, 0, 1}, 0, 0, 0, 0, "territory_owned", -1, false, null);
         assertEquals("Cherry Grove 129", named.label());
         assertFalse(named.neutral());
 
         MapTerritory nameless = new MapTerritory("7", null, null, null, null,
-                new double[] {0, 1, 1}, new double[] {0, 0, 1}, 0, 0, 0, 0, "territory_neutral", -1, false);
+                new double[] {0, 1, 1}, new double[] {0, 0, 1}, 0, 0, 0, 0, "territory_neutral", -1, false, null);
         assertEquals("#7", nameless.label());
         assertTrue(nameless.neutral());
     }

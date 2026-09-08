@@ -105,7 +105,7 @@ public final class MapDataStore {
     private record StoredTerritory(String number, String areaName, String owner, String alliance,
                                    String mutator, List<Double> xs, List<Double> zs,
                                    double centerX, double centerZ, int fillColor, int strokeColor,
-                                   String icon, int conquestPoints, boolean seat) {
+                                   String icon, int conquestPoints, boolean seat, String bonus) {
     }
 
     private final DynmapApi api;
@@ -368,7 +368,7 @@ public final class MapDataStore {
                     territories.add(new MapTerritory(one.number(), one.areaName(), one.owner(),
                             one.alliance(), one.mutator(), toArray(one.xs()), toArray(one.zs()),
                             one.centerX(), one.centerZ(), one.fillColor(), one.strokeColor(),
-                            one.icon(), one.conquestPoints(), one.seat()));
+                            one.icon(), one.conquestPoints(), one.seat(), one.bonus()));
                 }
                 // Dated deliberately: a restored map should read as old until the network confirms
                 // it, which is what puts the "as of" note on screen instead of a false all-clear.
@@ -391,7 +391,7 @@ public final class MapDataStore {
                     toList(territory.xs()), toList(territory.zs()),
                     territory.centerX(), territory.centerZ(), territory.fillColor(),
                     territory.strokeColor(), territory.icon(), territory.conquestPoints(),
-                    territory.seat()));
+                    territory.seat(), territory.bonus()));
         }
         try {
             storeFor(continent).write(new StoredContinent(stored, snapshot.towns()));

@@ -4,6 +4,9 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.text.Text;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Every colour, size and spacing the Loka Map screen draws with, in one place.
  *
@@ -214,6 +217,42 @@ public final class MapStyle {
 
     public static int smallWidth(TextRenderer textRenderer, Text text) {
         return Math.round(textRenderer.getWidth(text) * SMALL_SCALE);
+    }
+
+    /**
+     * How wide a line of small text may get before it is wrapped.
+     *
+     * <p>A card sizes itself to its widest line, so one long sentence would otherwise stretch it
+     * across the map. Balak's territory bonuses run to a hundred and twenty characters.
+     */
+    public static final int SMALL_WRAP_WIDTH = 150;
+
+    /**
+     * Breaks a sentence into lines that fit {@link #SMALL_WRAP_WIDTH} once scaled down.
+     *
+     * <p>Split on spaces rather than by character: a bonus is prose, and a word cut in half reads as
+     * a rendering fault.
+     */
+    public static List<String> wrapSmall(TextRenderer textRenderer, String text, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return lines;
+        }
+        StringBuilder line = new StringBuilder();
+        for (String word : text.trim().split("\\s+")) {
+            String candidate = line.isEmpty() ? word : line + " " + word;
+            if (!line.isEmpty()
+                    && Math.round(textRenderer.getWidth(candidate) * SMALL_SCALE) > maxWidth) {
+                lines.add(line.toString());
+                line = new StringBuilder(word);
+            } else {
+                line = new StringBuilder(candidate);
+            }
+        }
+        if (!line.isEmpty()) {
+            lines.add(line.toString());
+        }
+        return lines;
     }
 
     public static int smallHeight(TextRenderer textRenderer) {

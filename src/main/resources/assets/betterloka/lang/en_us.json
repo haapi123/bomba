@@ -153,12 +153,11 @@
   "betterloka.town_finder.loading_towns": "Loading the town roster...",
   "betterloka.finder.tab.profile": "Profile",
   "betterloka.finder.tab.month": "Month",
-  "betterloka.finder.split": "By format, last %s fights",
   "betterloka.finder.rivi": "RIVI (%s)",
   "betterloka.finder.conquest": "Conquest (%s)",
   "betterloka.finder.rivi_short": "RIVI fights",
   "betterloka.finder.conquest_short": "Conquest fights",
-  "betterloka.finder.month_of": "%s, from the fights EldritchBot lists",
+  "betterloka.finder.month_of": "%s, every battle fought",
   "betterloka.finder.no_month_fights": "No fights this month.",
   "betterloka.fights.refresh": "Refresh",
   "betterloka.fights.refreshing": "Refreshing...",
@@ -250,5 +249,11 @@
   "betterloka.market.order.cheapest": "cheapest per unit first",
   "betterloka.market.order.dearest": "dearest per unit first",
   "betterloka.market.order.newest": "most recently listed first",
-  "betterloka.market.order.oldest": "longest-standing first"
+  "betterloka.market.order.oldest": "longest-standing first",
+  "betterloka.map.bonus": "Territory bonus",
+  "betterloka.finder.split_all": "Every battle - %s fought",
+  "betterloka.finder.split_indexing": "Every battle - %s so far, reading the archive (%s%%)",
+  "betterloka.finder.indexing_wait": "Reading Loka's battle archive...",
+  "betterloka.finder.no_battles": "No battles on record.",
+  "betterloka.finder.month_detail": "Detail, over the %s fight(s) still published"
 }

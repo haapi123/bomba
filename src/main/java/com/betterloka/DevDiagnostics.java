@@ -45,6 +45,7 @@ public final class DevDiagnostics {
         step(300, () -> { });
 
         step(1, () -> heldPerContinent());
+        step(1, () -> bonusesOnBalak());
         step(1, () -> log("baseline, no screen open"));
         step(40, () -> { });
         step(1, () -> fps("baseline, no screen open"));
@@ -139,11 +140,26 @@ public final class DevDiagnostics {
             click(client().currentScreen, "Search");
         });
         step(200, () -> { });
+        step(1, () -> battleIndex("just after a search"));
+        step(600, () -> { });
+        step(1, () -> battleIndex("30 s later"));
+        step(600, () -> { });
+        step(1, () -> battleIndex("60 s later"));
         step(5, () -> scroll(-4000));
         shot(20, "player-finder-no-alts");
-        step(2, () -> client().setScreen(new FightManagerScreen(null)));
-        step(120, () -> { });
-        shot(20, "perf-fight-manager");
+        step(5, () -> scroll(4000));
+        step(5, () -> scroll(-14));
+        shot(20, "player-finder-split");
+        step(2, () -> click(client().currentScreen, "Month"));
+        step(40, () -> { });
+        shot(20, "player-finder-month");
+        // A Balak hex that carries a bonus, which is the point of this round's map change.
+        step(2, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(5, () -> selectContinent("Balak"));
+        step(60, () -> { });
+        step(5, () -> bringUnderCursor(com.betterloka.map.MapTerritory::hasBonus));
+        step(20, () -> { });
+        shot(20, "map-balak-bonus");
 
         step(2, () -> client().setScreen(null));
         step(60, () -> { });
@@ -179,6 +195,64 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG map {}: {} territories, {} held, {} seats, holders={}",
                     continent.displayName(), snapshot.territories().size(), held, seats, owners);
         }
+    }
+
+    /** Which Balak hexes carry a bonus, and what the parser made of each. */
+    private static void bonusesOnBalak() {
+        var snapshot = BetterLokaClient.mapData().snapshot(com.betterloka.map.Continent.BALAK);
+        int withBonus = 0;
+        for (var territory : snapshot.territories()) {
+            if (territory.hasBonus()) {
+                withBonus++;
+                BetterLoka.LOGGER.info("DIAG bonus #{} ({}): {}", territory.number(),
+                        territory.neutral() ? "neutral" : territory.owner(), territory.bonus());
+            }
+        }
+        BetterLoka.LOGGER.info("DIAG Balak bonuses: {} of {} hexes",
+                withBonus, snapshot.territories().size());
+    }
+
+    /** Switches the map to a named continent by pressing its button. */
+    private static void selectContinent(String name) {
+        click(client().currentScreen, name);
+    }
+
+    /**
+     * Drags the map until a hex the predicate accepts sits under the pointer.
+     *
+     * <p>The card describes what is hovered, and the pointer cannot be moved: GLFW documents
+     * {@code glfwSetCursorPos} as failing silently without input focus, which a headless X server
+     * never grants. So the map is moved instead, through the screen's own press, drag and release.
+     */
+    private static void bringUnderCursor(java.util.function.Predicate<com.betterloka.map.MapTerritory> match) {
+        MinecraftClient client = client();
+        if (!(client.currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+            return;
+        }
+        int[] point = map.devPointAt(match);
+        if (point == null) {
+            BetterLoka.LOGGER.info("DIAG no territory matched");
+            return;
+        }
+        double cursorX = client.mouse.getScaledX(client.getWindow());
+        double cursorY = client.mouse.getScaledY(client.getWindow());
+        map.mouseClicked(new net.minecraft.client.gui.Click(point[0], point[1],
+                new net.minecraft.client.input.MouseInput(0, 0)), false);
+        map.mouseDragged(new net.minecraft.client.gui.Click(cursorX, cursorY,
+                new net.minecraft.client.input.MouseInput(0, 0)),
+                cursorX - point[0], cursorY - point[1]);
+        map.mouseReleased(new net.minecraft.client.gui.Click(cursorX, cursorY,
+                new net.minecraft.client.input.MouseInput(0, 0)));
+        BetterLoka.LOGGER.info("DIAG dragged a bonus hex under the pointer");
+    }
+
+    /** How far the battle archive has been read, and what it says about one player. */
+    private static void battleIndex(String label) {
+        var index = BetterLokaClient.battleIndex();
+        var progress = index.progress();
+        BetterLoka.LOGGER.info("DIAG battle index {}: sweeping={} indexed={}/{} ({}%)", label,
+                progress.sweeping(), progress.battlesIndexed(), progress.battlesTotal(),
+                progress.percent());
     }
 
     private void startTimer() {
