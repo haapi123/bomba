@@ -20,9 +20,11 @@ import com.betterloka.map.WaypointWorldRenderer;
 import com.betterloka.grind.GrindTimer;
 import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
+import com.betterloka.helper.GuiScaleController;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.BattleIndex;
+import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.NameplateKdService;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.towns.TownActivityStore;
@@ -70,6 +72,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static PlayerStatsService stats;
     private static ArenaService arenaStats;
     private static BattleIndex battleIndex;
+    private static NemesisIndex nemesisIndex;
     private static NameplateKdService nameplateKd;
     private static TranslationService translations;
     private static ChatLog chatLog;
@@ -98,6 +101,9 @@ public class BetterLokaClient implements ClientModInitializer {
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
+        // Who killed whom, which only a fight page says. Read a few fights at a time, and kept, so
+        // looking people up deepens the month rather than re-reading it.
+        nemesisIndex = new NemesisIndex(eldritch, configDir().resolve("nemesis.json"));
         nameplateKd = new NameplateKdService(eldritch);
         translations = new TranslationService(transport);
         chatLog = new ChatLog(translations, config);
@@ -127,6 +133,9 @@ public class BetterLokaClient implements ClientModInitializer {
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
         new ShulkerWatcher(grindTimers, config).register();
         new GrindHud(grindTimers, config).register();
+        // The inventory and the hotbar get their own GUI scales. Off by default, and it hands the
+        // player's own setting back on the way out of a world.
+        new GuiScaleController(config).register();
 
         // Loka sends its chat as system messages; signed player chat is captured too so the
         // Translator also works on servers that use it. The whole Text is inspected rather than just
@@ -221,6 +230,11 @@ public class BetterLokaClient implements ClientModInitializer {
     /** Every battle on Loka's books, folded into per-player totals. */
     public static BattleIndex battleIndex() {
         return battleIndex;
+    }
+
+    /** Who has killed whom this conquest month, from the fight pages read so far. */
+    public static NemesisIndex nemesisIndex() {
+        return nemesisIndex;
     }
 
     public static GrindTimers grindTimers() {

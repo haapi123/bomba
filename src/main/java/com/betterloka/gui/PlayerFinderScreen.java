@@ -8,6 +8,7 @@ import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.BattleIndex;
+import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
@@ -41,7 +42,8 @@ public class PlayerFinderScreen extends Screen {
     /** Which view of the same loaded profile is showing. */
     private enum Tab {
         PROFILE("betterloka.finder.tab.profile"),
-        MONTH("betterloka.finder.tab.month");
+        MONTH("betterloka.finder.tab.month"),
+        NEMESIS("betterloka.finder.tab.nemesis");
 
         private final String key;
 
@@ -90,6 +92,10 @@ public class PlayerFinderScreen extends Screen {
     private List<ArenaService.Standing> arenaBest = List.of();
     private boolean arenaLoading;
     private boolean arenaHistoryLoading;
+
+    /** Who has killed whom this conquest month, for the Nemesis tab. */
+    private NemesisIndex.Result nemesis = NemesisIndex.Result.EMPTY;
+    private boolean nemesisLoading;
 
     /** Names this player has gone by, newest first. */
     private List<com.betterloka.stats.NameHistoryService.FormerName> previousNames = List.of();
@@ -147,14 +153,16 @@ public class PlayerFinderScreen extends Screen {
                 .dimensions(left, TOGGLE_ROW_Y, width, TOGGLE_ROW_HEIGHT)
                 .build());
 
-        int half = (width - 4) / 2;
+        Tab[] tabs = Tab.values();
+        int share = (width - 4 * (tabs.length - 1)) / tabs.length;
         int tabX = left;
-        for (Tab value : Tab.values()) {
-            Tab target = value;
-            int thisWidth = value == Tab.MONTH ? left + width - tabX : half;
-            addDrawableChild(ButtonWidget.builder(tabLabel(value), button -> selectTab(target))
+        for (int i = 0; i < tabs.length; i++) {
+            Tab target = tabs[i];
+            // The last one takes whatever the division left over, so the row ends flush.
+            int thisWidth = i == tabs.length - 1 ? left + width - tabX : share;
+            addDrawableChild(ButtonWidget.builder(tabLabel(target), button -> selectTab(target))
                     .dimensions(tabX, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
-            tabX += half + 4;
+            tabX += share + 4;
         }
 
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
@@ -175,6 +183,30 @@ public class PlayerFinderScreen extends Screen {
         tab = target;
         scrollPanel.reset();
         clearAndInit();
+    }
+
+    /**
+     * Reads the kill tables for this player's fights in the current conquest month.
+     *
+     * <p>Off the profile's critical path: it is a fight page each, and the headline should not wait
+     * on them. Whatever has been read before is already counted, so a second look at the same
+     * player is instant and a look at somebody else deepens the same month.
+     */
+    private void loadNemesis(PlayerProfile loaded, int generation) {
+        NemesisIndex index = BetterLokaClient.nemesisIndex();
+        String name = loaded.name();
+        List<FightSummary> fights = loaded.recentFights();
+        // What is already known, drawn at once; the fetch fills in behind it.
+        nemesis = index.of(name, NemesisIndex.monthKey(LocalDate.now()));
+        java.util.concurrent.CompletableFuture
+                .supplyAsync(() -> index.lookup(name, fights, LocalDate.now()),
+                        BetterLokaClient.lokaBulkExecutor())
+                .whenComplete((result, throwable) -> applyOnClientThread(generation, () -> {
+                    nemesisLoading = false;
+                    if (throwable == null && result != null) {
+                        nemesis = result;
+                    }
+                }));
     }
 
     private Text kdToggleLabel() {
@@ -199,6 +231,8 @@ public class PlayerFinderScreen extends Screen {
         arenaHistoryLoading = true;
         previousNames = List.of();
         identityLoading = true;
+        nemesis = NemesisIndex.Result.EMPTY;
+        nemesisLoading = true;
         scrollPanel.reset();
         int generation = ++searchGeneration;
 
@@ -249,6 +283,9 @@ public class PlayerFinderScreen extends Screen {
             } else {
                 profile = result;
                 error = null;
+                // The fight rows are in by now, and their ids are what the kill tables are read
+                // from — one fight page names the killer of every death in it.
+                loadNemesis(result, generation);
             }
         }));
     }
@@ -331,9 +368,11 @@ public class PlayerFinderScreen extends Screen {
             context.drawTextWithShadow(this.textRenderer, error, left, y + 4, GuiTheme.BAD);
             used = 20;
         } else if (profile != null) {
-            used = (tab == Tab.MONTH
-                    ? renderMonth(context, left, y, cardWidth)
-                    : renderProfile(context, left, y, cardWidth)) - y;
+            used = (switch (tab) {
+                case MONTH -> renderMonth(context, left, y, cardWidth);
+                case NEMESIS -> renderNemesis(context, left, y, cardWidth);
+                case PROFILE -> renderProfile(context, left, y, cardWidth);
+            }) - y;
         } else {
             context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.hint"),
                     left, y + 4, GuiTheme.MUTED);
@@ -843,6 +882,77 @@ public class PlayerFinderScreen extends Screen {
         });
 
         return y;
+    }
+
+    /**
+     * Who this player is the nemesis of, and who they are two kills away from.
+     *
+     * <p>A nemesis is whoever has killed you most this conquest month, and equalling the leader
+     * takes the title. Both halves come from the fight pages read so far: EldritchBot lists a
+     * player's last ten fights and publishes no index of all of them, so the counts are over the
+     * fights it still publishes rather than the whole month — and the header says how many that is,
+     * rather than letting them read as a complete tally.
+     */
+    private int renderNemesis(DrawContext context, int left, int top, int width) {
+        int inner = width - CARD_PADDING * 2;
+        int y = top;
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.nemesis_of", monthName()),
+                left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
+
+        if (nemesis.nemesisOf().isEmpty()) {
+            y = card(context, left, y, width, 1, (x, rowY) ->
+                    context.drawTextWithShadow(this.textRenderer,
+                            label(nemesisLoading ? "betterloka.finder.loading"
+                                    : "betterloka.finder.nemesis_none"), x, rowY, GuiTheme.MUTED));
+        } else {
+            int rows = nemesis.nemesisOf().size();
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+            GuiTheme.panel(context, left, y, width, height);
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+            for (NemesisIndex.Tally tally : nemesis.nemesisOf()) {
+                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, tally.name(),
+                        Text.translatable("betterloka.finder.nemesis_kills", tally.kills()).getString(),
+                        GuiTheme.GOOD);
+                textY += ROW_HEIGHT;
+            }
+            y += height + CARD_GAP;
+        }
+
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.nemesis_chase", NemesisIndex.MAX_KILLS_BEHIND),
+                left, y + 2, GuiTheme.MUTED);
+        y += ROW_HEIGHT + 3;
+
+        if (nemesis.couldBecome().isEmpty()) {
+            y = card(context, left, y, width, 1, (x, rowY) ->
+                    context.drawTextWithShadow(this.textRenderer,
+                            label(nemesisLoading ? "betterloka.finder.loading"
+                                    : "betterloka.finder.nemesis_chase_none"), x, rowY, GuiTheme.MUTED));
+        } else {
+            int rows = nemesis.couldBecome().size();
+            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
+            GuiTheme.panel(context, left, y, width, height);
+            int textX = left + CARD_PADDING;
+            int textY = y + CARD_PADDING;
+            for (NemesisIndex.Chase chase : nemesis.couldBecome()) {
+                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, chase.name(),
+                        Text.translatable("betterloka.finder.nemesis_needed", chase.needed()).getString(),
+                        GuiTheme.ACCENT);
+                textY += ROW_HEIGHT;
+            }
+            y += height + CARD_GAP;
+        }
+
+        // How deep the month was read. Without it the two lists read as the whole month, and they
+        // are not: the fights are only the ones EldritchBot still publishes.
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.finder.nemesis_source", nemesis.fightsRead()),
+                left, y + 2, GuiTheme.MUTED);
+        return y + ROW_HEIGHT + CARD_GAP;
     }
 
     private static String monthName() {

@@ -284,11 +284,14 @@ then it says so rather than showing nothing.
 ![Shulker timer](docs/grinder-shulker.png)
 
 Countdowns for the things worth grinding. The timers live outside the screen, so they keep running
-with the menu shut — a seventeen-minute countdown that only advanced while you watched it would be no
+with the menu shut — a twenty-minute countdown that only advanced while you watched it would be no
 use at all.
 
-- **Shulker Timer** — 17 minutes, started by the box in the corner of the card. With **auto-start**
-  on it also starts by itself when a shulker you hit dies.
+- **Shulker Timer** — 20 minutes, started by the box in the corner of the card. With **auto-start**
+  on it also starts by itself when a shulker you hit dies — the first one, that is: killing more
+  while the countdown runs does not restart it, since the twenty minutes are counting down to the
+  next spawn and another kill does not move that moment. Once it reaches zero the next kill begins
+  a fresh cycle.
 - **Glowstone** — 3 hours, adjustable in five-minute steps with the `-` and `+` buttons.
 
 Both have a **keybind** (`G` and `H` by default, rebindable in Options → Controls) that starts the

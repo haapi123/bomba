@@ -87,22 +87,18 @@ public final class GuiTheme {
     }
 
     /**
-     * K/D colour, matching how Loka players already read the number: below 1.0 is red, 1.0 and above
-     * is yellow, and 3.0 and above is gold.
+     * K/D colour for a nameplate, from the one table in {@link KdColors}.
      *
      * <p>Returned without an alpha channel, which is what {@code Text.withColor} takes. Screen
      * drawing wants ARGB — use {@link #ratioColor(double)} there, or the text renders invisible.
      */
     public static int nameplateRatioColor(double ratio) {
-        if (ratio >= 3.0) {
-            return 0xFFD700;
-        }
-        return ratio >= 1.0 ? 0xFFFF55 : 0xFF5555;
+        return KdColors.getKdColor(ratio);
     }
 
-    /** The same K/D colour as {@link #nameplateRatioColor}, opaque, for drawing into a screen. */
+    /** The same K/D colour, opaque, for drawing into a screen. */
     public static int ratioColor(double ratio) {
-        return 0xFF000000 | nameplateRatioColor(ratio);
+        return KdColors.getKdColorArgb(ratio);
     }
 
     /** The colour a trait chip is drawn in: green, yellow, red. */

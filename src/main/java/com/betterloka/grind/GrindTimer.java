@@ -9,6 +9,21 @@ import java.util.Locale;
  * looking at it — a timer that only advances while its screen is open would be worse than none.
  */
 public final class GrindTimer {
+    /**
+     * Where a timer is in its cycle.
+     *
+     * <p>A countdown that has run out is {@link #IDLE} again, not finished-and-stuck: the next
+     * thing that would start it should start it. That distinction is the whole point of naming the
+     * state — the shulker timer used to restart on every kill, so a good run of shulkers meant the
+     * countdown never actually counted down.
+     */
+    public enum Cycle {
+        /** Not counting: never started, stopped, or run out. Ready to begin a cycle. */
+        IDLE,
+        /** Counting down. Anything that would start it again is ignored. */
+        RUNNING
+    }
+
     private volatile long durationMillis;
     private volatile long endsAt;
 
@@ -21,9 +36,30 @@ public final class GrindTimer {
         this.durationMillis = Math.max(1000L, durationMillis);
     }
 
-    /** Starts, or restarts, the countdown from now. */
+    /** Starts, or restarts, the countdown from now. What a keybind press does. */
     public void start() {
         endsAt = System.currentTimeMillis() + durationMillis;
+    }
+
+    public Cycle cycle() {
+        return running() ? Cycle.RUNNING : Cycle.IDLE;
+    }
+
+    /**
+     * Begins a cycle only if one is not already under way.
+     *
+     * <p>What an automatic trigger calls. A shulker killed while the countdown is running is not a
+     * reason to start it over — the twenty minutes are counting down to when the next one spawns,
+     * and killing another shulker in the meantime does not move that moment.
+     *
+     * @return true if this call began a new cycle
+     */
+    public boolean startIfIdle() {
+        if (cycle() == Cycle.RUNNING) {
+            return false;
+        }
+        start();
+        return true;
     }
 
     public void stop() {

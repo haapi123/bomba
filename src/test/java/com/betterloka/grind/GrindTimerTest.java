@@ -6,57 +6,80 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * The cycle rule the shulker timer turns on.
+ *
+ * <p>Auto-start used to call {@code start()} on every kill, so a good run of shulkers kept pushing
+ * the end time forward and the countdown never reached zero for anybody grinding properly.
+ */
 class GrindTimerTest {
     @Test
-    void showsMinutesBelowAnHourAndHoursAboveIt() {
-        assertEquals("17:00", new GrindTimer(GrindTimers.SHULKER_MILLIS).durationText());
-        assertEquals("3:00:00", new GrindTimer(GrindTimers.GLOWSTONE_MILLIS).durationText());
+    void theShulkerTimerRunsForTwentyMinutes() {
+        assertEquals(20 * 60 * 1000L, GrindTimers.SHULKER_MILLIS);
+        assertEquals("20:00", new GrindTimer(GrindTimers.SHULKER_MILLIS).durationText());
     }
 
     @Test
-    void aFreshTimerIsNeitherRunningNorFinished() {
-        GrindTimer timer = new GrindTimer(60_000L);
-        assertFalse(timer.running());
-        assertFalse(timer.finished());
-        assertEquals(0f, timer.progress());
+    void aFreshTimerIsIdle() {
+        assertEquals(GrindTimer.Cycle.IDLE, new GrindTimer(60_000).cycle());
     }
 
     @Test
-    void startingMakesItRunAndStoppingClearsIt() {
-        GrindTimer timer = new GrindTimer(60_000L);
-        timer.start();
-        assertTrue(timer.running());
-        assertFalse(timer.finished());
+    void theFirstKillBeginsACycle() {
+        GrindTimer timer = new GrindTimer(60_000);
 
-        timer.stop();
-        assertFalse(timer.running());
-        assertFalse(timer.finished());
+        assertTrue(timer.startIfIdle(), "the first kill starts the countdown");
+        assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
+    }
+
+    /** The fault this replaces: every kill pushed the end time forward. */
+    @Test
+    void furtherKillsDuringACycleDoNotRestartIt() throws Exception {
+        GrindTimer timer = new GrindTimer(60_000);
+        timer.startIfIdle();
+        long afterFirst = timer.remainingMillis();
+
+        Thread.sleep(30);
+        assertFalse(timer.startIfIdle(), "a kill mid-cycle must not begin a new one");
+        assertTrue(timer.remainingMillis() < afterFirst,
+                "the countdown must have kept counting down, not been reset");
+        assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
     }
 
     @Test
-    void aTimerThatHasRunOutReadsAsFinishedRatherThanRunning() {
-        GrindTimer timer = new GrindTimer(1000L);
-        timer.setDurationMillis(-5);
-        timer.start();
-        // setDurationMillis clamps to a second, so this has to actually elapse.
-        while (timer.remainingMillis() > 0) {
-            Thread.onSpinWait();
-        }
-        assertFalse(timer.running());
+    void aKillAfterTheCountdownRunsOutStartsAFreshCycle() throws Exception {
+        GrindTimer timer = new GrindTimer(1000);
+        timer.setDurationMillis(1000);
+        timer.startIfIdle();
+
+        Thread.sleep(1100);
+        assertEquals(GrindTimer.Cycle.IDLE, timer.cycle(), "a timer that has run out is idle again");
         assertTrue(timer.finished());
-        assertEquals("0:00", timer.remainingText());
+
+        assertTrue(timer.startIfIdle(), "the next kill begins a new cycle");
+        assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
     }
 
     @Test
-    void changingTheLengthDoesNotDisturbARunningTimer() {
-        GrindTimer timer = new GrindTimer(60_000L);
+    void aStoppedTimerIsIdleAndCanStartAgain() {
+        GrindTimer timer = new GrindTimer(60_000);
+        timer.startIfIdle();
+        timer.stop();
+
+        assertEquals(GrindTimer.Cycle.IDLE, timer.cycle());
+        assertTrue(timer.startIfIdle());
+    }
+
+    /** The keybind is a deliberate press, so it still restarts a running countdown. */
+    @Test
+    void startingByHandStillRestartsARunningTimer() throws Exception {
+        GrindTimer timer = new GrindTimer(60_000);
         timer.start();
-        long before = timer.remainingMillis();
-        timer.setDurationMillis(3 * 60 * 60 * 1000L);
-        assertTrue(timer.remainingMillis() <= before);
-        assertTrue(timer.running());
-        // The new length only takes effect on the next start.
+        Thread.sleep(30);
+        long beforeRestart = timer.remainingMillis();
+
         timer.start();
-        assertTrue(timer.remainingMillis() > 60_000L);
+
+        assertTrue(timer.remainingMillis() > beforeRestart, "a keybind press restarts the count");
     }
 }

@@ -61,6 +61,15 @@ public final class BetterLokaConfig {
     /** Draw the glowstone countdown in the corner of the screen while it runs. */
     private boolean glowstoneHudEnabled = true;
 
+    /** Whether to run the inventory and hotbar at their own GUI scales. Off unless asked for. */
+    private boolean guiScaleEnabled = false;
+
+    /** GUI scale while an inventory is open. 4 is roomy enough to hit a slot without aiming. */
+    private int inventoryGuiScale = 4;
+
+    /** GUI scale the rest of the time, which is what sizes the hotbar. */
+    private int hotbarGuiScale = 3;
+
     private transient Path file;
 
     public static BetterLokaConfig load(Path file) {
@@ -187,6 +196,39 @@ public final class BetterLokaConfig {
     public void setShulkerHudEnabled(boolean shulkerHudEnabled) {
         this.shulkerHudEnabled = shulkerHudEnabled;
         save();
+    }
+
+    public boolean guiScaleEnabled() {
+        return guiScaleEnabled;
+    }
+
+    public void setGuiScaleEnabled(boolean guiScaleEnabled) {
+        this.guiScaleEnabled = guiScaleEnabled;
+        save();
+    }
+
+    /** Clamped to what Minecraft's own option offers: Auto, or 1 to 4. */
+    public int inventoryGuiScale() {
+        return clampScale(inventoryGuiScale);
+    }
+
+    public void setInventoryGuiScale(int scale) {
+        this.inventoryGuiScale = clampScale(scale);
+        save();
+    }
+
+    public int hotbarGuiScale() {
+        return clampScale(hotbarGuiScale);
+    }
+
+    public void setHotbarGuiScale(int scale) {
+        this.hotbarGuiScale = clampScale(scale);
+        save();
+    }
+
+    /** Zero is Auto; anything outside the range a hand-edited file might hold is brought back in. */
+    private static int clampScale(int scale) {
+        return Math.max(0, Math.min(4, scale));
     }
 
     public boolean glowstoneHudEnabled() {

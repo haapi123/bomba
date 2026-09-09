@@ -37,6 +37,24 @@ public record TownLogEvent(long at, Kind kind, String townId, String townName, S
                 otherTown);
     }
 
+    /**
+     * A town that appeared in Loka's deleted list since the last poll, with no territory attached.
+     *
+     * <p>The territory-bound form only ever saw a town that left dangling claims behind it, and Loka
+     * clears those — so a town whose land was reclaimed before anyone looked was invisible for good.
+     * This is the town falling, which is the thing being watched for; the land it leaves is a
+     * separate question with its own list.
+     */
+    public static TownLogEvent townDeleted(String townId, String townName, String world) {
+        return new TownLogEvent(System.currentTimeMillis(), Kind.TOWN_FELL, townId, townName,
+                world, null, null, 0, 0, 0, null);
+    }
+
+    /** Whether this names a particular territory, or only the town. */
+    public boolean hasTerritory() {
+        return num != null && !num.isBlank();
+    }
+
     public String continent() {
         return Territory.continentOf(world);
     }

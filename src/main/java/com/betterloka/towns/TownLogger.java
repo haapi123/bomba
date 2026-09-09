@@ -10,7 +10,6 @@ import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -29,11 +28,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * longer has a record of means that town was deleted or collapsed, and that is what gets reported,
  * with the continent, the territory number and the beacon coordinates.
  *
- * <p>Loka leaves the dead town's id on its territories rather than clearing them, so a fallen town
- * is visible in a single sweep without having to have been watching when it happened: the whole
- * standing backlog shows up on the first poll. Naming it takes the deleted-towns listing, because a
- * deleted town 404s on a lookup by id — that listing is fetched rarely and kept, since it only grows
- * when a town dies.
+ * <p>A town falling is found in Loka's deleted-town listing: the listing is diffed against the one
+ * held from last time, and anything new in it fell between the two polls. That is the dated answer,
+ * and the only one there can be — Loka publishes no deletion date, so a fallen town's date is when
+ * it was seen to go rather than when it went.
+ *
+ * <p>The dangling claims a dead town leaves are a second, undated source. Loka does not clear a
+ * deleted town's territories straight away, so its id sits on them until it does; that finds towns
+ * nobody was watching for, which on a fresh install is the whole of the history. It cannot be the
+ * only source, though, and used to be: a town whose land Loka had already reclaimed left no trace at
+ * all and could never appear.
  */
 public final class TownLogger {
     /** The deleted-town roster is forty small requests, and only changes when a town dies. */
@@ -63,6 +67,8 @@ public final class TownLogger {
     /** Who is allied with whom right now; the history behind it lives in the store. */
     private volatile List<LokaAlliance> alliances = List.of();
     private volatile long deletedTownsLoadedAt;
+    /** How many towns the listing held last time, so a change in it is the signal to re-read. */
+    private volatile int deletedTownCount;
 
     private volatile State state = State.OFF;
     private volatile long lastPollAt;
@@ -81,6 +87,7 @@ public final class TownLogger {
         snapshot = store.territories();
         deletedTowns = store.deletedTowns();
         deletedTownsLoadedAt = store.deletedTownsLoadedAt();
+        deletedTownCount = deletedTowns.size();
         state = config.townLogEnabled() ? State.IDLE : State.OFF;
 
         // Five minutes' grace before the first sweep. Launching the game already saturates a
@@ -117,11 +124,11 @@ public final class TownLogger {
             } catch (ApiException e) {
                 lastError = e.getMessage();
                 state = State.FAILED;
-                BetterLoka.LOGGER.debug("Territory sweep failed", e);
+                BetterLoka.LOGGER.warn("[betterloka] territory sweep failed", e);
             } catch (RuntimeException e) {
                 lastError = e.toString();
                 state = State.FAILED;
-                BetterLoka.LOGGER.warn("Territory sweep failed", e);
+                BetterLoka.LOGGER.warn("[betterloka] territory sweep failed", e);
             } finally {
                 lastPollAt = System.currentTimeMillis();
                 polling.set(false);
@@ -140,15 +147,32 @@ public final class TownLogger {
             throw new ApiException("The territory sweep came back empty", false);
         }
 
-        refreshDeletedTowns();
+        List<TownLogEvent> fell = refreshDeletedTowns();
         refreshAlliances();
 
         List<TownLogEvent> events = new ArrayList<>();
+        // A town appearing in Loka's deleted listing is the town falling, and is dated when it was
+        // seen to happen. The dangling-claim sweep below is the separate question of whose land is
+        // still lying about, and its events carry no date worth reading.
+        events.addAll(fell);
         events.addAll(fallenTowns(now));
         events.addAll(handovers(now));
 
         snapshot = now;
         store.record(now, events, deletedTowns, deletedTownsLoadedAt);
+        BetterLoka.LOGGER.info("[betterloka] town sweep: {} territories, {} deleted towns on record,"
+                        + " {} events kept, newest fallen {}",
+                now.size(), deletedTowns.size(), events.size(), newestFallenText());
+    }
+
+    /** The newest fallen town and its date, for the diagnostic line. */
+    private String newestFallenText() {
+        List<TownLogEvent> fallen = newestFirst(fallen());
+        if (fallen.isEmpty()) {
+            return "none";
+        }
+        TownLogEvent newest = fallen.get(0);
+        return newest.townName() + " @ " + java.time.Instant.ofEpochMilli(newest.at());
     }
 
     /**
@@ -254,10 +278,9 @@ public final class TownLogger {
      * hour is the price of naming a town within the hour it fell, and the screen has a button for
      * when that is not soon enough.
      */
-    private void refreshDeletedTowns() {
-        if (System.currentTimeMillis() - deletedTownsLoadedAt <= DELETED_INDEX_TTL_MILLIS
-                && !deletedTowns.isEmpty()) {
-            return;
+    private List<TownLogEvent> refreshDeletedTowns() {
+        if (!deletedListChanged()) {
+            return List.of();
         }
         try {
             Map<String, LokaTown> deleted = new HashMap<>();
@@ -266,13 +289,77 @@ public final class TownLogger {
             for (int page = 1; page < first.totalPages(); page++) {
                 collect(loka.fetchDeletedTownPage(page), deleted);
             }
-            if (!deleted.isEmpty()) {
-                deletedTowns = Map.copyOf(deleted);
-                deletedTownsLoadedAt = System.currentTimeMillis();
+            if (deleted.isEmpty()) {
+                BetterLoka.LOGGER.warn(
+                        "[betterloka] the deleted-town listing came back empty; keeping the {} we had",
+                        deletedTowns.size());
+                return List.of();
+            }
+
+            List<TownLogEvent> fell = newlyDeleted(deleted);
+            deletedTowns = Map.copyOf(deleted);
+            deletedTownsLoadedAt = System.currentTimeMillis();
+            deletedTownCount = deleted.size();
+            BetterLoka.LOGGER.info(
+                    "[betterloka] deleted towns refreshed: {} on record, {} fell since the last poll",
+                    deleted.size(), fell.size());
+            return fell;
+        } catch (ApiException e) {
+            // Loudly: a listing that silently stops refreshing is exactly how this went unnoticed.
+            lastError = e.getMessage();
+            BetterLoka.LOGGER.warn("[betterloka] could not refresh the deleted town list", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Whether the listing is worth re-reading.
+     *
+     * <p>A town falling changes nothing in the territory data, so the count is the only cheap signal
+     * that one has: one request against the forty a full listing costs. The hourly age is a backstop
+     * for the case where a town falls and another is created between two polls, leaving the count
+     * unchanged.
+     */
+    private boolean deletedListChanged() {
+        if (deletedTowns.isEmpty()) {
+            return true;
+        }
+        try {
+            int count = loka.countDeletedTowns();
+            if (count >= 0 && count != deletedTownCount) {
+                return true;
             }
         } catch (ApiException e) {
-            BetterLoka.LOGGER.debug("Could not refresh the deleted town list", e);
+            BetterLoka.LOGGER.debug("Could not count deleted towns", e);
         }
+        return System.currentTimeMillis() - deletedTownsLoadedAt > DELETED_INDEX_TTL_MILLIS;
+    }
+
+    /**
+     * The towns in {@code deleted} that were not there last time.
+     *
+     * <p>This is the fix for the thing that made the list wrong. A fallen town used to be found by
+     * the claims it left behind, so one whose land Loka had already reclaimed — Drovath, on the day
+     * this was reported — could never appear at all, while one whose claims still dangle stayed on
+     * the list for ever wearing the date the mod first noticed it rather than the date it fell.
+     *
+     * <p>The first run seeds the baseline and reports nothing: 826 towns have been deleted over the
+     * server's life, and none of them fell today.
+     */
+    private List<TownLogEvent> newlyDeleted(Map<String, LokaTown> deleted) {
+        if (deletedTowns.isEmpty()) {
+            BetterLoka.LOGGER.info("[betterloka] first deleted-town listing: {} towns taken as the "
+                    + "baseline, none reported as having just fallen", deleted.size());
+            return List.of();
+        }
+        List<TownLogEvent> fell = new ArrayList<>();
+        for (Map.Entry<String, LokaTown> entry : deleted.entrySet()) {
+            if (!deletedTowns.containsKey(entry.getKey())) {
+                LokaTown town = entry.getValue();
+                fell.add(TownLogEvent.townDeleted(town.id(), town.name(), town.world()));
+            }
+        }
+        return fell;
     }
 
     private static void collect(LokaApi.TownPage page, Map<String, LokaTown> into) {
@@ -292,15 +379,37 @@ public final class TownLogger {
         return name != null ? name : townId;
     }
 
-    /** Every territory whose holding town no longer exists, newest sweep first. */
+    /**
+     * The towns that have fallen, one row each.
+     *
+     * <p>Two sources, and the order between them matters. A town seen to appear in Loka's deleted
+     * listing is dated when that happened, and those come first. Behind them are the towns found by
+     * the claims they left dangling, which have no honest date — they were already gone when the mod
+     * first looked — but are worth showing, because on a fresh install they are the only history
+     * there is.
+     *
+     * <p>One entry per town: a town that left six territories behind used to be six rows.
+     */
     public List<TownLogEvent> fallen() {
-        List<TownLogEvent> fallen = new ArrayList<>();
+        Map<String, TownLogEvent> byTown = new LinkedHashMap<>();
         for (TownLogEvent event : store.events()) {
-            if (event.kind().isTownGone()) {
-                fallen.add(event);
+            if (!event.kind().isTownGone()) {
+                continue;
+            }
+            TownLogEvent held = byTown.get(event.townId());
+            // A dated sighting beats a standing claim, and the earliest sighting beats a later one.
+            if (held == null
+                    || (!held.hasTerritory() == !event.hasTerritory() && event.at() < held.at())
+                    || (held.hasTerritory() && !event.hasTerritory())) {
+                byTown.put(event.townId(), event);
             }
         }
-        return fallen;
+        return List.copyOf(byTown.values());
+    }
+
+    /** Whether a fallen town was watched falling, or merely found already gone. */
+    public boolean wasSeenFalling(TownLogEvent event) {
+        return !event.hasTerritory();
     }
 
     public List<TownLogEvent> events() {
@@ -390,9 +499,18 @@ public final class TownLogger {
     }
 
     /** @return the events, newest first. */
+    /**
+     * Newest first, by when it happened.
+     *
+     * <p>This used to reverse the list instead of sorting it, which put it in whatever order the
+     * events had been appended — and the first sweep appends every standing fallen town at once, in
+     * the alphabetical order {@link FallenTowns#detect} returns them in. So "newest" was really
+     * "last alphabetically", which is how a town that fell two days ago sat above one that fell
+     * today. Sorted on the timestamp, and stable, so events from one sweep keep their own order.
+     */
     public static List<TownLogEvent> newestFirst(List<TownLogEvent> events) {
         List<TownLogEvent> ordered = new ArrayList<>(events);
-        Collections.reverse(ordered);
+        ordered.sort(Comparator.comparingLong(TownLogEvent::at).reversed());
         return ordered;
     }
 }

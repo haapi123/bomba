@@ -250,13 +250,23 @@ public class TownLoggerScreen extends Screen {
             context.drawTextWithShadow(this.textRenderer, headline, textX, textY,
                     fell ? GuiTheme.BAD : GuiTheme.TEXT);
 
-            String when = TimeFormat.ago(event.at());
+            // A town found by the claims it left behind was already gone when the mod first looked,
+            // so its date is when it was noticed rather than when it fell. Saying which is which
+            // beats printing a date that reads like a fact and is not one.
+            boolean dated = !fell || !event.hasTerritory();
+            String when = dated ? TimeFormat.ago(event.at())
+                    : Text.translatable("betterloka.town_log.already_gone").getString();
             context.drawTextWithShadow(this.textRenderer, when,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(when), textY, GuiTheme.MUTED);
+                    left + width - CARD_PADDING - this.textRenderer.getWidth(when), textY,
+                    dated ? GuiTheme.MUTED : GuiTheme.ACCENT);
 
-            // The line the whole module exists for: where the territory was.
-            String where = Text.translatable("betterloka.town_log.where", event.continent(),
-                    event.num(), event.coordinates()).getString();
+            // The line the whole module exists for: where the territory was. A town seen falling
+            // names no territory — the fall is the event, and its land is a separate question.
+            String where = event.hasTerritory()
+                    ? Text.translatable("betterloka.town_log.where", event.continent(),
+                            event.num(), event.coordinates()).getString()
+                    : Text.translatable("betterloka.town_log.town_gone",
+                            event.continent() == null ? "?" : event.continent()).getString();
             context.drawTextWithShadow(this.textRenderer,
                     this.textRenderer.trimToWidth(where, inner - 60), textX, textY + ROW_HEIGHT,
                     fell ? GuiTheme.TEXT : GuiTheme.MUTED);

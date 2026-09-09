@@ -14,7 +14,7 @@ import net.minecraft.util.Formatting;
 /**
  * Timers for the things worth grinding on Loka.
  *
- * <p>The timers live outside the screen, so shutting the GUI does not stop them — a seventeen minute
+ * <p>The timers live outside the screen, so shutting the GUI does not stop them — a twenty minute
  * countdown that only ran while you were looking at it would be no use at all.
  */
 public class LokaGrinderScreen extends Screen {

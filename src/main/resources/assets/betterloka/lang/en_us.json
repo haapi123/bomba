@@ -255,5 +255,21 @@
   "betterloka.finder.split_indexing": "Every battle - %s so far, reading the archive (%s%%)",
   "betterloka.finder.indexing_wait": "Reading Loka's battle archive...",
   "betterloka.finder.no_battles": "No battles on record.",
-  "betterloka.finder.month_detail": "Detail, over the %s fight(s) still published"
+  "betterloka.finder.month_detail": "Detail, over the %s fight(s) still published",
+  "betterloka.town_log.already_gone": "already gone",
+  "betterloka.town_log.town_gone": "Town deleted - %s",
+  "betterloka.finder.tab.nemesis": "Nemesis",
+  "betterloka.finder.nemesis_of": "Nemesis of - %s",
+  "betterloka.finder.nemesis_none": "Nobody's nemesis this month.",
+  "betterloka.finder.nemesis_kills": "%s kills",
+  "betterloka.finder.nemesis_chase": "Could become nemesis of (within %s kills)",
+  "betterloka.finder.nemesis_chase_none": "Nobody within reach.",
+  "betterloka.finder.nemesis_needed": "%s more kills needed",
+  "betterloka.finder.nemesis_source": "Over the %s fight(s) EldritchBot still publishes",
+  "betterloka.helper.gui_scale": "GUI scale",
+  "betterloka.helper.gui_scale_toggle": "Separate inventory scale: %s",
+  "betterloka.helper.inventory_scale": "Inventory: %s",
+  "betterloka.helper.hotbar_scale": "Hotbar: %s",
+  "betterloka.helper.gui_scale_hint": "Applied on opening a container, restored on closing it.",
+  "betterloka.helper.gui_scale_off": "Off - the game's own GUI scale is used."
 }

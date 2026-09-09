@@ -141,6 +141,43 @@ public final class DevDiagnostics {
         });
         step(200, () -> { });
         step(1, () -> battleIndex("just after a search"));
+        step(400, () -> { });
+        step(2, () -> click(client().currentScreen, "Nemesis"));
+        step(60, () -> { });
+        shot(20, "player-finder-nemesis");
+        step(2, () -> click(client().currentScreen, "Profile"));
+        step(2, () -> client().setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
+        step(20, () -> { });
+        shot(20, "loka-helper");
+        // Set outright rather than toggled: the config persists between runs, so a toggle would
+        // turn it off on the second one and the check below would pass for the wrong reason.
+        step(2, () -> {
+            BetterLokaClient.config().setGuiScaleEnabled(true);
+            // 1 and 2 rather than the 3 and 4 a player would pick: the test window is 854x480 and
+            // caps at 2, so larger values both clamp to the same number and prove nothing.
+            BetterLokaClient.config().setInventoryGuiScale(2);
+            BetterLokaClient.config().setHotbarGuiScale(1);
+            client().setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+        });
+        step(20, () -> { });
+        shot(20, "loka-helper-on");
+        // The point of the feature: the scale has to actually move when a container opens, and
+        // come back when it shuts.
+        step(2, () -> client().setScreen(null));
+        step(20, () -> guiScale("no screen open (hotbar)"));
+        step(2, () -> openInventory());
+        step(20, () -> guiScale("inventory open"));
+        shot(10, "gui-scale-inventory");
+        step(2, () -> client().setScreen(null));
+        step(20, () -> guiScale("inventory closed again"));
+        step(2, () -> client().setScreen(new com.betterloka.gui.TownLoggerScreen(null)));
+        step(60, () -> { });
+        shot(20, "town-logger");
+        step(2, () -> client().setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> {
+            type(client().currentScreen, "haapi");
+            click(client().currentScreen, "Search");
+        });
         step(600, () -> { });
         step(1, () -> battleIndex("30 s later"));
         step(600, () -> { });
@@ -244,6 +281,34 @@ public final class DevDiagnostics {
         map.mouseReleased(new net.minecraft.client.gui.Click(cursorX, cursorY,
                 new net.minecraft.client.input.MouseInput(0, 0)));
         BetterLoka.LOGGER.info("DIAG dragged a bonus hex under the pointer");
+    }
+
+    /**
+     * What the GUI scale is set to, what was asked for, and what the window can actually show.
+     *
+     * <p>The three differ on a small display: the window caps the scale, exactly as Minecraft's own
+     * option does, so a 854x480 test window shows 2 whether 3 or 4 was asked for.
+     */
+    private static void guiScale(String label) {
+        var window = client().getWindow();
+        BetterLoka.LOGGER.info(
+                "DIAG gui scale {}: option={} screen={} | wanted inv={} hotbar={} | window {}x{}"
+                        + " supports up to {}",
+                label, client().options.getGuiScale().getValue(),
+                client().currentScreen == null ? "none"
+                        : client().currentScreen.getClass().getSimpleName(),
+                BetterLokaClient.config().inventoryGuiScale(),
+                BetterLokaClient.config().hotbarGuiScale(),
+                window.getWidth(), window.getHeight(),
+                window.calculateScaleFactor(4, client().forcesUnicodeFont()));
+    }
+
+    /** Opens the player's own inventory, which is the screen the inventory scale is for. */
+    private static void openInventory() {
+        if (client().player != null) {
+            client().setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(
+                    client().player));
+        }
     }
 
     /** How far the battle archive has been read, and what it says about one player. */

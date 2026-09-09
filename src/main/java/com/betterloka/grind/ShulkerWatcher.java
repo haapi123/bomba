@@ -75,8 +75,11 @@ public final class ShulkerWatcher {
                 }
             }
 
+            // Only the kill that begins a cycle starts the clock. Killing more shulkers while it
+            // runs is the normal way to grind, and restarting on each one meant the countdown never
+            // reached zero for anybody who was actually any good at it.
             if (died && config.shulkerAutoStart()) {
-                timers.shulker().start();
+                timers.shulker().startIfIdle();
             }
         });
     }

@@ -255,6 +255,69 @@ public final class EldritchApi {
                 intOf(line, "closeCalls"));
     }
 
+    /** One player killing another, once. */
+    public record Kill(String killer, String victim) {
+    }
+
+    /**
+     * Who killed whom in one fight.
+     *
+     * <p>Each player's {@code deathInfo} names the player who did it:
+     * {@code {"killedBy":"Direct1mpact","playerName":"7sew","time":15.01}}. It is the only place on
+     * either service that attributes a kill to a person — Loka's battle records count kills and
+     * deaths per player and never say who they were against — so it is the whole basis of Nemesis.
+     */
+    public List<Kill> fetchKills(String fightId) throws ApiException {
+        return parseKills(transport.get(BASE_URL + "/fight?id=" + encode(fightId), true));
+    }
+
+    /** Package-visible so the parser can be tested without HTTP. */
+    static List<Kill> parseKills(String html) {
+        JsonObject fight = extractFightData(html);
+        if (fight == null) {
+            return List.of();
+        }
+        List<Kill> kills = new ArrayList<>();
+        for (String side : new String[] {"attackers", "defenders"}) {
+            JsonObject players = fight.getAsJsonObject(side);
+            JsonArray array = players == null ? null : players.getAsJsonArray("players");
+            if (array == null) {
+                continue;
+            }
+            for (JsonElement element : array) {
+                if (element.isJsonObject()) {
+                    collectKills(element.getAsJsonObject(), kills);
+                }
+            }
+        }
+        return List.copyOf(kills);
+    }
+
+    private static void collectKills(JsonObject player, List<Kill> into) {
+        JsonArray deaths = player.getAsJsonArray("deathInfo");
+        if (deaths == null) {
+            return;
+        }
+        String victim = stringOf(player, "name");
+        for (JsonElement element : deaths) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject death = element.getAsJsonObject();
+            String killer = stringOf(death, "killedBy");
+            // The victim on the death itself wins: a player's own name is the fallback, and the
+            // two disagree on a relocated line.
+            String killed = stringOf(death, "playerName");
+            if (killed == null || killed.isBlank()) {
+                killed = victim;
+            }
+            // A death to the environment or a golem names no player, and is nobody's kill.
+            if (killer != null && !killer.isBlank() && killed != null && !killed.isBlank()) {
+                into.add(new Kill(killer, killed));
+            }
+        }
+    }
+
     private static int playerCount(JsonObject side) {
         JsonArray players = side == null ? null : side.getAsJsonArray("players");
         return players == null ? 0 : players.size();

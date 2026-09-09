@@ -255,5 +255,21 @@
   "betterloka.finder.split_indexing": "Wszystkie walki - na razie %s, czytam archiwum (%s%%)",
   "betterloka.finder.indexing_wait": "Czytam archiwum walk Loki...",
   "betterloka.finder.no_battles": "Brak walk w archiwum.",
-  "betterloka.finder.month_detail": "Szczegóły, z %s wciąż publikowanych walk"
+  "betterloka.finder.month_detail": "Szczegóły, z %s wciąż publikowanych walk",
+  "betterloka.town_log.already_gone": "już nie istniał",
+  "betterloka.town_log.town_gone": "Town usunięty - %s",
+  "betterloka.finder.tab.nemesis": "Nemesis",
+  "betterloka.finder.nemesis_of": "Jesteś Nemesisem - %s",
+  "betterloka.finder.nemesis_none": "Nikogo w tym miesiącu.",
+  "betterloka.finder.nemesis_kills": "%s killi",
+  "betterloka.finder.nemesis_chase": "Możesz zostać Nemesisem (do %s killi)",
+  "betterloka.finder.nemesis_chase_none": "Nikogo w zasięgu.",
+  "betterloka.finder.nemesis_needed": "Potrzebujesz jeszcze %s killi",
+  "betterloka.finder.nemesis_source": "Z %s walk, które EldritchBot wciąż publikuje",
+  "betterloka.helper.gui_scale": "Skala GUI",
+  "betterloka.helper.gui_scale_toggle": "Osobna skala ekwipunku: %s",
+  "betterloka.helper.inventory_scale": "Ekwipunek: %s",
+  "betterloka.helper.hotbar_scale": "Pasek itemów: %s",
+  "betterloka.helper.gui_scale_hint": "Włącza się po otwarciu ekwipunku, wraca po zamknięciu.",
+  "betterloka.helper.gui_scale_off": "Wyłączone - używana jest skala z ustawień gry."
 }
