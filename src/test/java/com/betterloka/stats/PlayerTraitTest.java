@@ -60,20 +60,32 @@ class PlayerTraitTest {
         assertNull(PlayerTrait.parseDate("13/40", TODAY));
     }
 
+    /** Lamps taken against golems downed: how many of the chances were converted. */
     @Test
-    void ratesChargeTakingByHowMuchTheyTakePerFight() {
-        // 0.70 and up, the top of the real spread.
-        assertEquals(PlayerTrait.Level.GOOD, level(traitFor(charges(100, 40, 30)), PlayerTrait.Kind.CHARGE));
-        assertEquals(PlayerTrait.Level.MIXED, level(traitFor(charges(100, 20, 10)), PlayerTrait.Kind.CHARGE));
-        assertEquals(PlayerTrait.Level.POOR, level(traitFor(charges(100, 5, 5)), PlayerTrait.Kind.CHARGE));
-        assertEquals(PlayerTrait.Level.POOR, level(traitFor(charges(100, 0, 0)), PlayerTrait.Kind.CHARGE),
-                "someone with a hundred fights and no charges has chosen not to take them");
+    void ratesChargeByLampsOverGolems() {
+        assertEquals(PlayerTrait.Level.GOOD, level(traitFor(charges(100, 100, 80)), PlayerTrait.Kind.CHARGE),
+                "80 lamps off 100 golems is 80%");
+        assertEquals(PlayerTrait.Level.GOOD, level(traitFor(charges(100, 100, 71)), PlayerTrait.Kind.CHARGE),
+                "71% is the bottom of green");
+        assertEquals(PlayerTrait.Level.MIXED, level(traitFor(charges(100, 100, 50)), PlayerTrait.Kind.CHARGE),
+                "50 lamps off 100 golems is the middle band");
+        assertEquals(PlayerTrait.Level.MIXED, level(traitFor(charges(100, 100, 31)), PlayerTrait.Kind.CHARGE),
+                "31% is the bottom of yellow");
+        assertEquals(PlayerTrait.Level.POOR, level(traitFor(charges(100, 100, 30)), PlayerTrait.Kind.CHARGE),
+                "30% and under is red");
+        assertEquals(PlayerTrait.Level.POOR, level(traitFor(charges(100, 100, 0)), PlayerTrait.Kind.CHARGE));
+    }
+
+    /** A lamp can be taken without a golem going down; a rate over 100% would read as a fault. */
+    @Test
+    void moreLampsThanGolemsIsStillJustAHundredPerCent() {
+        assertEquals(PlayerTrait.Level.GOOD, level(traitFor(charges(100, 20, 40)), PlayerTrait.Kind.CHARGE));
     }
 
     @Test
-    void saysNothingAboutChargeWithoutEnoughFightsToJudge() {
-        assertNull(find(traitFor(charges(4, 0, 0)), PlayerTrait.Kind.CHARGE),
-                "four fights is not a habit either way");
+    void saysNothingAboutChargeWithoutEnoughGolemsToJudge() {
+        assertNull(find(traitFor(charges(100, 2, 1)), PlayerTrait.Kind.CHARGE),
+                "one lamp off two golems is not fifty per cent of anything");
     }
 
     @Test

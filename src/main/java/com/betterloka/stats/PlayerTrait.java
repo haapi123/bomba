@@ -60,20 +60,18 @@ public record PlayerTrait(Kind kind, Level level, Object[] detail) {
     private static final int ACTIVITY_WINDOW_DAYS = 30;
 
     /**
-     * Charges per fight, golems and lamps together.
+     * How often a charge is finished: lamps taken against golems downed.
      *
-     * <p>A success rate is what this would ideally be, but neither Loka nor EldritchBot publishes how
-     * many charges a player went for — only how many they took — so there is no denominator anywhere
-     * to divide by. Charges per fight is the measure the data does support, and it separates the
-     * players who take charge from the ones who never touch it, which is what the chip is for.
-     * The cuts are the player's own 0.70 and 0.15, which land near the top third and the bottom of
-     * the real spread.
+     * <p>Golems are the denominator because they are what a charge is aimed at, and the lamp is what
+     * it is for — fifty lamps off a hundred golems is half the chances converted. This replaces
+     * charges per fight, which counted the two together and so could not tell somebody who takes
+     * every lamp going from somebody who only ever hits golems.
      */
-    private static final double CHARGE_GOOD_PER_FIGHT = 0.70;
-    private static final double CHARGE_POOR_PER_FIGHT = 0.15;
+    private static final int CHARGE_GOOD_PERCENT = 71;
+    private static final int CHARGE_POOR_PERCENT = 30;
 
-    /** Below this many fights there is not enough to say anything about charge-taking. */
-    private static final int CHARGE_MINIMUM_FIGHTS = 10;
+    /** Below this many golems the rate is noise — one lamp off two golems is not fifty per cent. */
+    private static final int CHARGE_MINIMUM_GOLEMS = 10;
 
     /** @return every trait there is evidence for, in a fixed order so the row does not jump about. */
     public static List<PlayerTrait> of(PlayerProfile profile, List<ArenaService.Standing> arena, LocalDate today) {
@@ -129,17 +127,18 @@ public record PlayerTrait(Kind kind, Level level, Object[] detail) {
     }
 
     private static PlayerTrait charge(EldritchStats stats) {
-        int fights = stats.totalFights();
-        if (fights < CHARGE_MINIMUM_FIGHTS) {
+        int golems = stats.golems();
+        if (golems < CHARGE_MINIMUM_GOLEMS) {
             return null;
         }
-        int charges = stats.golems() + stats.lamps();
-        double perFight = (double) charges / fights;
-        Level level = perFight >= CHARGE_GOOD_PER_FIGHT
+        int lamps = stats.lamps();
+        // Capped at a hundred: a lamp can be taken without a golem going down, and a rate over
+        // 100% reads like a bug rather than like somebody who was very good at it.
+        int percent = (int) Math.round(Math.min(1.0, (double) lamps / golems) * 100);
+        Level level = percent >= CHARGE_GOOD_PERCENT
                 ? Level.GOOD
-                : (perFight > CHARGE_POOR_PER_FIGHT ? Level.MIXED : Level.POOR);
-        return new PlayerTrait(Kind.CHARGE, level,
-                new Object[]{String.format(Locale.ROOT, "%.2f", perFight), charges, fights});
+                : (percent > CHARGE_POOR_PERCENT ? Level.MIXED : Level.POOR);
+        return new PlayerTrait(Kind.CHARGE, level, new Object[]{percent, lamps, golems});
     }
 
     /**

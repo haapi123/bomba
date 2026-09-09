@@ -57,8 +57,26 @@ public final class MapTerrain {
     /** How many tile textures to keep uploaded before dropping the least recently drawn. */
     private static final int MAX_TEXTURES = 768;
 
-    /** Tiles asked for per frame, so a fast pan queues work instead of flooding the server. */
-    private static final int FETCHES_PER_FRAME = 8;
+    /**
+     * The most tiles one detail layer may ask for, whatever the zoom says it wants.
+     *
+     * <p>A level in is four times the tiles, and on the widest continent framed whole that is enough
+     * to overrun {@link #MAX_TEXTURES} — at which point every frame evicts tiles the next frame
+     * wants back, and the map spends itself re-decoding ground it already had. Stepping the detail
+     * layer out until it fits costs sharpness at one zoom on one continent; not stepping out costs
+     * the frame rate everywhere. Sized to leave the coarse layer its share of the budget.
+     */
+    public static final int MAX_DETAIL_TILES = 420;
+
+    /**
+     * Tiles asked for per frame, so a fast pan queues work instead of arriving all at once.
+     *
+     * <p>Raised from eight once the tiles got their own lane: at eight a frame a screenful of ground
+     * took several seconds just to be <em>asked</em> for, before a byte of it had moved. The pace
+     * that matters is the lane's, not this, and this only stops a flung drag from queueing a
+     * continent.
+     */
+    private static final int FETCHES_PER_FRAME = 64;
 
     /** One tile: a world, a zoom, and a position. */
     public record Key(String world, int level, int x, int y) {
@@ -85,6 +103,25 @@ public final class MapTerrain {
     /** Called once per frame before drawing, so the per-frame fetch budget starts fresh. */
     public void beginFrame() {
         fetchesThisFrame.set(0);
+    }
+
+    /** How many tiles of one level are uploaded, and how many were found not to exist. */
+    public String stateOf(int level) {
+        int ready = 0;
+        synchronized (textures) {
+            for (Key key : textures.keySet()) {
+                if (key.level() == level) {
+                    ready++;
+                }
+            }
+        }
+        int gone = 0;
+        for (Key key : missing) {
+            if (key.level() == level) {
+                gone++;
+            }
+        }
+        return "ready=" + ready + " missing=" + gone;
     }
 
     /**
@@ -119,8 +156,28 @@ public final class MapTerrain {
     private record Pixels(int width, int height, int[] argb) {
     }
 
+    /**
+     * A tile that is sampled smoothly rather than in squares.
+     *
+     * <p>Minecraft's interface textures are nearest-neighbour, which is right for pixel art and wrong
+     * for a rendered photograph of terrain: magnified it gives hard square steps, and shrunk it drops
+     * whole texels and makes the coastline crawl as the map is panned. Loka's tiles are photographs,
+     * so they get the sampler a photograph wants.
+     *
+     * <p>The sampler is set here rather than passed to the draw because {@code DrawContext} reads it
+     * off the texture — it calls {@code getSampler()} and hands the result to the render state — so
+     * the texture is the only place a choice can be made.
+     */
+    private static final class SmoothTexture extends NativeImageBackedTexture {
+        SmoothTexture(NativeImage image) {
+            super(() -> "betterloka/terrain", image);
+            this.sampler = com.mojang.blaze3d.systems.RenderSystem.getSamplerCache()
+                    .get(com.mojang.blaze3d.textures.FilterMode.LINEAR);
+        }
+    }
+
     private void fetch(Key key) {
-        transport.executor().execute(() -> {
+        transport.tileExecutor().execute(() -> {
             byte[] jpeg = load(key);
             Pixels pixels = jpeg == null ? null : decode(key, jpeg);
             if (pixels == null) {
@@ -171,7 +228,7 @@ public final class MapTerrain {
         }
 
         try {
-            byte[] bytes = transport.getBytes(url(key), true);
+            byte[] bytes = transport.getTile(url(key));
             // A tile Loka never rendered comes back as a 143-byte transparent PNG, not a 404.
             if (bytes.length <= 300) {
                 return null;
@@ -215,8 +272,7 @@ public final class MapTerrain {
                     + key.world().toLowerCase(Locale.ROOT) + "_" + key.level()
                     + "_" + tag(key.x()) + "_" + tag(key.y()));
             MinecraftClient client = MinecraftClient.getInstance();
-            client.getTextureManager().registerTexture(id,
-                    new NativeImageBackedTexture(() -> "betterloka/terrain", image));
+            client.getTextureManager().registerTexture(id, new SmoothTexture(image));
 
             Map.Entry<Key, Identifier> evicted = null;
             synchronized (textures) {
@@ -253,17 +309,51 @@ public final class MapTerrain {
     /**
      * The zoom to draw detail from, for a given closeness.
      *
-     * <p>Chosen so a tile lands on screen at roughly the 128 pixels it was drawn at: sharp without
-     * asking for four times the tiles to shrink them. {@code BASE_LEVEL} is the floor because the
-     * background is already drawn from there, and 0 the ceiling because that is as sharp as Loka
-     * renders.
+     * <p>Chosen so a tile lands at roughly the 128 pixels it was drawn at: sharp without asking for
+     * four times the tiles to shrink them. {@code BASE_LEVEL} is the floor because the background is
+     * already drawn from there, and 0 the ceiling because that is as sharp as Loka renders.
+     *
+     * <p>The argument is blocks per <em>real</em> pixel, and that distinction is the whole of it. It
+     * used to be handed blocks per GUI pixel, which on the interface scale most people play at is
+     * three or four real pixels wide — so every tile was magnified three or four times over before
+     * it reached the screen and the ground came out in visible squares no matter how far in the map
+     * was zoomed. Reading the window's scale and dividing it out picks a level one or two steps
+     * finer and is most of why the ground is now sharp.
      */
     public static int levelFor(double blocksPerPixel) {
         int level = 0;
-        while (level < BASE_LEVEL && blocksPerTile(level) / blocksPerPixel < TILE_PIXELS) {
+        // Step out while the next level still has ground at least as fine as the screen asks for.
+        // Testing the level already reached instead — which is what this did — stops at the first
+        // one that is too coarse rather than the last one that is fine enough, so away from the
+        // exact powers of two it was checked against it handed back tiles to be stretched: at 1.18
+        // blocks a pixel it chose ground drawn at 2.0 and magnified it by three quarters.
+        while (level < BASE_LEVEL && blocksPerTile(level + 1) <= blocksPerPixel * TILE_PIXELS) {
             level++;
         }
         return level;
+    }
+
+    /**
+     * Development only: the level the old core would have picked, for a side-by-side photograph.
+     *
+     * <p>Two faults at once, which is why it is kept whole rather than described: it was handed
+     * blocks per GUI pixel instead of per real pixel, and it stopped at the first level too coarse
+     * rather than the last one fine enough.
+     */
+    public static int devLegacyLevelFor(double blocksPerGuiPixel) {
+        int level = 0;
+        while (level < BASE_LEVEL && blocksPerTile(level) / blocksPerGuiPixel < TILE_PIXELS) {
+            level++;
+        }
+        return level;
+    }
+
+    /** How many blocks one real screen pixel covers, given a zoom stated in GUI pixels. */
+    public static double perRealPixel(double blocksPerGuiPixel) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        double scale = client == null || client.getWindow() == null
+                ? 1.0 : client.getWindow().getScaleFactor();
+        return blocksPerGuiPixel / Math.max(1.0, scale);
     }
 
     /**

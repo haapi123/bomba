@@ -28,8 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * battle records count kills and deaths per player and never say who they were against.
  *
  * <p>One fight page names the killer of every death in it, so parsing the fights one player was in
- * yields the full kill table for everyone who was there. That is what makes the second question —
- * whose nemesis you are, rather than who yours is — answerable at all.
+ * yields the full kill table for everyone who was there. That is what makes the question answerable
+ * the way round that is actually interesting: whose nemesis you are, rather than who yours is.
  *
  * <p>What it cannot be is complete. EldritchBot lists a player's last ten fights and publishes no
  * index of all of them, so a month with thirty fights in it is read ten fights deep. Two things
@@ -60,18 +60,10 @@ public final class NemesisIndex {
     public record Tally(String name, int kills) {
     }
 
-    /** A player whose nemesis you could become, and by how many kills. */
-    public record Chase(String name, int needed, int yours, int leader) {
-    }
-
     /** What one lookup found, and how much of the month it is over. */
-    public record Result(List<Tally> nemesisOf, List<Chase> couldBecome, int fightsRead,
-                         boolean loading) {
-        public static final Result EMPTY = new Result(List.of(), List.of(), 0, false);
+    public record Result(List<Tally> nemesisOf, int fightsRead) {
+        public static final Result EMPTY = new Result(List.of(), 0);
     }
-
-    /** How close a chase has to be to be worth showing. */
-    public static final int MAX_KILLS_BEHIND = 2;
 
     private final EldritchApi eldritch;
     private final JsonStore<StoredIndex> disk;
@@ -158,7 +150,6 @@ public final class NemesisIndex {
         }
 
         List<Tally> nemesisOf = new ArrayList<>();
-        List<Chase> couldBecome = new ArrayList<>();
         for (Map.Entry<String, Map<String, Integer>> entry : killsOn.entrySet()) {
             String victim = entry.getKey();
             if (victim.equalsIgnoreCase(playerName)) {
@@ -171,19 +162,12 @@ public final class NemesisIndex {
             // Equalling the leader takes the title: "killed them as many times or more".
             if (mine > 0 && mine >= leader) {
                 nemesisOf.add(new Tally(victim, mine));
-            } else {
-                int needed = leader - mine;
-                if (needed >= 1 && needed <= MAX_KILLS_BEHIND) {
-                    couldBecome.add(new Chase(victim, needed, mine, leader));
-                }
             }
         }
 
         nemesisOf.sort(Comparator.comparingInt(Tally::kills).reversed()
                 .thenComparing(Tally::name, String.CASE_INSENSITIVE_ORDER));
-        couldBecome.sort(Comparator.comparingInt(Chase::needed)
-                .thenComparing(Chase::name, String.CASE_INSENSITIVE_ORDER));
-        return new Result(List.copyOf(nemesisOf), List.copyOf(couldBecome), fightsInMonth, false);
+        return new Result(List.copyOf(nemesisOf), fightsInMonth);
     }
 
     private static int countFor(Map<String, Integer> killers, String playerName) {

@@ -55,6 +55,21 @@ public final class HttpTransport implements AutoCloseable {
     private static final int HTTP_THREADS = 8;
 
     /**
+     * The map's ground has its own lane, and the numbers here are the whole reason it draws quickly.
+     *
+     * <p>Terrain tiles are small static JPEGs on an asset CDN, and one screenful is a few hundred of
+     * them. Sent down the shared lane they were paced at ten a second behind a six-wide budget every
+     * other screen was also drawing on, so a view took the better part of half a minute to sharpen
+     * and spent it showing the coarsest zoom — which is what "pixelated" actually was. A browser
+     * opening the same map pulls these files as fast as the connection allows, so this lane does
+     * too, and each tile is kept on disk afterwards and never asked for twice.
+     */
+    private static final int TILE_THREADS = 8;
+    private static final int MAX_CONCURRENT_TILES = 8;
+    private static final double TILE_PERMITS_PER_SECOND = 60.0;
+    private static final double TILE_BURST = 30.0;
+
+    /**
      * Default sustained rate per host. A profile lookup is about a dozen requests rather than the
      * several hundred an earlier design needed, so the pace is set for responsiveness; the retry
      * path absorbs the occasional 429 these hosts hand out regardless of pacing.
@@ -69,6 +84,7 @@ public final class HttpTransport implements AutoCloseable {
     private final ExecutorService executor;
     private final ExecutorService bulkExecutor;
     private final ExecutorService httpExecutor;
+    private final ExecutorService tileExecutor;
 
     /** One bucket per host: the services have independent budgets and must not throttle each other. */
     private final Map<String, RateLimiter> limiters = new ConcurrentHashMap<>();
@@ -82,6 +98,11 @@ public final class HttpTransport implements AutoCloseable {
     private final java.util.concurrent.Semaphore inFlight =
             new java.util.concurrent.Semaphore(MAX_CONCURRENT_REQUESTS, true);
 
+    /** The tiles' own ceiling and pace, kept apart from everything else. See {@link #TILE_THREADS}. */
+    private final java.util.concurrent.Semaphore tilesInFlight =
+            new java.util.concurrent.Semaphore(MAX_CONCURRENT_TILES, true);
+    private final RateLimiter tileLimiter = new RateLimiter(TILE_PERMITS_PER_SECOND, TILE_BURST);
+
     public HttpTransport() {
         this(4, DEFAULT_PERMITS_PER_SECOND);
     }
@@ -94,6 +115,7 @@ public final class HttpTransport implements AutoCloseable {
         this.executor = Executors.newFixedThreadPool(4, daemonFactory("BetterLoka-API-"));
         this.bulkExecutor = Executors.newFixedThreadPool(bulkWorkers, daemonFactory("BetterLoka-Bulk-"));
         this.httpExecutor = Executors.newFixedThreadPool(HTTP_THREADS, daemonFactory("BetterLoka-HTTP-"));
+        this.tileExecutor = Executors.newFixedThreadPool(TILE_THREADS, daemonFactory("BetterLoka-Tiles-"));
         this.http = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -124,6 +146,17 @@ public final class HttpTransport implements AutoCloseable {
         return bulkExecutor;
     }
 
+    /**
+     * Pool for map tiles alone.
+     *
+     * <p>Separate from {@link #executor()} on purpose: a screenful of ground is a few hundred fetches
+     * and would otherwise sit in front of whatever the player actually clicked, which is the same
+     * fault the two existing lanes exist to prevent.
+     */
+    public ExecutorService tileExecutor() {
+        return tileExecutor;
+    }
+
     public long requestCount() {
         return requestCount.get();
     }
@@ -145,6 +178,42 @@ public final class HttpTransport implements AutoCloseable {
      */
     public String get(String url) throws ApiException {
         return get(url, false);
+    }
+
+    /**
+     * One map tile, down the map's own lane.
+     *
+     * <p>Same request as {@link #getBytes}, but paced and counted separately — see
+     * {@link #TILE_THREADS} for why the ground cannot share the pace the REST services are held to.
+     */
+    public byte[] getTile(String url) throws ApiException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Accept", "image/jpeg,image/png,image/*")
+                .header("User-Agent", "BetterLoka/" + BetterLoka.VERSION + " (Minecraft mod)")
+                .timeout(REQUEST_TIMEOUT)
+                .GET()
+                .build();
+        try {
+            tileLimiter.acquire(true);
+            requestCount.incrementAndGet();
+            HttpResponse<byte[]> response;
+            tilesInFlight.acquire();
+            try {
+                response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            } finally {
+                tilesInFlight.release();
+            }
+            if (response.statusCode() != 200) {
+                throw new ApiException("HTTP " + response.statusCode() + " from " + url,
+                        response.statusCode() == 404);
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException("Interrupted fetching " + url, e);
+        } catch (java.io.IOException e) {
+            throw new ApiException("Could not reach " + url, e);
+        }
     }
 
     /**
@@ -318,6 +387,7 @@ public final class HttpTransport implements AutoCloseable {
     public void close() {
         executor.shutdownNow();
         bulkExecutor.shutdownNow();
+        tileExecutor.shutdownNow();
         httpExecutor.shutdownNow();
     }
 }

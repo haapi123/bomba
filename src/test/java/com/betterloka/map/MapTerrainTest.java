@@ -83,6 +83,67 @@ class MapTerrainTest {
         }
     }
 
+    /**
+     * The level picked always has ground at least as fine as the screen asks for, never coarser.
+     *
+     * <p>A level one step out is a tile stretched to twice its size, and stretching is exactly what
+     * made the ground come out in squares. The one place it is allowed is at the ends of what Loka
+     * renders.
+     */
+    @Test
+    void theLevelPickedIsNeverCoarserThanTheScreen() {
+        // Deliberately not only powers of two. An earlier version of this test used nothing else,
+        // and every power of two happens to land on an exact match — so it passed while the choice
+        // was a step out at every zoom in between, which is where a map spends most of its time.
+        double[] zooms = {0.05, 0.125, 0.2, 0.25, 0.4, 0.5, 0.9, 1, 1.182, 1.7, 2, 3.3, 4, 4.508,
+                6.5, 7.9, 8, 13.5, 16, 64};
+        for (double blocksPerPixel : zooms) {
+            int level = MapTerrain.levelFor(blocksPerPixel);
+            assertTrue(level >= 0 && level <= MapTerrain.BASE_LEVEL, "level " + level);
+            double source = MapTerrain.blocksPerTile(level) / (double) MapTerrain.TILE_PIXELS;
+
+            // Level 0 is as sharp as Loka renders, so closer than that has to be magnified.
+            if (level > 0) {
+                assertTrue(source <= blocksPerPixel + 1e-9,
+                        "at " + blocksPerPixel + " blocks a pixel, level " + level
+                                + " is drawn at " + source + " and would be stretched");
+            }
+            // And as far out as it can go while staying that sharp, or the map fetches four times
+            // the tiles for ground finer than the screen can show.
+            if (level < MapTerrain.BASE_LEVEL) {
+                double next = MapTerrain.blocksPerTile(level + 1) / (double) MapTerrain.TILE_PIXELS;
+                assertTrue(next > blocksPerPixel + 1e-9,
+                        "at " + blocksPerPixel + " blocks a pixel, level " + (level + 1)
+                                + " at " + next + " would still have done");
+            }
+        }
+    }
+
+    /**
+     * Tiles of one level sit on a whole-tile grid with nothing between them.
+     *
+     * <p>The screen draws a level as one sheet scaled to the view and places each tile at its index
+     * within that sheet, which is only seamless if an index step is exactly a tile's span of world.
+     * This is the arithmetic that holds it together.
+     */
+    @Test
+    void oneIndexStepIsExactlyOneTileOfWorld() {
+        for (int level = 0; level <= MapTerrain.BASE_LEVEL; level++) {
+            int step = 1 << level;
+            int firstX = MapTerrain.tileXAt(3717, level);
+            int lastY = MapTerrain.tileYAt(4234, level);
+            double span = MapTerrain.blocksPerTile(level);
+            for (int i = 0; i < 4; i++) {
+                assertEquals(i * span, MapTerrain.tileWorldX(firstX + i * step) - MapTerrain.tileWorldX(firstX),
+                        1e-9, "level " + level + " column " + i);
+                // Rows count the other way: a larger index is further north, so the offset from the
+                // northernmost row of a window grows as the index falls.
+                assertEquals(i * span, MapTerrain.tileWorldZ(lastY - i * step) - MapTerrain.tileWorldZ(lastY),
+                        1e-9, "level " + level + " row " + i);
+            }
+        }
+    }
+
     @Test
     void tilesEitherSideOfTheOriginDoNotCollapseOntoOne() {
         // Truncation instead of a floor puts -31 and 0 in the same tile, and the ground north of
@@ -123,14 +184,16 @@ class MapTerrainTest {
         // Close in: the sharpest Loka renders.
         assertEquals(0, MapTerrain.levelFor(0.25));
 
-        // In between, a tile covers at least the 128 pixels it was drawn at — unless the zoom has
-        // run out at one end, where there is nothing coarser or sharper left to pick.
+        // In between, a tile is drawn at no more than the 128 pixels it holds — the other way round
+        // from what this used to require, and the correction is the point. A tile drawn larger than
+        // it is has been stretched, which is the blockiness; drawn smaller it has merely been shrunk,
+        // which is sharp. The zoom running out at either end is the only excuse for stretching.
         for (double blocksPerPixel : new double[] {0.5, 1, 2, 4, 6, 12}) {
             int level = MapTerrain.levelFor(blocksPerPixel);
             double onScreen = MapTerrain.blocksPerTile(level) / blocksPerPixel;
-            assertTrue(onScreen >= MapTerrain.TILE_PIXELS
+            assertTrue(onScreen <= MapTerrain.TILE_PIXELS + 1e-9
                             || level == 0 || level == MapTerrain.BASE_LEVEL,
-                    "tile shrunk to " + onScreen + "px at " + blocksPerPixel);
+                    "tile stretched to " + onScreen + "px at " + blocksPerPixel);
             assertTrue(level <= MapTerrain.BASE_LEVEL);
         }
     }

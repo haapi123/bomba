@@ -28,10 +28,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * longer has a record of means that town was deleted or collapsed, and that is what gets reported,
  * with the continent, the territory number and the beacon coordinates.
  *
- * <p>A town falling is found in Loka's deleted-town listing: the listing is diffed against the one
- * held from last time, and anything new in it fell between the two polls. That is the dated answer,
- * and the only one there can be — Loka publishes no deletion date, so a fallen town's date is when
- * it was seen to go rather than when it went.
+ * <p>A town falling is found by watching the living roster: seventy-five towns over four pages,
+ * diffed on every sweep, and a town that was on it last time and is not on it now has gone. The
+ * count behind it is one kilobyte and is checked every minute, so a fall triggers a poll rather than
+ * waiting out the interval. That is the dated answer, and the only one there can be — Loka publishes
+ * no deletion date and no deletion order, so a fallen town's date is when it was seen to go.
+ *
+ * <p>The deleted listing is diffed too, as a backstop for a town that leaves and is replaced between
+ * two polls, which leaves the living count unmoved.
  *
  * <p>The dangling claims a dead town leaves are a second, undated source. Loka does not clear a
  * deleted town's territories straight away, so its id sits on them until it does; that finds towns
@@ -69,6 +73,8 @@ public final class TownLogger {
     private volatile long deletedTownsLoadedAt;
     /** How many towns the listing held last time, so a change in it is the signal to re-read. */
     private volatile int deletedTownCount;
+    /** The towns on the map at the last poll. A town missing from the next one has fallen. */
+    private volatile Map<String, LokaTown> livingTowns = Map.of();
 
     private volatile State state = State.OFF;
     private volatile long lastPollAt;
@@ -88,6 +94,7 @@ public final class TownLogger {
         deletedTowns = store.deletedTowns();
         deletedTownsLoadedAt = store.deletedTownsLoadedAt();
         deletedTownCount = deletedTowns.size();
+        livingTowns = store.livingTowns();
         state = config.townLogEnabled() ? State.IDLE : State.OFF;
 
         // Five minutes' grace before the first sweep. Launching the game already saturates a
@@ -105,8 +112,29 @@ public final class TownLogger {
             state = State.IDLE;
         }
         long due = config.townLogIntervalMinutes() * 60_000L;
-        if (System.currentTimeMillis() - lastPollAt >= due) {
+        if (System.currentTimeMillis() - lastPollAt >= due || townCountMoved()) {
             poll();
+        }
+    }
+
+    /**
+     * Whether the number of towns has changed since the last poll.
+     *
+     * <p>One kilobyte, checked every minute, against waiting out a thirty-minute interval to find
+     * out that a town fell twenty-nine minutes ago. It is the whole reason a fall can be dated
+     * closely at all — Loka publishes no deletion time, so the date is only ever as good as how soon
+     * the disappearance was noticed.
+     */
+    private boolean townCountMoved() {
+        if (livingTowns.isEmpty()) {
+            return false;
+        }
+        try {
+            int count = loka.countTowns();
+            return count >= 0 && count != livingTowns.size();
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not count towns", e);
+            return false;
         }
     }
 
@@ -147,7 +175,8 @@ public final class TownLogger {
             throw new ApiException("The territory sweep came back empty", false);
         }
 
-        List<TownLogEvent> fell = refreshDeletedTowns();
+        List<TownLogEvent> fell = new ArrayList<>(vanishedFromTheMap());
+        fell.addAll(refreshDeletedTowns());
         refreshAlliances();
 
         List<TownLogEvent> events = new ArrayList<>();
@@ -278,6 +307,56 @@ public final class TownLogger {
      * hour is the price of naming a town within the hour it fell, and the screen has a button for
      * when that is not soon enough.
      */
+    /**
+     * The towns that were on the map last poll and are not on it now.
+     *
+     * <p>This is the question the module is actually asking — is this town still there — and the
+     * living roster is where it is answered. It was being asked of the deleted listing instead,
+     * which is forty-two pages and so only re-read when its count moved or an hour had passed; a
+     * town could fall and go unnoticed for the better part of an hour. The living roster is seventy-
+     * five towns over four pages, cheap enough to diff on every sweep, so a fall is seen within one
+     * poll and dated to it.
+     *
+     * <p>The first sweep seeds the roster and reports nothing, for the same reason the deleted
+     * listing does: everything already gone was already gone.
+     */
+    private List<TownLogEvent> vanishedFromTheMap() {
+        Map<String, LokaTown> now;
+        try {
+            now = loka.fetchLivingTowns();
+        } catch (ApiException e) {
+            lastError = e.getMessage();
+            BetterLoka.LOGGER.warn("[betterloka] could not read the living town roster", e);
+            return List.of();
+        }
+        if (now.isEmpty()) {
+            BetterLoka.LOGGER.warn("[betterloka] the living town roster came back empty; ignoring it");
+            return List.of();
+        }
+
+        Map<String, LokaTown> before = livingTowns;
+        livingTowns = Map.copyOf(now);
+        store.recordLivingTowns(livingTowns);
+        if (before.isEmpty()) {
+            BetterLoka.LOGGER.info("[betterloka] first living-town roster: {} towns taken as the "
+                    + "baseline, none reported as having just fallen", now.size());
+            return List.of();
+        }
+
+        List<TownLogEvent> gone = new ArrayList<>();
+        for (Map.Entry<String, LokaTown> entry : before.entrySet()) {
+            if (!now.containsKey(entry.getKey())) {
+                LokaTown town = entry.getValue();
+                gone.add(TownLogEvent.townDeleted(town.id(), town.name(), town.world()));
+            }
+        }
+        if (!gone.isEmpty()) {
+            BetterLoka.LOGGER.info("[betterloka] {} town(s) left the map since the last poll: {}",
+                    gone.size(), gone.stream().map(TownLogEvent::townName).toList());
+        }
+        return gone;
+    }
+
     private List<TownLogEvent> refreshDeletedTowns() {
         if (!deletedListChanged()) {
             return List.of();

@@ -7,6 +7,7 @@ import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
 import com.betterloka.map.MapDataStore;
 import com.betterloka.map.Waypoint;
+import com.betterloka.map.ZoomAnimation;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -73,11 +74,32 @@ public class LokaMapScreen extends Screen {
     private MapTerritory selected;
     private MapTerritory hovered;
 
-    /** The view: which world point is in the middle, and how tight the zoom is. */
-    private double centerX;
-    private double centerZ;
-    private double blocksPerPixel = MapStyle.MAX_BLOCKS_PER_PIXEL;
+    /**
+     * The view: which world point is in the middle, and how tight the zoom is.
+     *
+     * <p>A zoom used to be one instant jump per click. It now travels there over a fraction of a
+     * second about the point it was aimed at, which is {@link ZoomAnimation}'s whole job.
+     */
+    private final ZoomAnimation view = new ZoomAnimation(MapStyle.MAX_BLOCKS_PER_PIXEL, 0, 0);
     private boolean centred;
+
+    /** The zoom being drawn this frame, read once so a frame cannot draw two of them. */
+    private double blocksPerPixel = MapStyle.MAX_BLOCKS_PER_PIXEL;
+    private long lastFrameNanos;
+
+    /**
+     * The view's origin rounded to a whole pixel, and the fraction left over.
+     *
+     * <p>Everything on the map is placed against the rounded origin and the whole layer is then
+     * shifted by the fraction, which is what makes a drag glide. Placing each marker by rounding its
+     * own distance from a moving origin — which is what this used to do — rounds every one of them
+     * differently on every frame, so they crawl a pixel at a time and at different moments from each
+     * other and from the ground beneath.
+     */
+    private int originPixelX;
+    private int originPixelY;
+    private float originFracX;
+    private float originFracY;
 
     private boolean dragging;
     private double dragStartX;
@@ -200,7 +222,9 @@ public class LokaMapScreen extends Screen {
 
     private void rememberView() {
         if (centred) {
-            VIEWS.put(continent, new View(centerX, centerZ, blocksPerPixel));
+            // The target, not the frame: a view saved mid-zoom should come back where it was going.
+            VIEWS.put(continent, new View(view.targetCenterX(), view.targetCenterZ(),
+                    view.targetZoom()));
         }
     }
 
@@ -214,9 +238,8 @@ public class LokaMapScreen extends Screen {
     private void centreOnContinent() {
         View saved = VIEWS.get(continent);
         if (saved != null) {
-            centerX = saved.centerX();
-            centerZ = saved.centerZ();
-            blocksPerPixel = clampZoom(saved.blocksPerPixel());
+            view.jumpTo(clampZoom(saved.blocksPerPixel()), saved.centerX(), saved.centerZ());
+            blocksPerPixel = view.zoom();
             centred = true;
             return;
         }
@@ -225,8 +248,10 @@ public class LokaMapScreen extends Screen {
 
     /** Frames the whole continent, for opening it and for the button that gets back there. */
     private void fitToContinent() {
-        centerX = continent.centerX();
-        centerZ = continent.centerZ();
+        double centerX = continent.centerX();
+        double centerZ = continent.centerZ();
+        view.jumpTo(view.targetZoom(), centerX, centerZ);
+        blocksPerPixel = view.zoom();
         centred = true;
         if (territories().isEmpty() || mapWidth <= 0 || mapHeight <= 0) {
             return;
@@ -240,8 +265,9 @@ public class LokaMapScreen extends Screen {
             halfHeight = Math.max(halfHeight, Math.abs(centerZ - territory.minZ()));
         }
         if (halfWidth > 0) {
-            blocksPerPixel = clampZoom(Math.max(2 * halfWidth / mapWidth,
-                    2 * halfHeight / mapHeight) * MapStyle.FIT_MARGIN);
+            view.jumpTo(clampZoom(Math.max(2 * halfWidth / mapWidth,
+                    2 * halfHeight / mapHeight) * MapStyle.FIT_MARGIN), centerX, centerZ);
+            blocksPerPixel = view.zoom();
         }
         rememberView();
     }
@@ -251,43 +277,77 @@ public class LokaMapScreen extends Screen {
                 Math.min(MapStyle.MAX_BLOCKS_PER_PIXEL, value));
     }
 
+    /**
+     * How long a zoom takes to arrive, as a time constant: about 95% of the way in three of these.
+     *
+     * <p>Short enough that a click still feels like a click, long enough that the eye follows the
+     * ground instead of being handed a different picture.
+     */
+    private static final double ZOOM_TAU_SECONDS = 0.055;
+
     /** Zooms about a point on screen, so whatever is under it stays under it. */
     private void zoomAbout(double screenX, double screenY, boolean in) {
-        double worldUnderX = worldXAt(screenX);
-        double worldUnderZ = worldZAt(screenY);
-
-        double before = blocksPerPixel;
-        blocksPerPixel = clampZoom(in ? blocksPerPixel / MapStyle.ZOOM_STEP
-                : blocksPerPixel * MapStyle.ZOOM_STEP);
-        double factor = blocksPerPixel / before;
-
-        centerX = worldUnderX + (centerX - worldUnderX) * factor;
-        centerZ = worldUnderZ + (centerZ - worldUnderZ) * factor;
+        double target = clampZoom(in ? view.targetZoom() / MapStyle.ZOOM_STEP
+                : view.targetZoom() * MapStyle.ZOOM_STEP);
+        view.zoomAbout(target, worldXAt(screenX), worldZAt(screenY));
         rememberView();
     }
 
+    /** Moves the drawn zoom a frame's worth along, and reads it out for the frame to draw. */
+    private void advanceZoom() {
+        long now = System.nanoTime();
+        double seconds = lastFrameNanos == 0 ? 0 : (now - lastFrameNanos) / 1_000_000_000.0;
+        lastFrameNanos = now;
+        view.advance(seconds, ZOOM_TAU_SECONDS);
+        blocksPerPixel = view.zoom();
+    }
+
     private boolean canZoomIn() {
-        return blocksPerPixel > MapStyle.MIN_BLOCKS_PER_PIXEL + 1e-9;
+        return view.targetZoom() > MapStyle.MIN_BLOCKS_PER_PIXEL + 1e-9;
     }
 
     private boolean canZoomOut() {
-        return blocksPerPixel < MapStyle.MAX_BLOCKS_PER_PIXEL - 1e-9;
+        return view.targetZoom() < MapStyle.MAX_BLOCKS_PER_PIXEL - 1e-9;
     }
 
     private double worldLeft() {
-        return centerX - mapWidth * blocksPerPixel / 2;
+        return view.centerX() - mapWidth * blocksPerPixel / 2;
     }
 
     private double worldTop() {
-        return centerZ - mapHeight * blocksPerPixel / 2;
+        return view.centerZ() - mapHeight * blocksPerPixel / 2;
+    }
+
+    /**
+     * Fixes the whole-pixel origin for this frame, and the fraction the layer is shifted by.
+     *
+     * <p>Called once before anything on the map is drawn. See the fields for why the origin is
+     * rounded once here rather than each marker being rounded against a moving one.
+     */
+    private void takeOrigin() {
+        double leftPixels = worldLeft() / blocksPerPixel;
+        double topPixels = worldTop() / blocksPerPixel;
+        originPixelX = (int) Math.round(leftPixels);
+        originPixelY = (int) Math.round(topPixels);
+        originFracX = (float) (originPixelX - leftPixels);
+        originFracY = (float) (originPixelY - topPixels);
     }
 
     private int screenXOf(double worldX) {
-        return mapX + (int) Math.round((worldX - worldLeft()) / blocksPerPixel);
+        return mapX + (int) Math.round(worldX / blocksPerPixel) - originPixelX;
     }
 
     private int screenYOf(double worldZ) {
-        return mapY + (int) Math.round((worldZ - worldTop()) / blocksPerPixel);
+        return mapY + (int) Math.round(worldZ / blocksPerPixel) - originPixelY;
+    }
+
+    /** The same place, unrounded, for the ground — which is drawn as one transformed layer. */
+    private double screenXExact(double worldX) {
+        return mapX + (worldX - worldLeft()) / blocksPerPixel;
+    }
+
+    private double screenYExact(double worldZ) {
+        return mapY + (worldZ - worldTop()) / blocksPerPixel;
     }
 
     private double worldXAt(double screenX) {
@@ -347,10 +407,13 @@ public class LokaMapScreen extends Screen {
         }
         if (insideMap(click.x(), click.y())) {
             dragging = true;
+            // A drag has to follow the hand exactly, so a zoom still running is finished here rather
+            // than left to fight the pan for the middle.
+            view.settle();
             dragOriginX = click.x();
             dragOriginY = click.y();
-            dragStartX = centerX;
-            dragStartZ = centerZ;
+            dragStartX = view.centerX();
+            dragStartZ = view.centerZ();
             return true;
         }
         return super.mouseClicked(click, doubled);
@@ -359,8 +422,8 @@ public class LokaMapScreen extends Screen {
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
         if (dragging) {
-            centerX = dragStartX - (click.x() - dragOriginX) * blocksPerPixel;
-            centerZ = dragStartZ - (click.y() - dragOriginY) * blocksPerPixel;
+            view.moveTo(dragStartX - (click.x() - dragOriginX) * blocksPerPixel,
+                    dragStartZ - (click.y() - dragOriginY) * blocksPerPixel);
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -420,6 +483,14 @@ public class LokaMapScreen extends Screen {
     /** Development only: forces the pre-index hit test, so the two can be timed side by side. */
     public static boolean devLinearHitTest;
 
+    /**
+     * Development only: draws the ground the way the old core chose it, for a photograph.
+     *
+     * <p>The level alone, not the placement or the sampling — so a pair of pictures taken with this
+     * on and off shows what picking by real pixels is worth and nothing else.
+     */
+    public static boolean devLegacyTerrain;
+
     // --- drawing ---
 
     @Override
@@ -451,6 +522,9 @@ public class LokaMapScreen extends Screen {
         if (!centred) {
             centreOnContinent();
         }
+        // In this order: move the zoom on, then fix the origin the frame is drawn against.
+        advanceZoom();
+        takeOrigin();
         hovered = dragging ? null : territoryAt(mouseX, mouseY);
         drawMap(context, mouseX, mouseY);
 
@@ -475,6 +549,13 @@ public class LokaMapScreen extends Screen {
         // Opaque, and the colour of deep water: Loka's own draws its hexes over sea.
         context.fill(mapX, mapY, mapX + mapWidth, mapY + mapHeight, MapStyle.OCEAN);
         drawTerrain(context);
+
+        // The claims ride on the same fraction of a pixel the ground does, so the outlines stay
+        // welded to the coast through a drag instead of stepping off it and back on. Placed against
+        // the rounded origin and shifted once here — see the origin fields.
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate(originFracX, originFracY);
 
         // Fills first, then every border, then the markers. A neighbour's fill drawn after a border
         // paints over it, and the hexes run together into one blob.
@@ -517,6 +598,7 @@ public class LokaMapScreen extends Screen {
                 drawIcon(context, territory);
             }
         }
+        matrices.popMatrix();
 
         drawZoomButtons(context, mouseX, mouseY);
         drawViewNote(context);
@@ -553,12 +635,65 @@ public class LokaMapScreen extends Screen {
         terrain.beginFrame();
 
         drawTerrainLayer(context, terrain, MapTerrain.BASE_LEVEL);
-        int detail = MapTerrain.levelFor(blocksPerPixel);
+        // Blocks per real pixel, not per interface pixel: see MapTerrain.levelFor.
+        int detail = devLegacyTerrain
+                ? MapTerrain.devLegacyLevelFor(blocksPerPixel)
+                : MapTerrain.levelFor(MapTerrain.perRealPixel(blocksPerPixel));
+        // Step out until the layer fits the texture budget. See MapTerrain.MAX_DETAIL_TILES.
+        while (detail < MapTerrain.BASE_LEVEL && tilesAcross(detail) > MapTerrain.MAX_DETAIL_TILES) {
+            detail++;
+        }
         if (detail < MapTerrain.BASE_LEVEL) {
             drawTerrainLayer(context, terrain, detail);
+            prefetchRing(terrain, detail);
         }
     }
 
+    /** How many tiles of one level the window covers. */
+    private int tilesAcross(int level) {
+        int step = 1 << level;
+        long columns = (MapTerrain.tileXAt(worldXAt(mapX + mapWidth), level)
+                - MapTerrain.tileXAt(worldLeft(), level)) / step + 1;
+        long rows = (MapTerrain.tileYAt(worldTop(), level)
+                - MapTerrain.tileYAt(worldZAt(mapY + mapHeight), level)) / step + 1;
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(0, columns) * Math.max(0, rows));
+    }
+
+    /**
+     * Asks for the ring of tiles just outside the window.
+     *
+     * <p>A tile is only ever asked for when it is about to be drawn, which means the first frame it
+     * is wanted is the first frame anyone has heard of it — so a pan walks a moving edge of ground
+     * that has not arrived. One ring of margin covers the distance a drag crosses while a tile is in
+     * the air, and costs nothing once fetched: tiles are kept on disk.
+     */
+    private void prefetchRing(MapTerrain terrain, int level) {
+        int step = 1 << level;
+        int firstX = MapTerrain.tileXAt(worldLeft(), level) - step;
+        int lastX = MapTerrain.tileXAt(worldXAt(mapX + mapWidth), level) + step;
+        int firstY = MapTerrain.tileYAt(worldZAt(mapY + mapHeight), level) - step;
+        int lastY = MapTerrain.tileYAt(worldTop(), level) + step;
+        for (int tileX = firstX; tileX <= lastX; tileX += step) {
+            for (int tileY = firstY; tileY <= lastY; tileY += step) {
+                boolean edge = tileX == firstX || tileX == lastX || tileY == firstY || tileY == lastY;
+                if (edge) {
+                    terrain.tile(continent, level, tileX, tileY);
+                }
+            }
+        }
+    }
+
+    /**
+     * One zoom's worth of ground, drawn as a single transformed sheet.
+     *
+     * <p>The tiles are laid out on their own whole-texel grid and the grid is then placed and scaled
+     * to the view, rather than each tile being rounded onto screen pixels by itself. Two things fall
+     * out of that. Neighbours share an edge exactly whatever the zoom happens to be, so the grid of
+     * hairline seams the old placement drew through the ground cannot occur. And the sheet is placed
+     * at a fractional position, so panning slides it rather than stepping it a whole pixel at a time
+     * — which at the interface scales people actually play at was a jump of three or four real
+     * pixels, and is most of what "not smooth" was.
+     */
     private void drawTerrainLayer(DrawContext context, MapTerrain terrain, int level) {
         int step = 1 << level;
         int firstX = MapTerrain.tileXAt(worldLeft(), level);
@@ -566,28 +701,35 @@ public class LokaMapScreen extends Screen {
         int firstY = MapTerrain.tileYAt(worldZAt(mapY + mapHeight), level);
         int lastY = MapTerrain.tileYAt(worldTop(), level);
 
-        double blocks = MapTerrain.blocksPerTile(level);
+        // Tile indices count west to east but south to north, so the grid's own corner is the
+        // westernmost column and the northernmost row: firstX and lastY.
+        double cornerWorldX = MapTerrain.tileWorldX(firstX);
+        double cornerWorldZ = MapTerrain.tileWorldZ(lastY);
+        float scale = (float) (MapTerrain.blocksPerTile(level) / blocksPerPixel / MapTerrain.TILE_PIXELS);
+        if (scale <= 0 || !Float.isFinite(scale)) {
+            return;
+        }
+
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate((float) screenXExact(cornerWorldX), (float) screenYExact(cornerWorldZ));
+        matrices.scale(scale, scale);
         for (int tileX = firstX; tileX <= lastX; tileX += step) {
+            int gridX = (tileX - firstX) / step * MapTerrain.TILE_PIXELS;
             for (int tileY = firstY; tileY <= lastY; tileY += step) {
                 var id = terrain.tile(continent, level, tileX, tileY);
                 if (id == null) {
                     continue;
                 }
-                int x = screenXOf(MapTerrain.tileWorldX(tileX));
-                int y = screenYOf(MapTerrain.tileWorldZ(tileY));
-                // Sized from the far corner rather than by rounding the width, or neighbouring
-                // tiles disagree by a pixel and the ground is drawn with a grid of seams through it.
-                int width = screenXOf(MapTerrain.tileWorldX(tileX) + blocks) - x;
-                int height = screenYOf(MapTerrain.tileWorldZ(tileY) + blocks) - y;
-                if (width <= 0 || height <= 0) {
-                    continue;
-                }
+                int gridY = (lastY - tileY) / step * MapTerrain.TILE_PIXELS;
                 context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, id,
-                        x, y, 0f, 0f, width, height,
+                        gridX, gridY, 0f, 0f,
+                        MapTerrain.TILE_PIXELS, MapTerrain.TILE_PIXELS,
                         MapTerrain.TILE_PIXELS, MapTerrain.TILE_PIXELS,
                         MapTerrain.TILE_PIXELS, MapTerrain.TILE_PIXELS, 0xFFFFFFFF);
             }
         }
+        matrices.popMatrix();
     }
 
     private void drawIcon(DrawContext context, MapTerritory territory) {
@@ -707,7 +849,7 @@ public class LokaMapScreen extends Screen {
     /** Where the middle of the view sits — labelled, so it cannot be read as a territory's own. */
     private void drawViewNote(DrawContext context) {
         Text note = Text.translatable("betterloka.map.view",
-                Math.round(centerX), Math.round(centerZ));
+                Math.round(view.centerX()), Math.round(view.centerZ()));
         context.drawTextWithShadow(this.textRenderer, note,
                 mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
 
@@ -1088,6 +1230,26 @@ public class LokaMapScreen extends Screen {
     }
 
     // --- development ---
+
+    /**
+     * Presses a zoom button, for the screenshot driver.
+     *
+     * <p>Needed because the two are painted rather than added as widgets — {@code drawZoomButtons}
+     * paints them and {@code mouseClicked} claims the clicks — so a driver that hunts for a button
+     * labelled {@code +} finds nothing and silently photographs an unzoomed map, which is exactly
+     * what the first run of this did.
+     */
+    public void devZoom(boolean in) {
+        int y = in ? zoomInY() : zoomOutY();
+        double x = zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0;
+        mouseClicked(new Click(x, y + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
+                new net.minecraft.client.input.MouseInput(0, 0)), false);
+    }
+
+    /** The zoom being drawn right now, part-way through an animation and all. */
+    public double devBlocksPerPixel() {
+        return blocksPerPixel;
+    }
 
     /**
      * Where a territory currently sits on screen, or {@code null} if none matches.

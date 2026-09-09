@@ -42,8 +42,7 @@ public class PlayerFinderScreen extends Screen {
     /** Which view of the same loaded profile is showing. */
     private enum Tab {
         PROFILE("betterloka.finder.tab.profile"),
-        MONTH("betterloka.finder.tab.month"),
-        NEMESIS("betterloka.finder.tab.nemesis");
+        MONTH("betterloka.finder.tab.month");
 
         private final String key;
 
@@ -370,7 +369,6 @@ public class PlayerFinderScreen extends Screen {
         } else if (profile != null) {
             used = (switch (tab) {
                 case MONTH -> renderMonth(context, left, y, cardWidth);
-                case NEMESIS -> renderNemesis(context, left, y, cardWidth);
                 case PROFILE -> renderProfile(context, left, y, cardWidth);
             }) - y;
         } else {
@@ -452,6 +450,7 @@ public class PlayerFinderScreen extends Screen {
         }
 
         y = renderFights(context, left, y, width, inner);
+        y = renderNemesis(context, left, y, width, inner);
         return renderIdentity(context, left, y, width, inner);
     }
 
@@ -885,74 +884,43 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /**
-     * Who this player is the nemesis of, and who they are two kills away from.
+     * Who this player is the nemesis of, this conquest month.
      *
-     * <p>A nemesis is whoever has killed you most this conquest month, and equalling the leader
-     * takes the title. Both halves come from the fight pages read so far: EldritchBot lists a
-     * player's last ten fights and publishes no index of all of them, so the counts are over the
-     * fights it still publishes rather than the whole month — and the header says how many that is,
-     * rather than letting them read as a complete tally.
+     * <p>A nemesis is whoever has killed you most this month. Every count comes from the fight pages
+     * read so far: EldritchBot lists a player's last ten fights and publishes no index of all of
+     * them, so the header says how many fights it is over rather than letting the list read as a
+     * complete tally.
      */
-    private int renderNemesis(DrawContext context, int left, int top, int width) {
-        int inner = width - CARD_PADDING * 2;
+    private int renderNemesis(DrawContext context, int left, int top, int width, int inner) {
         int y = top;
-
         context.drawTextWithShadow(this.textRenderer,
                 Text.translatable("betterloka.finder.nemesis_of", monthName()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (nemesis.nemesisOf().isEmpty()) {
-            y = card(context, left, y, width, 1, (x, rowY) ->
+            return card(context, left, y, width, 1, (x, rowY) ->
                     context.drawTextWithShadow(this.textRenderer,
                             label(nemesisLoading ? "betterloka.finder.loading"
                                     : "betterloka.finder.nemesis_none"), x, rowY, GuiTheme.MUTED));
-        } else {
-            int rows = nemesis.nemesisOf().size();
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
-            GuiTheme.panel(context, left, y, width, height);
-            int textX = left + CARD_PADDING;
-            int textY = y + CARD_PADDING;
-            for (NemesisIndex.Tally tally : nemesis.nemesisOf()) {
-                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, tally.name(),
-                        Text.translatable("betterloka.finder.nemesis_kills", tally.kills()).getString(),
-                        GuiTheme.GOOD);
-                textY += ROW_HEIGHT;
-            }
-            y += height + CARD_GAP;
         }
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.nemesis_chase", NemesisIndex.MAX_KILLS_BEHIND),
-                left, y + 2, GuiTheme.MUTED);
-        y += ROW_HEIGHT + 3;
-
-        if (nemesis.couldBecome().isEmpty()) {
-            y = card(context, left, y, width, 1, (x, rowY) ->
-                    context.drawTextWithShadow(this.textRenderer,
-                            label(nemesisLoading ? "betterloka.finder.loading"
-                                    : "betterloka.finder.nemesis_chase_none"), x, rowY, GuiTheme.MUTED));
-        } else {
-            int rows = nemesis.couldBecome().size();
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
-            GuiTheme.panel(context, left, y, width, height);
-            int textX = left + CARD_PADDING;
-            int textY = y + CARD_PADDING;
-            for (NemesisIndex.Chase chase : nemesis.couldBecome()) {
-                GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, chase.name(),
-                        Text.translatable("betterloka.finder.nemesis_needed", chase.needed()).getString(),
-                        GuiTheme.ACCENT);
-                textY += ROW_HEIGHT;
-            }
-            y += height + CARD_GAP;
+        int rows = nemesis.nemesisOf().size();
+        int height = CARD_PADDING * 2 + ROW_HEIGHT * (rows + 1);
+        GuiTheme.panel(context, left, y, width, height);
+        int textX = left + CARD_PADDING;
+        int textY = y + CARD_PADDING;
+        for (NemesisIndex.Tally tally : nemesis.nemesisOf()) {
+            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, tally.name(),
+                    Text.translatable("betterloka.finder.nemesis_kills", tally.kills()).getString(),
+                    GuiTheme.GOOD);
+            textY += ROW_HEIGHT;
         }
-
-        // How deep the month was read. Without it the two lists read as the whole month, and they
-        // are not: the fights are only the ones EldritchBot still publishes.
+        // How deep the month was read. Without it the list reads as the whole month, and it is not.
         context.drawTextWithShadow(this.textRenderer,
                 Text.translatable("betterloka.finder.nemesis_source", nemesis.fightsRead()),
-                left, y + 2, GuiTheme.MUTED);
-        return y + ROW_HEIGHT + CARD_GAP;
+                textX, textY, GuiTheme.MUTED);
+        return y + height + CARD_GAP;
     }
 
     private static String monthName() {

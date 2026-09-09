@@ -17,6 +17,7 @@ import java.net.URLEncoder;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -274,6 +275,37 @@ public final class LokaApi {
             }
         }
         return territories;
+    }
+
+    /**
+     * How many towns are alive right now, in one small request.
+     *
+     * <p>The direct answer to whether a town is still on the map: this going down is a town having
+     * been deleted, and it costs a kilobyte against the four pages the roster itself takes. Loka
+     * publishes no deletion date, so watching this change is the only way a fall can be dated at all.
+     */
+    public int countTowns() throws ApiException {
+        JsonObject json = getObject(BASE_URL + "/towns?size=1&page=0", true);
+        return Json.integer(Json.object(json, "page"), "totalElements", -1);
+    }
+
+    /** Every town alive right now, id to town. Four pages, so cheap enough to diff each poll. */
+    public Map<String, LokaTown> fetchLivingTowns() throws ApiException {
+        Map<String, LokaTown> living = new java.util.LinkedHashMap<>();
+        TownPage first = fetchTownPage(0);
+        collectLiving(first, living);
+        for (int page = 1; page < first.totalPages(); page++) {
+            collectLiving(fetchTownPage(page), living);
+        }
+        return living;
+    }
+
+    private static void collectLiving(TownPage page, Map<String, LokaTown> into) {
+        for (LokaTown town : page.towns()) {
+            if (town.id() != null) {
+                into.put(town.id(), town);
+            }
+        }
     }
 
     /**

@@ -191,10 +191,46 @@ public final class DevDiagnostics {
         step(40, () -> { });
         shot(20, "player-finder-month");
         // A Balak hex that carries a bonus, which is the point of this round's map change.
+        // The GUI scale scenario above leaves its own scale in force, and the map is not a container
+        // screen so it inherits the hotbar one. Put it back to what the window supports, or the
+        // whole point of the level fix — that a GUI pixel is several real ones — is not exercised.
+        step(2, () -> {
+            BetterLokaClient.config().setGuiScaleEnabled(false);
+            client().options.getGuiScale().setValue(3);
+            client().onResolutionChanged();
+        });
         step(2, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(5, () -> selectContinent("Balak"));
         step(60, () -> { });
         step(5, () -> bringUnderCursor(com.betterloka.map.MapTerritory::hasBonus));
+        step(20, () -> terrainState("Balak, as opened"));
+        step(2, () -> zoomIn(6));
+        step(60, () -> { });
+        step(1, () -> terrainState("Balak, zoomed in six steps"));
+        shot(20, "map-zoomed-detail");
+        step(60, () -> { });
+        step(1, () -> terrainState("Balak, after another 3 s"));
+        shot(20, "map-terrain-new");
+        // The same view drawn the old way, so the two pictures differ in the level alone.
+        step(2, () -> com.betterloka.gui.LokaMapScreen.devLegacyTerrain = true);
+        step(80, () -> { });
+        step(1, () -> terrainState("Balak, drawn the old way"));
+        shot(20, "map-terrain-old");
+        step(2, () -> com.betterloka.gui.LokaMapScreen.devLegacyTerrain = false);
+        step(60, () -> { });
+        shot(20, "map-zoomed-detail-settled");
+        step(1, () -> fps("map, detail layer drawn"));
+        step(40, () -> panAcross(60));
+        step(1, () -> fps("map, panning across the detail layer"));
+        step(1, () -> terrainState("Balak, after a pan"));
+        shot(20, "map-after-pan");
+        // Kalros framed whole is the widest a detail layer ever has to cover, and so the case the
+        // tile budget exists for.
+        step(5, () -> selectContinent("Kalros"));
+        step(10, () -> click(client().currentScreen, "Fit continent"));
+        step(120, () -> { });
+        step(1, () -> terrainState("Kalros, whole continent"));
+        shot(20, "map-kalros-whole");
         step(20, () -> { });
         shot(20, "map-balak-bonus");
 
@@ -247,6 +283,39 @@ public final class DevDiagnostics {
         }
         BetterLoka.LOGGER.info("DIAG Balak bonuses: {} of {} hexes",
                 withBonus, snapshot.territories().size());
+    }
+
+    /** Presses the map's + button a few times. */
+    private static void zoomIn(int times) {
+        if (!(client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+            return;
+        }
+        for (int i = 0; i < times; i++) {
+            map.devZoom(true);
+        }
+        BetterLoka.LOGGER.info("DIAG pressed + {} times", times);
+    }
+
+    /**
+     * Drags the map sideways, the way a hand would, to see the ground move under a fetch.
+     *
+     * <p>One press, several drag events, one release: a single jump would test the placement but not
+     * the thing being claimed, which is what happens between frames while tiles are arriving.
+     */
+    private static void panAcross(int pixels) {
+        MinecraftClient client = client();
+        if (!(client.currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+            return;
+        }
+        double x = client.getWindow().getScaledWidth() / 2.0;
+        double y = client.getWindow().getScaledHeight() / 2.0;
+        var input = new net.minecraft.client.input.MouseInput(0, 0);
+        map.mouseClicked(new net.minecraft.client.gui.Click(x, y, input), false);
+        for (int moved = 4; moved <= pixels; moved += 4) {
+            map.mouseDragged(new net.minecraft.client.gui.Click(x + moved, y, input), 4, 0);
+        }
+        map.mouseReleased(new net.minecraft.client.gui.Click(x + pixels, y, input));
+        BetterLoka.LOGGER.info("DIAG panned {} px across the map", pixels);
     }
 
     /** Switches the map to a named continent by pressing its button. */
@@ -309,6 +378,30 @@ public final class DevDiagnostics {
             client().setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(
                     client().player));
         }
+    }
+
+    /** Which terrain zoom the map is drawing, and whether its tiles have arrived. */
+    private static void terrainState(String label) {
+        Screen screen = client().currentScreen;
+        if (!(screen instanceof com.betterloka.gui.LokaMapScreen)) {
+            BetterLoka.LOGGER.info("DIAG terrain {}: map not open", label);
+            return;
+        }
+        Object bpp = field(screen, "blocksPerPixel");
+        double blocks = bpp instanceof Double d ? d : -1;
+        double real = com.betterloka.map.MapTerrain.perRealPixel(blocks);
+        int level = com.betterloka.map.MapTerrain.levelFor(real);
+        // What the old core would have picked, so the two can be compared rather than asserted.
+        int wasLevel = com.betterloka.map.MapTerrain.levelFor(blocks);
+        var terrain = BetterLokaClient.mapTerrain();
+        BetterLoka.LOGGER.info("DIAG terrain {}: gui={} real={} blocks/px (scale {}) -> level {}"
+                        + " at {} blocks/px, was level {} | detail {} | base {}",
+                label, String.format(java.util.Locale.ROOT, "%.3f", blocks),
+                String.format(java.util.Locale.ROOT, "%.3f", real),
+                client().getWindow().getScaleFactor(), level,
+                com.betterloka.map.MapTerrain.blocksPerTile(level) / 128.0, wasLevel,
+                terrain.stateOf(level),
+                terrain.stateOf(com.betterloka.map.MapTerrain.BASE_LEVEL));
     }
 
     /** How far the battle archive has been read, and what it says about one player. */

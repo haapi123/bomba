@@ -45,6 +45,8 @@ public final class TownLogStore {
         long deletedTownsLoadedAt;
         Set<String> reported = new HashSet<>();
         Map<String, Partnership> partners = new LinkedHashMap<>();
+        /** The towns on the map at the last poll, so the next one can see which have gone. */
+        Map<String, DeadTown> livingTowns = new LinkedHashMap<>();
     }
 
     /**
@@ -203,6 +205,33 @@ public final class TownLogStore {
 
     public synchronized Map<String, Territory> territories() {
         return Map.copyOf(saved.territories);
+    }
+
+    /**
+     * The towns that were on the map at the last poll.
+     *
+     * <p>Kept between sessions so a town that falls while the game is shut is still noticed: the
+     * first poll of the next session compares against the roster from the last one.
+     */
+    public synchronized Map<String, LokaTown> livingTowns() {
+        Map<String, LokaTown> towns = new LinkedHashMap<>();
+        for (DeadTown town : saved.livingTowns.values()) {
+            towns.put(town.id(), LokaTown.deleted(town.id(), town.name(), town.world()));
+        }
+        return Map.copyOf(towns);
+    }
+
+    /** Remembers who was on the map, for the next poll to diff against. */
+    public synchronized void recordLivingTowns(Map<String, LokaTown> living) {
+        if (living == null || living.isEmpty()) {
+            return;
+        }
+        Map<String, DeadTown> roster = new LinkedHashMap<>();
+        for (LokaTown town : living.values()) {
+            roster.put(town.id(), new DeadTown(town.id(), town.name(), town.world()));
+        }
+        saved.livingTowns = roster;
+        save();
     }
 
     /** The deleted towns as the logger wants them: id to town. */
