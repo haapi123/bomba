@@ -83,6 +83,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static MapDataStore mapData;
     private static MapIcons mapIcons;
     private static MapTerrain mapTerrain;
+    private static com.betterloka.map.TerrainDownload terrainDownload;
     private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
 
@@ -125,6 +126,7 @@ public class BetterLokaClient implements ClientModInitializer {
         mapData.start();
         mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         mapTerrain = new MapTerrain(transport, configDir().resolve("map-terrain"));
+        terrainDownload = new com.betterloka.map.TerrainDownload(transport, mapTerrain);
         new WaypointHud(map).register();
         new WaypointWorldRenderer(map, mapIcons).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
@@ -276,6 +278,11 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static MapTerrain mapTerrain() {
         return mapTerrain;
+    }
+
+    /** The whole-continent map download, which the map screen starts and reports on. */
+    public static com.betterloka.map.TerrainDownload terrainDownload() {
+        return terrainDownload;
     }
 
     public static TownCache towns() {

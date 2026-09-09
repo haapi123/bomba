@@ -231,6 +231,28 @@ public final class DevDiagnostics {
         step(120, () -> { });
         step(1, () -> terrainState("Kalros, whole continent"));
         shot(20, "map-kalros-whole");
+
+        // The whole-continent download, on the smallest continent so a test run can finish it.
+        step(5, () -> selectContinent("Balak"));
+        step(60, () -> { });
+        step(1, () -> downloadState("before starting"));
+        shot(20, "map-download-offer");
+        step(2, () -> pressDownload());
+        step(40, () -> { });
+        step(1, () -> downloadState("2 s in"));
+        shot(20, "map-download-running");
+        for (int tick = 4; tick <= 40; tick += 4) {
+            int at = tick;
+            step(80, () -> { });
+            step(1, () -> downloadState(at + " s in"));
+        }
+        shot(20, "map-download-done");
+        // Reopening the same view must now cost nothing at all.
+        step(2, () -> selectContinent("Kalros"));
+        step(20, () -> { });
+        step(2, () -> selectContinent("Balak"));
+        step(40, () -> { });
+        step(1, () -> terrainState("Balak, after the download"));
         step(20, () -> { });
         shot(20, "map-balak-bonus");
 
@@ -283,6 +305,27 @@ public final class DevDiagnostics {
         }
         BetterLoka.LOGGER.info("DIAG Balak bonuses: {} of {} hexes",
                 withBonus, snapshot.territories().size());
+    }
+
+    /** Presses the map's download button, which is painted rather than a widget. */
+    private static void pressDownload() {
+        if (client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map) {
+            map.devPressDownload();
+        }
+    }
+
+    /** How far the whole-continent download has got, and what it has cost. */
+    private static void downloadState(String label) {
+        var download = BetterLokaClient.terrainDownload();
+        var p = download.progress();
+        BetterLoka.LOGGER.info("DIAG download {}: {} {}/{} ({}%) fetched={} {} KB running={}",
+                label, p.continent() == null ? "-" : p.continent().displayName(),
+                p.done(), p.total(), Math.round(p.fraction() * 100), p.fetched(),
+                p.bytes() / 1024, p.running());
+        if (client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map) {
+            BetterLoka.LOGGER.info("DIAG download note {}: hovered=\"{}\" idle=\"{}\"",
+                    label, map.devDownloadNote(true), map.devDownloadNote(false));
+        }
     }
 
     /** Presses the map's + button a few times. */

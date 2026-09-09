@@ -3,6 +3,7 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerrain;
+import com.betterloka.map.TerrainDownload;
 import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
 import com.betterloka.map.MapDataStore;
@@ -372,6 +373,11 @@ public class LokaMapScreen extends Screen {
         return zoomInY() + MapStyle.ZOOM_BUTTON_SIZE + MapStyle.ZOOM_BUTTON_GAP;
     }
 
+    /** The download button, set a little apart from the two zooms so it is not pressed by accident. */
+    private int downloadY() {
+        return zoomOutY() + MapStyle.ZOOM_BUTTON_SIZE + MapStyle.ZOOM_BUTTON_GAP * 3;
+    }
+
     private boolean overButton(double screenX, double screenY, int buttonY) {
         int x = zoomButtonX();
         return screenX >= x && screenX < x + MapStyle.ZOOM_BUTTON_SIZE
@@ -403,6 +409,10 @@ public class LokaMapScreen extends Screen {
             if (canZoomOut()) {
                 zoomAbout(mapX + mapWidth / 2.0, mapY + mapHeight / 2.0, false);
             }
+            return true;
+        }
+        if (mapWidth > 0 && overButton(click.x(), click.y(), downloadY())) {
+            toggleDownload();
             return true;
         }
         if (insideMap(click.x(), click.y())) {
@@ -601,7 +611,7 @@ public class LokaMapScreen extends Screen {
         matrices.popMatrix();
 
         drawZoomButtons(context, mouseX, mouseY);
-        drawViewNote(context);
+        drawViewNote(context, mouseX, mouseY);
         context.disableScissor();
     }
 
@@ -620,6 +630,9 @@ public class LokaMapScreen extends Screen {
         MapStyle.button(context, this.textRenderer, zoomButtonX(), zoomOutY(),
                 MapStyle.ZOOM_BUTTON_SIZE, "-",
                 overButton(mouseX, mouseY, zoomOutY()), canZoomOut());
+        MapStyle.downloadButton(context, zoomButtonX(), downloadY(), MapStyle.ZOOM_BUTTON_SIZE,
+                overButton(mouseX, mouseY, downloadY()), !territories().isEmpty(),
+                BetterLokaClient.terrainDownload().running());
     }
 
     /**
@@ -847,11 +860,19 @@ public class LokaMapScreen extends Screen {
     }
 
     /** Where the middle of the view sits — labelled, so it cannot be read as a territory's own. */
-    private void drawViewNote(DrawContext context) {
-        Text note = Text.translatable("betterloka.map.view",
-                Math.round(view.centerX()), Math.round(view.centerZ()));
+    private void drawViewNote(DrawContext context, int mouseX, int mouseY) {
+        // The download has no panel of its own: what it is doing goes where the view note goes,
+        // because the two are never both interesting and a second line would crowd the map.
+        Text note = downloadNote(mouseX, mouseY);
+        int colour = GuiTheme.MUTED;
+        if (note == null) {
+            note = Text.translatable("betterloka.map.view",
+                    Math.round(view.centerX()), Math.round(view.centerZ()));
+        } else {
+            colour = GuiTheme.LIVE;
+        }
         context.drawTextWithShadow(this.textRenderer, note,
-                mapX + 4, mapY + mapHeight - 10, GuiTheme.MUTED);
+                mapX + 4, mapY + mapHeight - 10, colour);
 
         // Old data is shown rather than hidden, and said so rather than passed off as current.
         if (snapshot.stale(System.currentTimeMillis())) {
@@ -860,6 +881,94 @@ public class LokaMapScreen extends Screen {
                     mapX + mapWidth - this.textRenderer.getWidth(age) - 4,
                     mapY + mapHeight - 10, GuiTheme.LIVE);
         }
+    }
+
+    // --- downloading the ground ---
+
+    /** How long a finished download keeps saying so before the view note comes back. */
+    private static final long DOWNLOAD_DONE_MILLIS = 20_000;
+
+    /** The corners of everything claimed on this continent, which is the ground worth having. */
+    private TerrainDownload.Bounds continentBounds() {
+        double minX = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxZ = -Double.MAX_VALUE;
+        for (MapTerritory territory : territories()) {
+            minX = Math.min(minX, territory.minX());
+            maxX = Math.max(maxX, territory.maxX());
+            minZ = Math.min(minZ, territory.minZ());
+            maxZ = Math.max(maxZ, territory.maxZ());
+        }
+        return new TerrainDownload.Bounds(minX, maxX, minZ, maxZ);
+    }
+
+    /** Starts the download for this continent, or stops the one running. */
+    private void toggleDownload() {
+        TerrainDownload download = BetterLokaClient.terrainDownload();
+        if (download.running()) {
+            download.cancel();
+            return;
+        }
+        if (territories().isEmpty()) {
+            return;
+        }
+        download.start(continent, continentBounds(), TerrainDownload.DEFAULT_DEEPEST_LEVEL);
+    }
+
+    /**
+     * What to say about the download, or {@code null} to leave the view note showing.
+     *
+     * <p>Idle and not being pointed at is the only case that says nothing: what a download will cost
+     * has to be readable before it is started, not after.
+     */
+    private Text downloadNote(int mouseX, int mouseY) {
+        TerrainDownload download = BetterLokaClient.terrainDownload();
+        TerrainDownload.Progress progress = download.progress();
+        boolean hovering = mapWidth > 0 && overButton(mouseX, mouseY, downloadY());
+
+        if (progress.running() && progress.continent() == continent) {
+            return Text.translatable("betterloka.map.download_running",
+                    progress.done(), progress.total(), size(progress.bytes()));
+        }
+        if (progress.running()) {
+            return Text.translatable("betterloka.map.download_elsewhere",
+                    progress.continent().displayName(), progress.done(), progress.total());
+        }
+        if (progress.finished() && progress.continent() == continent
+                && System.currentTimeMillis() - download.finishedAt() < DOWNLOAD_DONE_MILLIS) {
+            return Text.translatable("betterloka.map.download_done",
+                    progress.fetched(), size(progress.bytes()));
+        }
+        if (!hovering) {
+            return null;
+        }
+        if (territories().isEmpty()) {
+            return null;
+        }
+        int tiles = TerrainDownload.tileCount(continentBounds(),
+                TerrainDownload.DEFAULT_DEEPEST_LEVEL);
+        return Text.translatable("betterloka.map.download_offer", continent.displayName(), tiles,
+                size((long) tiles * ESTIMATED_TILE_BYTES));
+    }
+
+    /** What a tile weighs on average, measured across a cache of a few hundred: 3.9 KB. */
+    private static final int ESTIMATED_TILE_BYTES = 4000;
+
+    /**
+     * A size somebody can read, with its own unit.
+     *
+     * <p>Whole megabytes alone will not do: a continent part-way through is a few hundred kilobytes
+     * and rounds to "0 MB", which reads as a download that is not moving.
+     */
+    private static String size(long bytes) {
+        if (bytes < 1024L * 1024L) {
+            return String.format(Locale.ROOT, "%d KB", Math.round(bytes / 1024.0));
+        }
+        double megabytes = bytes / (1024.0 * 1024.0);
+        return megabytes < 10
+                ? String.format(Locale.ROOT, "%.1f MB", megabytes)
+                : String.format(Locale.ROOT, "%.0f MB", megabytes);
     }
 
     // --- the information card ---
@@ -1243,6 +1352,28 @@ public class LokaMapScreen extends Screen {
         int y = in ? zoomInY() : zoomOutY();
         double x = zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0;
         mouseClicked(new Click(x, y + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
+                new net.minecraft.client.input.MouseInput(0, 0)), false);
+    }
+
+    /**
+     * The line the download shows for a given pointer, resolved to plain text.
+     *
+     * <p>Only the driver uses it, and only because the hover state cannot be reached otherwise: GLFW
+     * will not move the pointer without input focus, which a headless display never grants, so the
+     * one line a player reads before agreeing to spend a minute and fifty megabytes would otherwise
+     * go to release unread.
+     */
+    public String devDownloadNote(boolean hovering) {
+        int x = hovering ? zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2 : -1;
+        int y = hovering ? downloadY() + MapStyle.ZOOM_BUTTON_SIZE / 2 : -1;
+        Text note = downloadNote(x, y);
+        return note == null ? null : note.getString();
+    }
+
+    /** Presses the download button, for the screenshot driver; it is painted, not a widget. */
+    public void devPressDownload() {
+        mouseClicked(new Click(zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
+                downloadY() + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
                 new net.minecraft.client.input.MouseInput(0, 0)), false);
     }
 

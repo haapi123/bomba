@@ -1,6 +1,7 @@
 package com.betterloka.map;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.api.ApiException;
 import com.betterloka.api.HttpTransport;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.texture.NativeImage;
@@ -216,29 +217,97 @@ public final class MapTerrain {
         }
     }
 
-    private byte[] load(Key key) {
-        Path file = cacheDir.resolve(key.world()).resolve(String.valueOf(key.level()))
+    /** Where one tile is kept. The cache is a plain tree of JPEGs, readable with any image viewer. */
+    private Path fileFor(Key key) {
+        return cacheDir.resolve(key.world()).resolve(String.valueOf(key.level()))
                 .resolve(key.x() + "_" + key.y() + ".jpg");
+    }
+
+    /** Whether this tile has already been settled — held on disk, or known to be open sea. */
+    public boolean onDisk(Key key) {
+        return Files.isRegularFile(fileFor(key));
+    }
+
+    private byte[] load(Key key) {
+        return load(key, false);
+    }
+
+    /**
+     * One tile's bytes: from disk if it is there, otherwise fetched and written there.
+     *
+     * <p>{@code null} means there is nothing to draw — either the fetch failed, or Loka never
+     * rendered that square because it is open sea.
+     */
+    private byte[] load(Key key, boolean background) {
+        Path file = fileFor(key);
         try {
             if (Files.isRegularFile(file)) {
+                // An empty file is the marker for a square Loka never rendered. Keeping it is what
+                // stops a restart asking the server again for every corner of sea on a continent,
+                // which on a whole-continent download is a quarter of the requests.
+                if (Files.size(file) == 0) {
+                    return null;
+                }
                 return Files.readAllBytes(file);
             }
         } catch (IOException e) {
             BetterLoka.LOGGER.debug("Could not read cached tile {}", key, e);
         }
 
+        byte[] bytes;
         try {
-            byte[] bytes = transport.getTile(url(key));
-            // A tile Loka never rendered comes back as a 143-byte transparent PNG, not a 404.
-            if (bytes.length <= 300) {
-                return null;
+            bytes = transport.getTile(url(key), background);
+        } catch (ApiException e) {
+            // A 404 is the server saying there is no such tile, which is settled and worth
+            // remembering. Anything else is this connection's problem and must not be written down
+            // as though the tile did not exist.
+            if (e.notFound()) {
+                markEmpty(file);
             }
-            Files.createDirectories(file.getParent());
-            Files.write(file, bytes);
-            return bytes;
-        } catch (Exception e) {
+            return null;
+        } catch (RuntimeException e) {
             return null;
         }
+
+        // A square Loka never rendered comes back as a 143-byte transparent PNG, not a 404.
+        if (bytes.length <= 300) {
+            markEmpty(file);
+            return null;
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            Files.write(file, bytes);
+        } catch (IOException e) {
+            BetterLoka.LOGGER.debug("Could not cache tile {}", key, e);
+        }
+        return bytes;
+    }
+
+    private static void markEmpty(Path file) {
+        try {
+            Files.createDirectories(file.getParent());
+            Files.write(file, new byte[0]);
+        } catch (IOException e) {
+            BetterLoka.LOGGER.debug("Could not mark {} as empty", file, e);
+        }
+    }
+
+    /**
+     * Pulls one tile into the cache without uploading it, for a whole-continent download.
+     *
+     * <p>Blocking, and meant for a background worker. Nothing is decoded and no texture is made:
+     * twelve thousand tiles is far more than the graphics card is asked to hold, and the point of a
+     * download is what is on disk afterwards.
+     *
+     * @return how many bytes were fetched, or zero for a tile already settled or found to be sea
+     */
+    public int download(Continent continent, int level, int tileX, int tileY) {
+        Key key = new Key(continent.world(), level, tileX, tileY);
+        if (onDisk(key)) {
+            return 0;
+        }
+        byte[] bytes = load(key, true);
+        return bytes == null ? 0 : bytes.length;
     }
 
     /**

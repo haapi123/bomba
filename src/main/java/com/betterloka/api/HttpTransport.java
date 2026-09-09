@@ -185,8 +185,11 @@ public final class HttpTransport implements AutoCloseable {
      *
      * <p>Same request as {@link #getBytes}, but paced and counted separately — see
      * {@link #TILE_THREADS} for why the ground cannot share the pace the REST services are held to.
+     *
+     * @param background true for a whole-continent download, which then hangs back behind the tiles
+     *                   of the view somebody is actually looking at
      */
-    public byte[] getTile(String url) throws ApiException {
+    public byte[] getTile(String url, boolean background) throws ApiException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .header("Accept", "image/jpeg,image/png,image/*")
                 .header("User-Agent", "BetterLoka/" + BetterLoka.VERSION + " (Minecraft mod)")
@@ -194,7 +197,7 @@ public final class HttpTransport implements AutoCloseable {
                 .GET()
                 .build();
         try {
-            tileLimiter.acquire(true);
+            tileLimiter.acquire(background);
             requestCount.incrementAndGet();
             HttpResponse<byte[]> response;
             tilesInFlight.acquire();

@@ -188,6 +188,37 @@ public final class MapStyle {
                 enabled ? BUTTON_TEXT : BUTTON_TEXT_DISABLED);
     }
 
+    /**
+     * The download button: an arrow into a tray when idle, a square when it is running.
+     *
+     * <p>Drawn out of rectangles rather than set as a character, because the glyph that would say
+     * this — a downward arrow — is not one the game's own font is guaranteed to carry, and a button
+     * whose label silently becomes a missing-character box is worse than no button.
+     */
+    public static void downloadButton(DrawContext context, int x, int y, int size,
+                                      boolean hovered, boolean enabled, boolean running) {
+        context.fill(x, y, x + size, y + size, hovered && enabled ? BUTTON_FILL_HOVER : BUTTON_FILL);
+        int border = hovered && enabled ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
+        context.fill(x, y, x + size, y + 1, border);
+        context.fill(x, y + size - 1, x + size, y + size, border);
+        context.fill(x, y, x + 1, y + size, border);
+        context.fill(x + size - 1, y, x + size, y + size, border);
+
+        int ink = enabled ? BUTTON_TEXT : BUTTON_TEXT_DISABLED;
+        int mid = x + size / 2;
+        if (running) {
+            // A stop square, which is what the press does while a download is in the air.
+            context.fill(mid - 3, y + size / 2 - 3, mid + 3, y + size / 2 + 3, ink);
+            return;
+        }
+        // A stem, a head that narrows to a point, and the tray it lands in.
+        context.fill(mid - 1, y + 4, mid + 1, y + 8, ink);
+        for (int row = 0; row < 3; row++) {
+            context.fill(mid - 3 + row, y + 8 + row, mid + 3 - row, y + 9 + row, ink);
+        }
+        context.fill(x + 4, y + size - 5, x + size - 4, y + size - 4, ink);
+    }
+
     /** A full-width button, for the one inside the coordinate bubble. */
     public static void wideButton(DrawContext context, TextRenderer textRenderer, int x, int y,
                                   int width, Text label, boolean hovered, boolean confirmed) {
