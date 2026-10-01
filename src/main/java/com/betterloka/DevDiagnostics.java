@@ -32,6 +32,9 @@ public final class DevDiagnostics {
     private int index;
     private int ticks;
 
+    /** Set once the miner has been seen in a container stage, for the stop-key scenario. */
+    private static boolean stopKeyArmed;
+
     /** When the current timed wait began, for measuring how long a view takes to fill. */
     private long timerNanos;
 
@@ -235,7 +238,7 @@ public final class DevDiagnostics {
         step(20, () -> minerState("bench built"));
         step(2, () -> {
             BetterLokaClient.config().setMinerOre(com.betterloka.miner.OreKind.IRON);
-            BetterLokaClient.config().setMinerCraftEvery(18);
+            BetterLokaClient.config().setMinerCraftEvery(9);
             BetterLokaClient.config().setMinerDrawLimit(128);
         });
         step(2, () -> client().setScreen(new com.betterloka.gui.OreMinerScreen(null)));
@@ -249,6 +252,41 @@ public final class DevDiagnostics {
         });
 
         step(1, () -> com.betterloka.miner.OreMiner.devTrace = false);
+        // The emergency stop, pressed while a container screen is open — which is the case a key
+        // binding alone cannot cover, and so the one worth driving.
+        // Press the moment the miner is in a container stage, because a key binding alone cannot
+        // reach us then — that is the whole reason the key is also read from the window.
+        for (int tries = 0; tries < 500; tries++) {
+            step(2, () -> {
+                var miner = BetterLokaClient.oreMiner();
+                var stage = miner.stage();
+                boolean inContainer = stage != com.betterloka.miner.OreMiner.Stage.MINING
+                        && stage != com.betterloka.miner.OreMiner.Stage.IDLE;
+                if (stopKeyArmed || !inContainer || !miner.running()) {
+                    return;
+                }
+                stopKeyArmed = true;
+                BetterLoka.LOGGER.info("DIAG miner stopkey: pressing during stage={} screen={}",
+                        stage, client().currentScreen == null
+                                ? "none" : client().currentScreen.getClass().getSimpleName());
+                net.minecraft.client.option.KeyBinding.setKeyPressed(
+                        net.minecraft.client.util.InputUtil.fromTranslationKey(
+                                BetterLokaClient.minerStopKey().getBoundKeyTranslationKey()), true);
+            });
+        }
+        step(5, () -> { });
+        step(1, () -> {
+            BetterLoka.LOGGER.info("DIAG miner stopkey after: armed={} running={} stage={} screen={} attack={}",
+                    stopKeyArmed, BetterLokaClient.oreMiner().running(),
+                    BetterLokaClient.oreMiner().stage(),
+                    client().currentScreen == null
+                            ? "none" : client().currentScreen.getClass().getSimpleName(),
+                    client().options.attackKey.isPressed());
+            net.minecraft.client.option.KeyBinding.setKeyPressed(
+                    net.minecraft.client.util.InputUtil.fromTranslationKey(
+                            BetterLokaClient.minerStopKey().getBoundKeyTranslationKey()), false);
+        });
+        step(2, () -> BetterLokaClient.oreMiner().start());
         for (int at = 5; at <= 120; at += 5) {
             int seconds = at;
             step(100, () -> { });

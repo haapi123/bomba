@@ -84,6 +84,15 @@ public final class BetterLokaConfig {
     /** The most ore to carry when fetching from the input container. */
     private int minerDrawLimit = 128;
 
+    /**
+     * Ticks between two clicks inside a container.
+     *
+     * <p>Ten by default, which is half a second. The first version of this used one or two ticks and
+     * was built against a server on the same machine; a real one sits above a hundred milliseconds,
+     * two or three ticks, so clicking that fast means acting on answers that have not arrived.
+     */
+    private int minerPaceTicks = 10;
+
     private transient Path file;
 
     public static BetterLokaConfig load(Path file) {
@@ -278,6 +287,16 @@ public final class BetterLokaConfig {
         save();
     }
 
+    public int minerPaceTicks() {
+        return Math.max(OreKindLimits.MIN_PACE, Math.min(OreKindLimits.MAX_PACE, minerPaceTicks));
+    }
+
+    public void setMinerPaceTicks(int ticks) {
+        this.minerPaceTicks = Math.max(OreKindLimits.MIN_PACE,
+                Math.min(OreKindLimits.MAX_PACE, ticks));
+        save();
+    }
+
     public int minerDrawLimit() {
         return Math.max(OreKindLimits.MIN_DRAW, Math.min(OreKindLimits.MAX_DRAW, minerDrawLimit));
     }
@@ -295,6 +314,10 @@ public final class BetterLokaConfig {
         /** A full inventory of ore is thirty-six stacks; past that there is nowhere to put it. */
         public static final int MIN_DRAW = 9;
         public static final int MAX_DRAW = 36 * 64;
+
+        /** Two ticks is as fast as it ever ran; a whole second is as slow as is worth offering. */
+        public static final int MIN_PACE = 2;
+        public static final int MAX_PACE = 20;
 
         private OreKindLimits() {
         }

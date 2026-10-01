@@ -31,12 +31,15 @@ public class OreMinerScreen extends Screen {
     /** The steps the two numbers move in when their buttons are pressed. */
     private static final int[] CRAFT_STEPS = {9, 18, 32, 64, 128, 256, 512, 1024, 0};
     private static final int[] DRAW_STEPS = {9, 32, 64, 128, 256, 512, 1024, 2304};
+    /** In ticks. Shown as milliseconds, which is the unit a ping is quoted in. */
+    private static final int[] PACE_STEPS = {2, 4, 6, 10, 14, 20};
 
     private final Screen parent;
 
     private ButtonWidget oreButton;
     private ButtonWidget craftButton;
     private ButtonWidget drawButton;
+    private ButtonWidget paceButton;
     private ButtonWidget runButton;
 
     public OreMinerScreen(Screen parent) {
@@ -92,7 +95,15 @@ public class OreMinerScreen extends Screen {
                 })
                 .dimensions(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build();
         addDrawableChild(drawButton);
-        y += BUTTON_HEIGHT + GAP * 2 + ROW * 4;
+        y += BUTTON_HEIGHT + GAP;
+
+        paceButton = ButtonWidget.builder(paceLabel(), button -> {
+                    config().setMinerPaceTicks(nextStep(PACE_STEPS, config().minerPaceTicks()));
+                    refresh();
+                })
+                .dimensions(left, y, width, BUTTON_HEIGHT).build();
+        addDrawableChild(paceButton);
+        y += BUTTON_HEIGHT + GAP * 2 + ROW * 5;
 
         runButton = ButtonWidget.builder(runLabel(), button -> toggleRun())
                 .dimensions(left, y, width, BUTTON_HEIGHT).build();
@@ -119,6 +130,7 @@ public class OreMinerScreen extends Screen {
         oreButton.setMessage(oreLabel());
         craftButton.setMessage(craftLabel());
         drawButton.setMessage(drawLabel());
+        paceButton.setMessage(paceLabel());
         runButton.setMessage(runLabel());
     }
 
@@ -148,6 +160,11 @@ public class OreMinerScreen extends Screen {
         return Text.translatable("betterloka.miner.draw_limit", config().minerDrawLimit());
     }
 
+    /** Shown in milliseconds: a tick is 50 ms, and latency is what this is set against. */
+    private Text paceLabel() {
+        return Text.translatable("betterloka.miner.pace", config().minerPaceTicks() * 50);
+    }
+
     private Text runLabel() {
         return Text.translatable(miner().running()
                 ? "betterloka.miner.stop" : "betterloka.miner.start");
@@ -165,8 +182,8 @@ public class OreMinerScreen extends Screen {
                 Text.translatable("betterloka.miner.settings").formatted(Formatting.BOLD),
                 left, CONTENT_TOP, GuiTheme.TEXT);
 
-        int y = CONTENT_TOP + ROW + GAP + BUTTON_HEIGHT * 2 + GAP * 2;
-        GuiTheme.panel(context, left - 4, y - 4, width + 8, ROW * 4 + 8);
+        int y = CONTENT_TOP + ROW + GAP + BUTTON_HEIGHT * 3 + GAP * 3;
+        GuiTheme.panel(context, left - 4, y - 4, width + 8, ROW * 5 + 8);
 
         drawSite(context, left, y, "betterloka.miner.site.crafting", sites().crafting());
         drawSite(context, left, y + ROW, "betterloka.miner.site.output", sites().output());
@@ -179,6 +196,13 @@ public class OreMinerScreen extends Screen {
                 : Text.translatable("betterloka.miner.status_idle");
         context.drawTextWithShadow(this.textRenderer, status, left, y + ROW * 3,
                 miner().running() ? GuiTheme.LIVE : GuiTheme.MUTED);
+
+        // Said on the screen rather than left to be discovered: a stop key nobody knows about is
+        // no use in the moment somebody needs it.
+        context.drawTextWithShadow(this.textRenderer,
+                Text.translatable("betterloka.miner.emergency_hint",
+                        BetterLokaClient.minerStopKey().getBoundKeyLocalizedText()),
+                left, y + ROW * 4, GuiTheme.MUTED);
     }
 
     /** One marked place: what it is, where it is, and whether it can be used from here. */

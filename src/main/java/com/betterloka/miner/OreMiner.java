@@ -50,14 +50,34 @@ public final class OreMiner {
 
     /** The steps one visit to the bench goes through. */
     private enum CraftStep {
-        TIDY, FILL, AWAIT, COUNT
+        TIDY, FILL, SPREAD, RETURN, AWAIT, COUNT
     }
 
     /** How long to wait for a screen the server has been asked to open, in ticks. */
     private static final int SCREEN_TIMEOUT_TICKS = 60;
 
-    /** A breather between actions, so the run reads as play rather than as a burst. */
+    /**
+     * A breather between actions, so the run reads as play rather than as a burst.
+     *
+     * <p>Only used where nothing is waiting on the server: moving the ore into the off-hand, and
+     * stepping away from a block. Everything that touches a container goes through
+     * {@link #containerPace()} instead, because that is where latency bites.
+     */
     private static final int ACTION_COOLDOWN_TICKS = 2;
+
+    /**
+     * How long to leave between two clicks inside a container, in ticks.
+     *
+     * <p>Every one of these is a round trip. The client shows the result of a slot click straight
+     * away and the server confirms it a moment later, so on a connection with any latency a run
+     * that clicks as fast as it can is reading its own guesses rather than what the server has
+     * actually done — and a server that dislikes the pace simply refuses and the two drift apart.
+     * Loka sits above a hundred milliseconds, which is three ticks before an answer can even
+     * arrive, so the pace is set well clear of that rather than at it.
+     */
+    private int containerPace() {
+        return config.minerPaceTicks();
+    }
 
     /** How far the player may drift from where they started before the run gives up. */
     private static final double MAX_DRIFT = 2.0;
@@ -94,6 +114,9 @@ public final class OreMiner {
     /** Where the crafting stage has got to; see tickCrafting for why it has steps at all. */
     private CraftStep craftStep = CraftStep.TIDY;
     private int craftWaited;
+
+    /** The slot the stack being spread came from, so the leftovers go back where they belong. */
+    private int dragSource;
     private int blocksBefore;
 
     private int minedSinceCraft;
@@ -487,7 +510,7 @@ public final class OreMiner {
                 for (Slot input : handler.getInputSlots()) {
                     if (input.hasStack()) {
                         click(client, player, handler.syncId, input.id, 0, SlotActionType.QUICK_MOVE);
-                        cooldown = 1;
+                        cooldown = containerPace();
                         return;
                     }
                 }
@@ -504,8 +527,17 @@ public final class OreMiner {
                     finishCrafting(client, player);
                     return;
                 }
-                // Left-drag across the nine squares, which is how a hand spreads a stack evenly.
+                // Taken onto the cursor on its own tick: the spread that follows depends on what
+                // the cursor is actually holding, and on a slow link that is not settled yet.
+                dragSource = source;
                 click(client, player, handler.syncId, source, 0, SlotActionType.PICKUP);
+                craftStep = CraftStep.SPREAD;
+                cooldown = containerPace();
+            }
+            case SPREAD -> {
+                // Left-drag across the nine squares, which is how a hand spreads a stack evenly.
+                // The three stages of a drag are one gesture and go together; it is the pauses on
+                // either side of it that give the server room.
                 click(client, player, handler.syncId, QUICK_CRAFT_MARKER_SLOT,
                         ScreenHandler.packQuickCraftData(0, 0), SlotActionType.QUICK_CRAFT);
                 for (Slot input : handler.getInputSlots()) {
@@ -514,11 +546,19 @@ public final class OreMiner {
                 }
                 click(client, player, handler.syncId, QUICK_CRAFT_MARKER_SLOT,
                         ScreenHandler.packQuickCraftData(2, 0), SlotActionType.QUICK_CRAFT);
+                craftStep = CraftStep.RETURN;
+                cooldown = containerPace();
+            }
+            case RETURN -> {
                 // Whatever the drag could not spread evenly is still on the cursor; put it back.
-                click(client, player, handler.syncId, source, 0, SlotActionType.PICKUP);
+                // Its own step, because leaving items on the cursor is how a desync turns into a
+                // lost stack when the screen closes.
+                if (!player.currentScreenHandler.getCursorStack().isEmpty()) {
+                    click(client, player, handler.syncId, dragSource, 0, SlotActionType.PICKUP);
+                }
                 craftStep = CraftStep.AWAIT;
                 craftWaited = 0;
-                cooldown = 1;
+                cooldown = containerPace();
             }
             case AWAIT -> {
                 if (handler.getOutputSlot().hasStack()) {
@@ -526,7 +566,7 @@ public final class OreMiner {
                     click(client, player, handler.syncId, handler.getOutputSlot().id, 0,
                             SlotActionType.QUICK_MOVE);
                     craftStep = CraftStep.COUNT;
-                    cooldown = 1;
+                    cooldown = containerPace();
                     return;
                 }
                 // Its own counter: openedOr clears the shared one on every tick it succeeds, so a
@@ -581,7 +621,7 @@ public final class OreMiner {
         int slot = findSlot(handler, player, stack -> ore().isStorageBlock(stack));
         if (slot >= 0 && hasRoom(handler, containerSlots)) {
             click(client, player, handler.syncId, slot, 0, SlotActionType.QUICK_MOVE);
-            cooldown = 1;
+            cooldown = containerPace();
             return;
         }
         closeScreen(client, player);
@@ -604,7 +644,7 @@ public final class OreMiner {
             for (int slot = 0; slot < containerSlots; slot++) {
                 if (ore().isOre(handler.getSlot(slot).getStack())) {
                     click(client, player, handler.syncId, slot, 0, SlotActionType.QUICK_MOVE);
-                    cooldown = 1;
+                    cooldown = containerPace();
                     return;
                 }
             }
@@ -662,7 +702,8 @@ public final class OreMiner {
         player.closeHandledScreen();
         client.setScreen(null);
         waited = 0;
-        cooldown = ACTION_COOLDOWN_TICKS;
+        // Opening the next thing straight after closing this one is the same round trip problem.
+        cooldown = containerPace();
     }
 
     /**

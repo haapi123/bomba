@@ -317,5 +317,9 @@
   "betterloka.miner.error.no_answer": "Blok się nie otworzył.",
   "betterloka.miner.error.not_running": "Ore Miner nie jest uruchomiony.",
   "betterloka.miner.error.look_at_block": "Spójrz na blok, który chcesz zaznaczyć.",
-  "betterloka.miner.error.failed": "Ore Miner napotkał problem i się zatrzymał."
+  "betterloka.miner.error.failed": "Ore Miner napotkał problem i się zatrzymał.",
+  "key.betterloka.ore_miner_stop": "Zatrzymaj Ore Miner",
+  "betterloka.miner.stopped_by_key": "Ore Miner zatrzymany klawiszem awaryjnym.",
+  "betterloka.miner.pace": "Tempo: %s ms",
+  "betterloka.miner.emergency_hint": "Stop awaryjny: %s (działa też z otwartą skrzynką)"
 }

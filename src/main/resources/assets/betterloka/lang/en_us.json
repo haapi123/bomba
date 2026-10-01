@@ -317,5 +317,9 @@
   "betterloka.miner.error.no_answer": "The block did not open.",
   "betterloka.miner.error.not_running": "The Ore Miner is not running.",
   "betterloka.miner.error.look_at_block": "Look at the block you want to mark.",
-  "betterloka.miner.error.failed": "The Ore Miner hit a problem and stopped."
+  "betterloka.miner.error.failed": "The Ore Miner hit a problem and stopped.",
+  "key.betterloka.ore_miner_stop": "Stop the Ore Miner",
+  "betterloka.miner.stopped_by_key": "Ore Miner stopped by the emergency key.",
+  "betterloka.miner.pace": "Pace: %s ms",
+  "betterloka.miner.emergency_hint": "Emergency stop: %s (works with a chest open)"
 }

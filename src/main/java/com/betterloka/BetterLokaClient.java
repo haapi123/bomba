@@ -63,6 +63,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static KeyBinding openMenuKey;
     private static KeyBinding shulkerTimerKey;
     private static KeyBinding glowstoneTimerKey;
+    private static KeyBinding minerStopKey;
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
@@ -162,6 +163,10 @@ public class BetterLokaClient implements ClientModInitializer {
                 new KeyBinding("key.betterloka.shulker_timer", GLFW.GLFW_KEY_G, KEY_CATEGORY));
         glowstoneTimerKey = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("key.betterloka.glowstone_timer", GLFW.GLFW_KEY_H, KEY_CATEGORY));
+        // K, and rebindable in Controls like the rest. See minerStopPressed for why it is also
+        // read directly rather than only through wasPressed.
+        minerStopKey = KeyBindingHelper.registerKeyBinding(
+                new KeyBinding("key.betterloka.ore_miner_stop", GLFW.GLFW_KEY_K, KEY_CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMenuKey.wasPressed()) {
@@ -174,6 +179,9 @@ public class BetterLokaClient implements ClientModInitializer {
             }
             while (glowstoneTimerKey.wasPressed()) {
                 toggleTimer(grindTimers.glowstone(), "betterloka.grind.tab.glowstone");
+            }
+            if (minerStopPressed(client) && oreMiner.running()) {
+                oreMiner.stop("betterloka.miner.stopped_by_key");
             }
             oreMiner.tick();
         });
@@ -251,6 +259,28 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static KeyBinding shulkerTimerKey() {
         return shulkerTimerKey;
+    }
+
+    /** True while the Ore Miner's stop key is held, screen open or not. */
+    private static boolean minerStopPressed(net.minecraft.client.MinecraftClient client) {
+        if (minerStopKey.isPressed()) {
+            return true;
+        }
+        // Read straight from the window as well, and that is the whole point of the key. A key
+        // binding only registers while no screen is up — the game hands the press to the screen
+        // instead — and the miner spends much of a run with a chest or a bench open. An emergency
+        // stop that does not work while the thing is mid-action is not an emergency stop.
+        var bound = net.minecraft.client.util.InputUtil.fromTranslationKey(
+                minerStopKey.getBoundKeyTranslationKey());
+        if (bound.getCategory() != net.minecraft.client.util.InputUtil.Type.KEYSYM
+                || bound.getCode() == GLFW.GLFW_KEY_UNKNOWN) {
+            return false;
+        }
+        return net.minecraft.client.util.InputUtil.isKeyPressed(client.getWindow(), bound.getCode());
+    }
+
+    public static KeyBinding minerStopKey() {
+        return minerStopKey;
     }
 
     public static KeyBinding glowstoneTimerKey() {
