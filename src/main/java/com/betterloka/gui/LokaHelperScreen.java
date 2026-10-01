@@ -78,6 +78,14 @@ public class LokaHelperScreen extends Screen {
                 .dimensions(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build();
         addDrawableChild(hotbarButton);
 
+        y += BUTTON_HEIGHT + CARD_GAP * 2 + ROW_HEIGHT;
+
+        // Its own screen rather than another card here: the miner has three marked places and a
+        // running state to show, and folding that in would bury the scale settings under it.
+        addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.miner.open"),
+                        button -> this.client.setScreen(new OreMinerScreen(this)))
+                .dimensions(left, y, width, BUTTON_HEIGHT).build());
+
         addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
                 .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
     }

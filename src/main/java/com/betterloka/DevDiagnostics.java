@@ -229,6 +229,38 @@ public final class DevDiagnostics {
         step(5, () -> selectContinent("Kalros"));
         step(10, () -> click(client().currentScreen, "Fit continent"));
         step(120, () -> { });
+        // --- Ore Miner, driven end to end in a flat world ---
+        step(2, () -> client().setScreen(null));
+        step(10, () -> buildMinerBench());
+        step(20, () -> minerState("bench built"));
+        step(2, () -> {
+            BetterLokaClient.config().setMinerOre(com.betterloka.miner.OreKind.IRON);
+            BetterLokaClient.config().setMinerCraftEvery(18);
+            BetterLokaClient.config().setMinerDrawLimit(128);
+        });
+        step(2, () -> client().setScreen(new com.betterloka.gui.OreMinerScreen(null)));
+        step(20, () -> { });
+        shot(20, "ore-miner-screen");
+        step(2, () -> client().setScreen(null));
+        step(5, () -> {
+            com.betterloka.miner.OreMiner.devTrace = true;
+            String problem = BetterLokaClient.oreMiner().start();
+            BetterLoka.LOGGER.info("DIAG miner start: {}", problem == null ? "started" : problem);
+        });
+
+        step(1, () -> com.betterloka.miner.OreMiner.devTrace = false);
+        for (int at = 5; at <= 120; at += 5) {
+            int seconds = at;
+            step(100, () -> { });
+            step(1, () -> {
+                minerState(seconds + " s in");
+                com.betterloka.miner.OreMiner.devTrace =
+                        BetterLokaClient.oreMiner().stage() == com.betterloka.miner.OreMiner.Stage.CRAFTING;
+            });
+        }
+        shot(20, "ore-miner-running");
+        step(1, () -> minerState("final"));
+
         step(1, () -> terrainState("Kalros, whole continent"));
         shot(20, "map-kalros-whole");
 
@@ -656,6 +688,140 @@ public final class DevDiagnostics {
 
     private static MinecraftClient client() {
         return MinecraftClient.getInstance();
+    }
+
+    /**
+     * Builds the bench the Ore Miner works at, straight on the integrated server.
+     *
+     * <p>Through the server rather than by typing commands: a fresh world has no cheats, and the
+     * point of this run is the miner's own behaviour, not whether a chat command parsed.
+     */
+    private static void buildMinerBench() {
+        MinecraftClient client = client();
+        var server = client.getServer();
+        if (server == null || client.player == null) {
+            BetterLoka.LOGGER.error("DIAG miner: no integrated server");
+            return;
+        }
+        net.minecraft.util.math.BlockPos feet = client.player.getBlockPos();
+        var world = server.getWorld(client.world.getRegistryKey());
+        if (world == null) {
+            BetterLoka.LOGGER.error("DIAG miner: no server world");
+            return;
+        }
+        net.minecraft.util.math.BlockPos bench = feet.add(1, 0, 0);
+        net.minecraft.util.math.BlockPos output = feet.add(-1, 0, 1);
+        net.minecraft.util.math.BlockPos input = feet.add(1, 0, 1);
+        server.execute(() -> {
+            // Peaceful, or the test is decided by whichever slime wanders past: one killed the
+            // player mid-run and wiped the inventory the first time this was tried.
+            server.setDifficulty(net.minecraft.world.Difficulty.PEACEFUL, true);
+            world.setBlockState(bench, net.minecraft.block.Blocks.CRAFTING_TABLE.getDefaultState());
+            world.setBlockState(output, net.minecraft.block.Blocks.CHEST.getDefaultState());
+            world.setBlockState(input, net.minecraft.block.Blocks.CHEST.getDefaultState());
+            if (world.getBlockEntity(input) instanceof net.minecraft.block.entity.ChestBlockEntity chest) {
+                // Three stacks of ore: enough to need two trips to the chest and a craft or two.
+                for (int slot = 0; slot < 3; slot++) {
+                    chest.setStack(slot, new net.minecraft.item.ItemStack(
+                            net.minecraft.item.Items.IRON_ORE, 64));
+                }
+                chest.markDirty();
+            }
+            var player = server.getPlayerManager().getPlayerList().get(0);
+            player.getInventory().clear();
+            player.getInventory().setStack(0, new net.minecraft.item.ItemStack(
+                    net.minecraft.item.Items.DIAMOND_PICKAXE));
+            player.getInventory().setSelectedSlot(0);
+            BetterLoka.LOGGER.info("DIAG miner bench built: bench {} output {} input {}",
+                    bench, output, input);
+        });
+        // Marked directly: the crosshair cannot be aimed on a headless display, and the command
+        // path is checked on its own below.
+        var sites = BetterLokaClient.minerSites();
+        String key = com.betterloka.miner.OreMiner.worldKey(client);
+        sites.setCrafting(key, bench);
+        sites.setOutput(key, output);
+        sites.setInput(key, input);
+    }
+
+    /** What the run is doing, and what the world around it holds. */
+    private static void minerState(String label) {
+        var miner = BetterLokaClient.oreMiner();
+        MinecraftClient client = client();
+        int ore = 0;
+        int drops = 0;
+        int blocks = 0;
+        if (client.player != null) {
+            var inventory = client.player.getInventory();
+            for (int i = 0; i < inventory.size(); i++) {
+                var stack = inventory.getStack(i);
+                if (stack.isOf(net.minecraft.item.Items.IRON_ORE)) {
+                    ore += stack.getCount();
+                } else if (stack.isOf(net.minecraft.item.Items.RAW_IRON)) {
+                    drops += stack.getCount();
+                } else if (stack.isOf(net.minecraft.item.Items.RAW_IRON_BLOCK)) {
+                    blocks += stack.getCount();
+                }
+            }
+        }
+        // Dropped items still lying about, which is where a missing yield would be.
+        int onGround = 0;
+        if (client.world != null && client.player != null) {
+            var box = client.player.getBoundingBox().expand(8);
+            for (var entity : client.world.getEntitiesByClass(
+                    net.minecraft.entity.ItemEntity.class, box, e -> true)) {
+                if (entity.getStack().isOf(net.minecraft.item.Items.RAW_IRON)) {
+                    onGround += entity.getStack().getCount();
+                }
+            }
+        }
+        final int ground = onGround;
+        final int oreF = ore;
+        final int dropsF = drops;
+        final int blocksF = blocks;
+        // Read on the server's own thread: the block entity is the server's, and reaching for it
+        // from the render thread is what made this read come back as -1 every time.
+        var server = client.getServer();
+        if (server == null) {
+            BetterLoka.LOGGER.info("DIAG miner {}: running={} stage={} mined={} made={} | "
+                            + "eq: ore={} raw={} blocks={} ground={} | chest out=?",
+                    label, miner.running(), miner.stage(), miner.minedTotal(), miner.blocksMade(),
+                    oreF, dropsF, blocksF, ground);
+            return;
+        }
+        boolean running = miner.running();
+        var stage = miner.stage();
+        int mined = miner.minedTotal();
+        int made = miner.blocksMade();
+        server.execute(() -> BetterLoka.LOGGER.info(
+                "DIAG miner {}: running={} stage={} mined={} made={} | "
+                        + "eq: ore={} raw={} blocks={} ground={} | chest out={}",
+                label, running, stage, mined, made, oreF, dropsF, blocksF, ground,
+                outputChestCount()));
+    }
+
+    /** How many blocks have actually reached the output chest, read from the server's own copy. */
+    private static int outputChestCount() {
+        MinecraftClient client = client();
+        var server = client.getServer();
+        var site = BetterLokaClient.minerSites().output();
+        if (server == null || site == null || client.player == null) {
+            return -1;
+        }
+        var world = server.getWorld(client.world.getRegistryKey());
+        if (world == null) {
+            return -1;
+        }
+        if (!(world.getBlockEntity(site.pos()) instanceof net.minecraft.block.entity.ChestBlockEntity chest)) {
+            return -1;
+        }
+        int total = 0;
+        for (int slot = 0; slot < chest.size(); slot++) {
+            if (chest.getStack(slot).isOf(net.minecraft.item.Items.RAW_IRON_BLOCK)) {
+                total += chest.getStack(slot).getCount();
+            }
+        }
+        return total;
     }
 
     private void createWorld() {

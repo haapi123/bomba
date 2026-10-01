@@ -83,6 +83,8 @@ public class BetterLokaClient implements ClientModInitializer {
     private static MapDataStore mapData;
     private static MapIcons mapIcons;
     private static MapTerrain mapTerrain;
+    private static com.betterloka.miner.OreMiner oreMiner;
+    private static com.betterloka.miner.MinerSites minerSites;
     private static com.betterloka.map.TerrainDownload terrainDownload;
     private static GrindTimers grindTimers;
     private static BetterLokaConfig config;
@@ -127,6 +129,9 @@ public class BetterLokaClient implements ClientModInitializer {
         mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         mapTerrain = new MapTerrain(transport, configDir().resolve("map-terrain"));
         terrainDownload = new com.betterloka.map.TerrainDownload(transport, mapTerrain);
+        minerSites = new com.betterloka.miner.MinerSites(configDir().resolve("ore-miner.json"));
+        oreMiner = new com.betterloka.miner.OreMiner(config, minerSites);
+        new com.betterloka.miner.MinerCommands(oreMiner, minerSites).register();
         new WaypointHud(map).register();
         new WaypointWorldRenderer(map, mapIcons).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
@@ -170,6 +175,7 @@ public class BetterLokaClient implements ClientModInitializer {
             while (glowstoneTimerKey.wasPressed()) {
                 toggleTimer(grindTimers.glowstone(), "betterloka.grind.tab.glowstone");
             }
+            oreMiner.tick();
         });
 
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
@@ -278,6 +284,14 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static MapTerrain mapTerrain() {
         return mapTerrain;
+    }
+
+    public static com.betterloka.miner.OreMiner oreMiner() {
+        return oreMiner;
+    }
+
+    public static com.betterloka.miner.MinerSites minerSites() {
+        return minerSites;
     }
 
     /** The whole-continent map download, which the map screen starts and reports on. */
