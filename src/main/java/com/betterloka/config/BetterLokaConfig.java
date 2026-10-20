@@ -70,28 +70,6 @@ public final class BetterLokaConfig {
     /** GUI scale the rest of the time, which is what sizes the hotbar. */
     private int hotbarGuiScale = 3;
 
-    // --- Ore Miner ---
-
-    /** Which ore a run works on, stored by name so a hand-edited file stays readable. */
-    private String minerOre = "iron";
-
-    /**
-     * How many ore blocks to break before stopping to craft. Zero means only when the stock in the
-     * inventory runs out, which is the other thing that triggers a craft.
-     */
-    private int minerCraftEvery = 64;
-
-    /** The most ore to carry when fetching from the input container. */
-    private int minerDrawLimit = 128;
-
-    /**
-     * Ticks between two clicks inside a container.
-     *
-     * <p>Ten by default, which is half a second. The first version of this used one or two ticks and
-     * was built against a server on the same machine; a real one sits above a hundred milliseconds,
-     * two or three ticks, so clicking that fast means acting on answers that have not arrived.
-     */
-    private int minerPaceTicks = 10;
 
     private transient Path file;
 
@@ -261,65 +239,5 @@ public final class BetterLokaConfig {
     public void setGlowstoneHudEnabled(boolean glowstoneHudEnabled) {
         this.glowstoneHudEnabled = glowstoneHudEnabled;
         save();
-    }
-
-    // --- Ore Miner ---
-
-    public com.betterloka.miner.OreKind minerOre() {
-        com.betterloka.miner.OreKind kind = com.betterloka.miner.OreKind.byName(minerOre);
-        return kind == null ? com.betterloka.miner.OreKind.IRON : kind;
-    }
-
-    public void setMinerOre(com.betterloka.miner.OreKind kind) {
-        this.minerOre = kind.key();
-        save();
-    }
-
-    /** Zero means "only when the inventory runs dry"; otherwise at least a block's worth. */
-    public int minerCraftEvery() {
-        return minerCraftEvery <= 0 ? 0 : Math.max(OreKindLimits.MIN_CRAFT_EVERY,
-                Math.min(OreKindLimits.MAX_CRAFT_EVERY, minerCraftEvery));
-    }
-
-    public void setMinerCraftEvery(int value) {
-        this.minerCraftEvery = value <= 0 ? 0 : Math.max(OreKindLimits.MIN_CRAFT_EVERY,
-                Math.min(OreKindLimits.MAX_CRAFT_EVERY, value));
-        save();
-    }
-
-    public int minerPaceTicks() {
-        return Math.max(OreKindLimits.MIN_PACE, Math.min(OreKindLimits.MAX_PACE, minerPaceTicks));
-    }
-
-    public void setMinerPaceTicks(int ticks) {
-        this.minerPaceTicks = Math.max(OreKindLimits.MIN_PACE,
-                Math.min(OreKindLimits.MAX_PACE, ticks));
-        save();
-    }
-
-    public int minerDrawLimit() {
-        return Math.max(OreKindLimits.MIN_DRAW, Math.min(OreKindLimits.MAX_DRAW, minerDrawLimit));
-    }
-
-    public void setMinerDrawLimit(int value) {
-        this.minerDrawLimit = Math.max(OreKindLimits.MIN_DRAW,
-                Math.min(OreKindLimits.MAX_DRAW, value));
-        save();
-    }
-
-    /** The bounds the two miner numbers are held to, kept together so the screen can show them. */
-    public static final class OreKindLimits {
-        public static final int MIN_CRAFT_EVERY = 9;
-        public static final int MAX_CRAFT_EVERY = 1024;
-        /** A full inventory of ore is thirty-six stacks; past that there is nowhere to put it. */
-        public static final int MIN_DRAW = 9;
-        public static final int MAX_DRAW = 36 * 64;
-
-        /** Two ticks is as fast as it ever ran; a whole second is as slow as is worth offering. */
-        public static final int MIN_PACE = 2;
-        public static final int MAX_PACE = 20;
-
-        private OreKindLimits() {
-        }
     }
 }
