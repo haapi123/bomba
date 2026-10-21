@@ -169,4 +169,74 @@ class ZoomAnimationTest {
         assertEquals(view.centerX(), reopened.centerX(), 1e-9);
         assertEquals(view.zoom(), reopened.zoom(), 1e-12);
     }
+
+    // --- flying to a search result ---
+
+    @Test
+    void aFlightArrivesExactlyWhereItWasSent() {
+        ZoomAnimation view = new ZoomAnimation(16, 0, 0);
+        view.flyTo(2, 4000, -1500);
+        assertEquals(2, view.targetZoom());
+        assertEquals(4000, view.targetCenterX());
+        assertEquals(-1500, view.targetCenterZ());
+        int frames = runToRest(view, () -> { });
+        assertTrue(frames > 3, "it travels rather than cutting, took " + frames + " frames");
+        assertEquals(2, view.zoom(), 1e-9);
+        assertEquals(4000, view.centerX(), 1e-9);
+        assertEquals(-1500, view.centerZ(), 1e-9);
+    }
+
+    @Test
+    void aFlightStartsFromWhatIsOnScreen() {
+        ZoomAnimation view = new ZoomAnimation(16, 100, 200);
+        view.flyTo(2, 4000, -1500);
+        assertEquals(100, view.centerX(), 1e-9, "nothing has moved before the first frame");
+        assertEquals(200, view.centerZ(), 1e-9);
+        assertEquals(16, view.zoom(), 1e-9);
+    }
+
+    @Test
+    void aFlightOnlyEverGetsCloser() {
+        ZoomAnimation view = new ZoomAnimation(16, 0, 0);
+        view.flyTo(2, 4000, 3000);
+        double[] last = {Double.MAX_VALUE, Double.MAX_VALUE};
+        runToRest(view, () -> {
+            double distance = Math.hypot(4000 - view.centerX(), 3000 - view.centerZ());
+            double zoomLeft = Math.abs(Math.log(view.zoom() / 2));
+            assertTrue(distance <= last[0] + 1e-9, "the middle went back the way it came");
+            assertTrue(zoomLeft <= last[1] + 1e-9, "the zoom went back the way it came");
+            last[0] = distance;
+            last[1] = zoomLeft;
+        });
+    }
+
+    @Test
+    void aDragDuringAFlightTakesOverFromWhereItIs() {
+        ZoomAnimation view = new ZoomAnimation(16, 0, 0);
+        view.flyTo(2, 4000, 3000);
+        view.advance(1 / 60.0, TAU);
+        view.advance(1 / 60.0, TAU);
+        double x = view.centerX();
+        double z = view.centerZ();
+        double zoom = view.zoom();
+        view.settle();
+        assertEquals(x, view.centerX(), 1e-9);
+        assertEquals(z, view.centerZ(), 1e-9);
+        assertEquals(zoom, view.zoom(), 1e-9);
+        assertEquals(zoom, view.targetZoom(), 1e-9, "nothing is left in flight");
+        assertTrue(!view.advance(1 / 60.0, TAU));
+    }
+
+    @Test
+    void aZoomClickDuringAFlightDoesNotJumpTheView() {
+        ZoomAnimation view = new ZoomAnimation(16, 0, 0);
+        view.flyTo(2, 4000, 3000);
+        view.advance(1 / 60.0, TAU);
+        view.advance(1 / 60.0, TAU);
+        double anchorX = view.centerX() + 50 * view.zoom();
+        double before = screenOffset(view, anchorX);
+        view.zoomAbout(view.zoom() / 1.25, anchorX, view.centerZ());
+        assertEquals(before, screenOffset(view, anchorX), 1e-6);
+        runToRest(view, () -> assertEquals(before, screenOffset(view, anchorX), 1e-6));
+    }
 }

@@ -269,9 +269,13 @@ public final class MapTerrain {
      * off the texture — it calls {@code getSampler()} and hands the result to the render state — so
      * the texture is the only place a choice can be made.
      */
-    private static final class SmoothTexture extends DynamicTexture {
+    static final class SmoothTexture extends DynamicTexture {
         SmoothTexture(NativeImage image) {
-            super(() -> "betterloka/terrain", image);
+            this("betterloka/terrain", image);
+        }
+
+        SmoothTexture(String label, NativeImage image) {
+            super(() -> label, image);
             this.sampler = com.mojang.blaze3d.systems.RenderSystem.getSamplerCache()
                     .getClampToEdge(com.mojang.renderpearl.api.textures.FilterMode.LINEAR);
         }

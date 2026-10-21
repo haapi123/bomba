@@ -34,6 +34,19 @@ public final class ZoomAnimation {
     private double anchorX;
     private double anchorZ;
 
+    /**
+     * A flight: the middle travelling as well as the zoom, for going somewhere rather than closer.
+     *
+     * <p>No point can be held still on that journey — the place being left and the place being gone
+     * to are both moving on screen — so a flight eases its own progress from 0 to 1 and draws the
+     * middle and the logarithm of the zoom that far between where it started and where it is going.
+     */
+    private boolean flying;
+    private double fromX;
+    private double fromZ;
+    private double fromZoom;
+    private double progress;
+
     public ZoomAnimation(double zoom, double centerX, double centerZ) {
         this.zoom = zoom;
         this.targetZoom = zoom;
@@ -46,6 +59,11 @@ public final class ZoomAnimation {
         return zoom;
     }
 
+    /** Whether a {@link #flyTo} is under way, which a caller may want to pace differently. */
+    public boolean flying() {
+        return flying;
+    }
+
     /** The zoom it is heading for — what a view is saved as, and what the buttons step from. */
     public double targetZoom() {
         return targetZoom;
@@ -53,11 +71,11 @@ public final class ZoomAnimation {
 
     /** The middle to draw this frame. */
     public double centerX() {
-        return centerFor(centerX, anchorX);
+        return centerFor(centerX, flying ? fromX : anchorX);
     }
 
     public double centerZ() {
-        return centerFor(centerZ, anchorZ);
+        return centerFor(centerZ, flying ? fromZ : anchorZ);
     }
 
     /** The middle it is heading for. */
@@ -77,6 +95,9 @@ public final class ZoomAnimation {
      * which is what holding it still means.
      */
     private double centerFor(double target, double anchor) {
+        if (flying) {
+            return anchor + (target - anchor) * progress;
+        }
         if (zoom == targetZoom) {
             return target;
         }
@@ -85,6 +106,7 @@ public final class ZoomAnimation {
 
     /** Puts the zoom and the middle somewhere outright, with nothing left running. */
     public void jumpTo(double zoom, double centerX, double centerZ) {
+        this.flying = false;
         this.zoom = zoom;
         this.targetZoom = zoom;
         this.centerX = centerX;
@@ -105,9 +127,31 @@ public final class ZoomAnimation {
 
     /** Ends any running zoom where it stands. */
     public void settle() {
-        centerX = centerX();
-        centerZ = centerZ();
+        double drawnX = centerX();
+        double drawnZ = centerZ();
+        flying = false;
+        centerX = drawnX;
+        centerZ = drawnZ;
         targetZoom = zoom;
+    }
+
+    /**
+     * Travels to a new middle and zoom together, starting from what is drawn this instant.
+     *
+     * <p>For jumping to a search result: the map glides there rather than cutting, so the eye keeps
+     * track of where on the continent it has gone.
+     */
+    public void flyTo(double newTargetZoom, double newCenterX, double newCenterZ) {
+        double drawnX = centerX();
+        double drawnZ = centerZ();
+        fromX = drawnX;
+        fromZ = drawnZ;
+        fromZoom = zoom;
+        progress = 0;
+        flying = true;
+        targetZoom = newTargetZoom;
+        centerX = newCenterX;
+        centerZ = newCenterZ;
     }
 
     /**
@@ -123,6 +167,7 @@ public final class ZoomAnimation {
         double drawnZ = centerZ();
         double drawnZoom = zoom;
 
+        this.flying = false;
         this.anchorX = anchorX;
         this.anchorZ = anchorZ;
         this.targetZoom = newTargetZoom;
@@ -141,6 +186,9 @@ public final class ZoomAnimation {
      */
     public boolean advance(double seconds, double tau) {
         seconds = Math.min(MAX_FRAME_SECONDS, Math.max(0.0, seconds));
+        if (flying) {
+            return advanceFlight(seconds, tau);
+        }
         double drawn = Math.log(zoom);
         double target = Math.log(targetZoom);
         if (Math.abs(target - drawn) < SETTLED || seconds <= 0 || tau <= 0) {
@@ -149,6 +197,21 @@ public final class ZoomAnimation {
             return moved;
         }
         zoom = Math.exp(drawn + (target - drawn) * (1 - Math.exp(-seconds / tau)));
+        return true;
+    }
+
+    private boolean advanceFlight(double seconds, double tau) {
+        if (seconds <= 0 || tau <= 0) {
+            progress = 1;
+        } else {
+            progress += (1 - progress) * (1 - Math.exp(-seconds / tau));
+        }
+        if (1 - progress < SETTLED) {
+            flying = false;
+            zoom = targetZoom;
+            return true;
+        }
+        zoom = Math.exp(Math.log(fromZoom) + (Math.log(targetZoom) - Math.log(fromZoom)) * progress);
         return true;
     }
 }

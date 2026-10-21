@@ -69,8 +69,18 @@ public final class TerritoryOverlay {
             if (territory.xs().length > crossings.length) {
                 crossings = new double[territory.xs().length];
             }
-            fill(argb, size, worldLeft, worldTop, blocksPerTexel, territory, crossings);
-            outline(argb, size, worldLeft, worldTop, blocksPerTexel, territory);
+            double fillAlpha = clamp01(territory.fillOpacity());
+            if (fillAlpha > 0) {
+                int colour = territory.fillColor();
+                fill(size, size, worldLeft, worldTop, blocksPerTexel, territory, crossings,
+                        index -> argb[index] = blend(argb[index], colour, fillAlpha));
+            }
+            double opacity = clamp01(territory.strokeOpacity());
+            if (opacity > 0) {
+                int colour = territory.strokeColor();
+                outline(size, size, worldLeft, worldTop, blocksPerTexel, territory, outlineTexels(territory),
+                        (index, coverage) -> argb[index] = blend(argb[index], colour, opacity * coverage));
+            }
             painted = true;
         }
         return painted;
@@ -99,17 +109,25 @@ public final class TerritoryOverlay {
         return Math.max(1.0, territory.strokeWeight() * TEXELS_PER_OUTLINE_PIXEL);
     }
 
-    private static void fill(int[] argb, int size, double worldLeft, double worldTop,
-                             double blocksPerTexel, MapTerritory territory, double[] crossings) {
-        double alpha = clamp01(territory.fillOpacity());
-        if (alpha <= 0) {
-            return;
-        }
-        int colour = territory.fillColor();
+    /** Something to do to each texel a fill covers, by its index in the row-by-row array. */
+    @FunctionalInterface
+    private interface Covered {
+        void at(int index);
+    }
+
+    /** Something to do to each texel an outline reaches, with how much of it the line covers. */
+    @FunctionalInterface
+    private interface Partly {
+        void at(int index, double coverage);
+    }
+
+    private static void fill(int width, int height, double worldLeft, double worldTop,
+                             double blocksPerTexel, MapTerritory territory, double[] crossings,
+                             Covered covered) {
         double[] xs = territory.xs();
         double[] zs = territory.zs();
         int top = Math.max(0, (int) Math.floor((territory.minZ() - worldTop) / blocksPerTexel));
-        int bottom = Math.min(size - 1, (int) Math.ceil((territory.maxZ() - worldTop) / blocksPerTexel));
+        int bottom = Math.min(height - 1, (int) Math.ceil((territory.maxZ() - worldTop) / blocksPerTexel));
         for (int row = top; row <= bottom; row++) {
             double worldZ = worldTop + (row + 0.5) * blocksPerTexel;
             int found = 0;
@@ -125,11 +143,11 @@ public final class TerritoryOverlay {
             for (int pair = 0; pair + 1 < found; pair += 2) {
                 // Texel centres inside the span, so neighbours that share an edge share no texel.
                 int from = Math.max(0, (int) Math.ceil((crossings[pair] - worldLeft) / blocksPerTexel - 0.5));
-                int to = Math.min(size - 1,
+                int to = Math.min(width - 1,
                         (int) Math.ceil((crossings[pair + 1] - worldLeft) / blocksPerTexel - 0.5) - 1);
-                int base = row * size;
+                int base = row * width;
                 for (int x = from; x <= to; x++) {
-                    argb[base + x] = blend(argb[base + x], colour, alpha);
+                    covered.at(base + x);
                 }
             }
         }
@@ -141,14 +159,10 @@ public final class TerritoryOverlay {
      * <p>Coverage is worked out from the distance to the edge rather than stepped pixel by pixel, so
      * the slanted sides of a hex come out as smooth as the straight ones.
      */
-    private static void outline(int[] argb, int size, double worldLeft, double worldTop,
-                                double blocksPerTexel, MapTerritory territory) {
-        double opacity = clamp01(territory.strokeOpacity());
-        if (opacity <= 0) {
-            return;
-        }
-        int colour = territory.strokeColor();
-        double half = outlineTexels(territory) / 2;
+    private static void outline(int width, int height, double worldLeft, double worldTop,
+                                double blocksPerTexel, MapTerritory territory, double outlineTexels,
+                                Partly partly) {
+        double half = outlineTexels / 2;
         double[] xs = territory.xs();
         double[] zs = territory.zs();
         for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
@@ -157,9 +171,9 @@ public final class TerritoryOverlay {
             double x2 = (xs[i] - worldLeft) / blocksPerTexel;
             double y2 = (zs[i] - worldTop) / blocksPerTexel;
             int minX = Math.max(0, (int) Math.floor(Math.min(x1, x2) - half - 1));
-            int maxX = Math.min(size - 1, (int) Math.ceil(Math.max(x1, x2) + half + 1));
+            int maxX = Math.min(width - 1, (int) Math.ceil(Math.max(x1, x2) + half + 1));
             int minY = Math.max(0, (int) Math.floor(Math.min(y1, y2) - half - 1));
-            int maxY = Math.min(size - 1, (int) Math.ceil(Math.max(y1, y2) + half + 1));
+            int maxY = Math.min(height - 1, (int) Math.ceil(Math.max(y1, y2) + half + 1));
             if (minX > maxX || minY > maxY) {
                 continue;
             }
@@ -168,7 +182,7 @@ public final class TerritoryOverlay {
             double lengthSquared = dx * dx + dy * dy;
             for (int y = minY; y <= maxY; y++) {
                 double py = y + 0.5;
-                int base = y * size;
+                int base = y * width;
                 for (int x = minX; x <= maxX; x++) {
                     double px = x + 0.5;
                     double t = lengthSquared == 0 ? 0
@@ -180,10 +194,49 @@ public final class TerritoryOverlay {
                     if (coverage <= 0) {
                         continue;
                     }
-                    argb[base + x] = blend(argb[base + x], colour, opacity * Math.min(1, coverage));
+                    partly.at(base + x, Math.min(1, coverage));
                 }
             }
         }
+    }
+
+    /** Transparent white: the colour of a highlight texel nothing covers. */
+    static final int CLEAR_WHITE = 0x00FFFFFF;
+
+    /**
+     * A see-through white wash of some territories, for lighting up a search result.
+     *
+     * <p>Drawn over the map as one texture rather than shape by shape, for the reason the claims are
+     * painted into the tiles: an outline drawn every frame as a quad per pixel of edge is what made
+     * the map lag, and a town lights up a dozen hexes at once.
+     *
+     * <p>The texels nothing covers are white at zero alpha rather than black, so smooth sampling at
+     * the edge fades the wash out instead of ringing it with grey.
+     *
+     * @param fillAlpha     how opaque the inside is, 0 to 1
+     * @param outlineTexels how wide the edge is drawn, fully opaque
+     * @return the texels row by row, ARGB with straight alpha
+     */
+    public static int[] highlight(int width, int height, double worldLeft, double worldTop,
+                                  double blocksPerTexel, List<MapTerritory> territories,
+                                  double fillAlpha, double outlineTexels) {
+        double[] alpha = new double[width * height];
+        double[] crossings = new double[64];
+        double inside = clamp01(fillAlpha);
+        for (MapTerritory territory : territories) {
+            if (territory.xs().length > crossings.length) {
+                crossings = new double[territory.xs().length];
+            }
+            fill(width, height, worldLeft, worldTop, blocksPerTexel, territory, crossings,
+                    index -> alpha[index] = Math.max(alpha[index], inside));
+            outline(width, height, worldLeft, worldTop, blocksPerTexel, territory, outlineTexels,
+                    (index, coverage) -> alpha[index] = Math.max(alpha[index], coverage));
+        }
+        int[] argb = new int[width * height];
+        for (int i = 0; i < argb.length; i++) {
+            argb[i] = ((int) Math.round(alpha[i] * 255) << 24) | 0xFFFFFF;
+        }
+        return argb;
     }
 
     /** {@code over} laid on {@code under} at {@code alpha}; the result stays opaque. */

@@ -6,6 +6,7 @@ import com.betterloka.gui.PlayerFinderScreen;
 import com.betterloka.gui.TownFinderScreen;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerritory;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -308,10 +309,10 @@ public final class DevShots {
         }
         double cursorX = client.mouseHandler.getScaledXPos(client.getWindow());
         double cursorY = client.mouseHandler.getScaledYPos(client.getWindow());
-        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
-        map.mouseDragged(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(0, 0)),
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)), false);
+        map.mouseDragged(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)),
                 cursorX - point[0], cursorY - point[1]);
-        map.mouseReleased(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(0, 0)));
+        map.mouseReleased(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)));
     }
 
     private static void dismissBubble() {
@@ -325,7 +326,7 @@ public final class DevShots {
         if (client().gui.screen() instanceof LokaMapScreen map) {
             double x = client().mouseHandler.getScaledXPos(client().getWindow());
             double y = client().mouseHandler.getScaledYPos(client().getWindow());
-            map.mouseClicked(new MouseButtonEvent(x, y, new MouseButtonInfo(1, 0)), false);
+            map.mouseClicked(new MouseButtonEvent(x, y, new MouseButtonInfo(InputConstants.MOUSE_BUTTON_RIGHT, 0)), false);
         }
     }
 
@@ -339,7 +340,7 @@ public final class DevShots {
             BetterLoka.LOGGER.warn("SHOT no coordinate bubble to copy from");
             return;
         }
-        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)), false);
         BetterLoka.LOGGER.info("SHOT clipboard now holds: '{}'", client().keyboardHandler.getClipboard());
     }
 
@@ -373,7 +374,7 @@ public final class DevShots {
             return;
         }
         int[] point = in ? map.devZoomInButton() : map.devZoomOutButton();
-        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)), false);
     }
 
     private static void scroll(int amount) {

@@ -3,17 +3,23 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapDataStore;
+import com.betterloka.map.MapHighlight;
+import com.betterloka.map.MapSearch;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.MapTerritory;
 import com.betterloka.map.MapTown;
 import com.betterloka.map.TerrainDownload;
 import com.betterloka.map.Waypoint;
 import com.betterloka.map.ZoomAnimation;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
@@ -123,6 +129,56 @@ public class LokaMapScreen extends Screen {
     private int mapWidth;
     private int mapHeight;
 
+    // --- search ---
+
+    /**
+     * What a search lit up: a hex by its number or a town by its name.
+     *
+     * <p>Held as a key rather than as territory records, for the reason the selection is: a capture
+     * replaces the records, and the light should follow the hex or the town, not the old copy.
+     */
+    private record Found(Continent continent, MapSearch.Kind kind, String key, double x, double z,
+                         long at) {
+    }
+
+    private static final int SEARCH_MAX_WIDTH = 170;
+    private static final int SEARCH_HEIGHT = 16;
+    private static final int SEARCH_INSET = 6;
+
+    /** How much of the window a found hex is made to fill, and how much a found town's ground. */
+    private static final double SEARCH_FILL_ONE = 0.4;
+    private static final double SEARCH_FILL_TOWN = 0.75;
+
+    /** The zoom for a town that holds no ground and is only a marker: close enough to see where. */
+    private static final double SEARCH_MARKER_ZOOM = 2.0;
+
+    /** How long the flight to a result takes, as a time constant: slower than a zoom click. */
+    private static final double SEARCH_FLY_TAU_SECONDS = 0.09;
+
+    /** The light pulses for this long so the eye finds it, then rests at a gentle wash. */
+    private static final double SEARCH_PULSE_SECONDS = 2.4;
+    private static final double SEARCH_PULSE_PERIOD = 0.8;
+    private static final double SEARCH_REST_STRENGTH = 0.6;
+
+    /** How long "not found" stays up after Enter found nothing. */
+    private static final long SEARCH_MISS_MILLIS = 4000;
+
+    private EditBox searchField;
+    private Button waypointButton;
+    private MapSearch search;
+    private MapDataStore.Snapshot searchBuiltFrom;
+    private Found found;
+    private final MapHighlight highlight = new MapHighlight();
+    private String missedQuery;
+    private long missedAt;
+    /** The query the light came from, so the line under the field stops offering what is done. */
+    private String searchedFor;
+
+    // What the line under the field says while typing, worked out once per change rather than per frame.
+    private String suggestedFor;
+    private MapDataStore.Snapshot suggestedFrom;
+    private MapSearch.Hit suggestion;
+
     public LokaMapScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_map"));
         this.parent = parent;
@@ -134,6 +190,14 @@ public class LokaMapScreen extends Screen {
 
     private int contentLeft() {
         return (this.width - contentWidth()) / 2;
+    }
+
+    /** Where the map goes, worked out the same way for placing widgets on it and for drawing it. */
+    private void layoutMap() {
+        mapX = contentLeft() + MAP_MARGIN;
+        mapY = MAP_TOP;
+        mapWidth = contentWidth() - MAP_MARGIN * 2;
+        mapHeight = Math.max(60, this.height - 32 - MAP_TOP);
     }
 
     @Override
@@ -156,7 +220,7 @@ public class LokaMapScreen extends Screen {
         // itself the way Loka's own does it, rather than in a panel eating half the height.
         int bottomY = this.height - 26;
         int quarter = (width - 12) / 4;
-        addRenderableWidget(Button.builder(waypointLabel(), button -> {
+        waypointButton = addRenderableWidget(Button.builder(waypointLabel(), button -> {
                     toggleWaypoint();
                     button.setMessage(waypointLabel());
                 })
@@ -171,6 +235,20 @@ public class LokaMapScreen extends Screen {
                 .bounds(left + (quarter + 4) * 3, bottomY,
                         left + width - (left + (quarter + 4) * 3), 20).build());
 
+        // The search sits on the map's top right corner, the way a web map carries one. A child but
+        // not a renderable: it is drawn after the map, which would otherwise paint over it.
+        layoutMap();
+        String previous = searchField != null ? searchField.getValue() : "";
+        int searchWidth = Math.max(80, Math.min(SEARCH_MAX_WIDTH, mapWidth / 2 - 30));
+        searchField = new EditBox(this.font, mapX + mapWidth - searchWidth - SEARCH_INSET,
+                mapY + SEARCH_INSET, searchWidth, SEARCH_HEIGHT,
+                Component.translatable("betterloka.map.search"));
+        searchField.setMaxLength(48);
+        searchField.setHint(Component.translatable("betterloka.map.search_hint")
+                .withStyle(ChatFormatting.DARK_GRAY));
+        searchField.setValue(previous);
+        searchField.setResponder(text -> missedQuery = null);
+        addWidget(searchField);
     }
 
     private Component tabLabel(Continent value) {
@@ -196,6 +274,8 @@ public class LokaMapScreen extends Screen {
         snapshot = BetterLokaClient.mapData().snapshot(target);
         selectedNumber = null;
         selected = null;
+        found = null;
+        missedQuery = null;
         closePin();
         centred = false;
         rebuildWidgets();
@@ -299,7 +379,7 @@ public class LokaMapScreen extends Screen {
         long now = System.nanoTime();
         double seconds = lastFrameNanos == 0 ? 0 : (now - lastFrameNanos) / 1_000_000_000.0;
         lastFrameNanos = now;
-        view.advance(seconds, ZOOM_TAU_SECONDS);
+        view.advance(seconds, view.flying() ? SEARCH_FLY_TAU_SECONDS : ZOOM_TAU_SECONDS);
         blocksPerPixel = view.zoom();
     }
 
@@ -384,10 +464,32 @@ public class LokaMapScreen extends Screen {
                 && screenY >= buttonY && screenY < buttonY + MapStyle.ZOOM_BUTTON_SIZE;
     }
 
+    /** Whether a point is on one of the buttons painted over the map's corner. */
+    private boolean overMapButton(double screenX, double screenY) {
+        return mapWidth > 0 && (overButton(screenX, screenY, zoomInY())
+                || overButton(screenX, screenY, zoomOutY())
+                || overButton(screenX, screenY, downloadY()));
+    }
+
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (click.button() == 1) {
-            return rightClick(click.x(), click.y());
+        // The search field sits on the map, so it is asked before the map is.
+        if (searchField.isVisible() && searchField.isMouseOver(click.x(), click.y())) {
+            return super.mouseClicked(click, doubled);
+        }
+        // Minecraft 26.3 numbers the mouse buttons from one — left 1, middle 2, right 3 — where the
+        // windowing library before it counted from nought. Testing for 1 as "right" is what turned
+        // every left click into a right one: it pinned a coordinate instead of reaching the tabs,
+        // the bottom buttons or the zoom buttons, so nothing on this screen seemed to answer.
+        if (click.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+            return rightClick(click.x(), click.y()) || super.mouseClicked(click, doubled);
+        }
+        if (click.button() != InputConstants.MOUSE_BUTTON_LEFT) {
+            return super.mouseClicked(click, doubled);
+        }
+        // Clicking the map or its buttons is clicking away from the field: typing stops going there.
+        if (insideMap(click.x(), click.y()) && getFocused() == searchField) {
+            setFocused(null);
         }
         // A left click anywhere dismisses the coordinate bubble, including the click that lands on
         // its own Copy button — which is handled first so the copy still happens.
@@ -449,7 +551,13 @@ public class LokaMapScreen extends Screen {
                     && Math.abs(click.y() - dragOriginY) <= DRAG_SLOP) {
                 selected = territoryAt(click.x(), click.y());
                 selectedNumber = selected == null ? null : selected.number();
-                rebuildWidgets();
+                // Picking something else puts the search's light out; picking what it lit keeps it.
+                if (selected == null || !litTerritories().contains(selected)) {
+                    found = null;
+                }
+                if (waypointButton != null) {
+                    waypointButton.setMessage(waypointLabel());
+                }
             }
             return true;
         }
@@ -509,21 +617,16 @@ public class LokaMapScreen extends Screen {
         context.centeredText(this.font, this.title, this.width / 2, 10,
                 GuiTheme.TEXT);
 
-        int width = contentWidth();
-        int left = contentLeft();
-
-        mapX = left + MAP_MARGIN;
-        mapY = MAP_TOP;
-        mapWidth = width - MAP_MARGIN * 2;
-        mapHeight = Math.max(60, this.height - 32 - MAP_TOP);
-
-        GuiTheme.panel(context, left, MAP_TOP - 4, width, mapHeight + 8);
+        layoutMap();
+        GuiTheme.panel(context, contentLeft(), MAP_TOP - 4, contentWidth(), mapHeight + 8);
 
         // One read per frame: the store may swap the snapshot under us at any moment, and half a
         // frame drawn from each would tear.
         snapshot = BetterLokaClient.mapData().snapshot(continent);
         selected = resolveSelection();
 
+        // Nothing to search until there is something on the map.
+        searchField.setVisible(!territories().isEmpty());
         if (territories().isEmpty()) {
             centered(context, "betterloka.map.loading", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
             return;
@@ -535,8 +638,9 @@ public class LokaMapScreen extends Screen {
         // In this order: move the zoom on, then fix the origin the frame is drawn against.
         advanceZoom();
         takeOrigin();
-        hovered = dragging ? null : territoryAt(mouseX, mouseY);
+        hovered = dragging || overSearch(mouseX, mouseY) ? null : territoryAt(mouseX, mouseY);
         drawMap(context, mouseX, mouseY);
+        drawSearch(context, mouseX, mouseY, delta);
 
         // Outside the map's scissor: the card may reach past the panel, and should.
         // While the bubble is up it is what the pointer is about; two panels over one spot is
@@ -564,6 +668,10 @@ public class LokaMapScreen extends Screen {
         long devAfterTerrain = System.nanoTime();
         devTerrainNanos = devAfterTerrain - devStart;
 
+        // Over the ground and under the markers, like the claims it lights up.
+        List<MapTerritory> lit = litTerritories();
+        drawHighlight(context, lit);
+
         // The claims ride on the same fraction of a pixel the ground does, so the outlines stay
         // welded to the coast through a drag instead of stepping off it and back on. Placed against
         // the rounded origin and shifted once here — see the origin fields.
@@ -579,6 +687,9 @@ public class LokaMapScreen extends Screen {
         // the tiles would mean repainting tiles on every click.
         if (selected != null && !offScreen(selected)) {
             drawSelection(context, selected);
+        }
+        if (lit.isEmpty()) {
+            drawFoundMarker(context);
         }
 
         long devAfterBorders = System.nanoTime();
@@ -1159,7 +1270,8 @@ public class LokaMapScreen extends Screen {
      * nothing to pick — so the question that has no answer on the left button gets its own.
      */
     private boolean rightClick(double screenX, double screenY) {
-        if (!insideMap(screenX, screenY)) {
+        // Not on the buttons over the map: a right click there is a missed left click, not a question.
+        if (!insideMap(screenX, screenY) || overMapButton(screenX, screenY)) {
             return false;
         }
         pinned = true;
@@ -1264,12 +1376,225 @@ public class LokaMapScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+    public boolean keyPressed(KeyEvent input) {
+        if (searchField.isFocused() && input.isConfirmation()) {
+            runSearch();
+            return true;
+        }
         if (pinned && input.isEscape()) {
             closePin();
             return true;
         }
         return super.keyPressed(input);
+    }
+
+    // --- search ---
+
+    /** The search for this snapshot, built again only when the store hands over a new one. */
+    private MapSearch searchIndex() {
+        if (search == null || searchBuiltFrom != snapshot) {
+            search = MapSearch.of(territories(), snapshot.towns());
+            searchBuiltFrom = snapshot;
+        }
+        return search;
+    }
+
+    /**
+     * Enter in the field: flies to the best match, selects it and lights it up.
+     *
+     * <p>An empty field puts the light out, so the search can be cleared the way it was made.
+     */
+    private void runSearch() {
+        String query = searchField.getValue().trim();
+        if (query.isEmpty()) {
+            found = null;
+            missedQuery = null;
+            return;
+        }
+        if (territories().isEmpty()) {
+            return;
+        }
+        MapSearch.Hit hit = searchIndex().find(query);
+        if (hit == null) {
+            missedQuery = query;
+            missedAt = System.currentTimeMillis();
+            return;
+        }
+        missedQuery = null;
+        searchedFor = query;
+        found = new Found(continent, hit.kind(),
+                hit.kind() == MapSearch.Kind.TERRITORY ? hit.focus().number() : hit.name(),
+                hit.x(), hit.z(), System.currentTimeMillis());
+        // The hex, or the town's seat, becomes the selection: its card comes up and the waypoint
+        // and copy buttons act on it, so a search is one keystroke from walking there.
+        selected = hit.focus();
+        selectedNumber = selected == null ? null : selected.number();
+        closePin();
+        flyTo(hit);
+        if (waypointButton != null) {
+            waypointButton.setMessage(waypointLabel());
+        }
+    }
+
+    /** Glides the view to frame a result: a hex filling a good part of the window, a town all of it. */
+    private void flyTo(MapSearch.Hit hit) {
+        double centerX = hit.x();
+        double centerZ = hit.z();
+        double zoom;
+        if (hit.territories().isEmpty()) {
+            zoom = Math.min(view.targetZoom(), SEARCH_MARKER_ZOOM);
+        } else {
+            TerrainDownload.Bounds bounds = TerrainDownload.Bounds.of(hit.territories());
+            double fill = hit.territories().size() == 1 ? SEARCH_FILL_ONE : SEARCH_FILL_TOWN;
+            zoom = Math.max((bounds.maxX() - bounds.minX()) / (mapWidth * fill),
+                    (bounds.maxZ() - bounds.minZ()) / (mapHeight * fill));
+            // The middle of the shape rather than its marker, so all of it is in the window.
+            centerX = (bounds.minX() + bounds.maxX()) / 2;
+            centerZ = (bounds.minZ() + bounds.maxZ()) / 2;
+        }
+        view.flyTo(clampZoom(zoom), centerX, centerZ);
+        centred = true;
+        rememberView();
+    }
+
+    /** The territories the search has lit, as this frame's snapshot describes them. */
+    private List<MapTerritory> litTerritories() {
+        if (found == null || found.continent() != continent) {
+            return List.of();
+        }
+        List<MapTerritory> lit = new ArrayList<>();
+        for (MapTerritory territory : territories()) {
+            boolean match = found.kind() == MapSearch.Kind.TERRITORY
+                    ? found.key().equals(territory.number())
+                    : !territory.neutral() && territory.owner().equalsIgnoreCase(found.key());
+            if (match) {
+                lit.add(territory);
+            }
+        }
+        return lit;
+    }
+
+    /** The wash over what was found: one texture, placed and scaled like a layer of ground. */
+    private void drawHighlight(GuiGraphicsExtractor context, List<MapTerritory> lit) {
+        if (lit.isEmpty()) {
+            highlight.clear();
+            return;
+        }
+        // Painted for the zoom being headed to, so a flight paints it once rather than all the way.
+        highlight.ensure(lit, view.targetZoom());
+        if (!highlight.ready()) {
+            return;
+        }
+        float scale = (float) (highlight.blocksPerTexel() / blocksPerPixel);
+        if (scale <= 0 || !Float.isFinite(scale)) {
+            return;
+        }
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate((float) screenXExact(highlight.left()), (float) screenYExact(highlight.top()));
+        matrices.scale(scale, scale);
+        context.blit(RenderPipelines.GUI_TEXTURED, highlight.id(), 0, 0, 0f, 0f,
+                highlight.width(), highlight.height(), highlight.width(), highlight.height(),
+                highlight.width(), highlight.height(), highlightTint());
+        matrices.popMatrix();
+    }
+
+    /**
+     * How strongly the light shows: full for a moment and pulsing so the eye finds it, then a
+     * gentle wash that leaves the colours underneath readable.
+     */
+    private int highlightTint() {
+        double age = found == null ? SEARCH_PULSE_SECONDS
+                : (System.currentTimeMillis() - found.at()) / 1000.0;
+        double strength = SEARCH_REST_STRENGTH;
+        if (age < SEARCH_PULSE_SECONDS) {
+            double pulse = 0.5 + 0.5 * Math.cos(age / SEARCH_PULSE_PERIOD * 2 * Math.PI);
+            strength += (1 - SEARCH_REST_STRENGTH) * pulse * (1 - age / SEARCH_PULSE_SECONDS);
+        }
+        return (int) Math.round(255 * strength) << 24 | 0xFFFFFF;
+    }
+
+    /** A town that holds no ground is only a marker, so the light is a ring around where it stands. */
+    private void drawFoundMarker(GuiGraphicsExtractor context) {
+        if (found == null || found.continent() != continent || found.kind() != MapSearch.Kind.TOWN) {
+            return;
+        }
+        int x = screenXOf(found.x());
+        int y = screenYOf(found.z());
+        int r = 7;
+        int colour = highlightTint();
+        context.fill(x - r, y - r, x + r + 1, y - r + 2, colour);
+        context.fill(x - r, y + r - 1, x + r + 1, y + r + 1, colour);
+        context.fill(x - r, y - r, x - r + 2, y + r + 1, colour);
+        context.fill(x + r - 1, y - r, x + r + 1, y + r + 1, colour);
+    }
+
+    /** Whether the pointer is on the field or the line under it, where the map should not react. */
+    private boolean overSearch(double screenX, double screenY) {
+        if (!searchField.isVisible()) {
+            return false;
+        }
+        int x = searchField.getX();
+        int y = searchField.getY();
+        int bottom = y + searchField.getHeight() + (searchLine() != null ? 14 : 0);
+        return screenX >= x && screenX < x + searchField.getWidth() && screenY >= y && screenY < bottom;
+    }
+
+    private void drawSearch(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        searchField.extractRenderState(context, mouseX, mouseY, delta);
+        Component line = searchLine();
+        if (line == null) {
+            return;
+        }
+        boolean missed = missedQuery != null;
+        int width = Math.min(this.font.width(line) + 8, mapWidth - SEARCH_INSET * 2);
+        int x = Math.max(mapX + SEARCH_INSET, searchField.getX() + searchField.getWidth() - width);
+        int y = searchField.getY() + searchField.getHeight() + 2;
+        MapStyle.card(context, x, y, width, 12, missed ? GuiTheme.BAD : GuiTheme.MUTED);
+        context.text(this.font, line, x + 4, y + 2, missed ? GuiTheme.BAD : GuiTheme.TEXT);
+    }
+
+    /**
+     * The line under the field: what Enter will go to while typing, or that nothing was found.
+     *
+     * <p>Saying where Enter goes before it is pressed is what makes a loose match safe — typing
+     * "forest" shows which Forest it will be, and a wrong guess is corrected before it is made.
+     */
+    private Component searchLine() {
+        if (missedQuery != null) {
+            if (System.currentTimeMillis() - missedAt < SEARCH_MISS_MILLIS) {
+                return Component.translatable("betterloka.map.search_none", missedQuery,
+                        continent.displayName());
+            }
+            missedQuery = null;
+        }
+        String query = searchField.getValue();
+        if (!searchField.isFocused() || query.isBlank() || territories().isEmpty()) {
+            return null;
+        }
+        if (found != null && query.trim().equals(searchedFor)) {
+            return null;
+        }
+        if (!query.equals(suggestedFor) || suggestedFrom != snapshot) {
+            suggestion = searchIndex().find(query);
+            suggestedFor = query;
+            suggestedFrom = snapshot;
+        }
+        if (suggestion == null) {
+            return Component.translatable("betterloka.map.search_nothing");
+        }
+        return Component.translatable("betterloka.map.search_enter", describe(suggestion));
+    }
+
+    private Component describe(MapSearch.Hit hit) {
+        if (hit.kind() == MapSearch.Kind.TOWN) {
+            return Component.translatable("betterloka.map.search_town", hit.name(),
+                    hit.territories().size());
+        }
+        MapTerritory territory = hit.focus();
+        return territory.neutral()
+                ? Component.translatable("betterloka.map.search_neutral", territory.label())
+                : Component.translatable("betterloka.map.search_held", territory.label(), territory.owner());
     }
 
     // --- development ---
@@ -1286,7 +1611,8 @@ public class LokaMapScreen extends Screen {
         int y = in ? zoomInY() : zoomOutY();
         double x = zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0;
         mouseClicked(new MouseButtonEvent(x, y + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
-                new net.minecraft.client.input.MouseButtonInfo(0, 0)), false);
+                new net.minecraft.client.input.MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)),
+                false);
     }
 
     /**
@@ -1309,7 +1635,61 @@ public class LokaMapScreen extends Screen {
     public void devPressDownload() {
         mouseClicked(new MouseButtonEvent(zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
                 downloadY() + MapStyle.ZOOM_BUTTON_SIZE / 2.0,
-                new net.minecraft.client.input.MouseButtonInfo(0, 0)), false);
+                new net.minecraft.client.input.MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0)),
+                false);
+    }
+
+    /** Development only: which continent the screen is showing. */
+    public Continent devContinent() {
+        return continent;
+    }
+
+    /** Development only: whether a right click's coordinate bubble is up. */
+    public boolean devPinned() {
+        return pinned;
+    }
+
+    /** Development only: the zoom the view is heading for. */
+    public double devTargetZoom() {
+        return view.targetZoom();
+    }
+
+    /** Development only: the middle the view is heading for, as {x, z}. */
+    public double[] devTargetCenter() {
+        return new double[] {view.targetCenterX(), view.targetCenterZ()};
+    }
+
+    /** Development only: what is selected, by its label, or {@code null}. */
+    public String devSelectedLabel() {
+        return selected == null ? null : selected.label();
+    }
+
+    /** Development only: how many territories the search has lit. */
+    public int devLitCount() {
+        return litTerritories().size();
+    }
+
+    /** Development only: what the line under the search field says right now, as plain text. */
+    public String devSearchLine() {
+        Component line = searchLine();
+        return line == null ? null : line.getString();
+    }
+
+    /**
+     * Development only: types a query and presses Enter, through the field and the key handler a
+     * person's keystrokes go through — clicking the field first, as a person would.
+     */
+    public void devSearch(String query) {
+        double x = searchField.getX() + searchField.getWidth() / 2.0;
+        double y = searchField.getY() + searchField.getHeight() / 2.0;
+        var left = new net.minecraft.client.input.MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0);
+        mouseClicked(new MouseButtonEvent(x, y, left), false);
+        mouseReleased(new MouseButtonEvent(x, y, left));
+        searchField.setValue("");
+        for (int i = 0; i < query.length(); i++) {
+            charTyped(new net.minecraft.client.input.CharacterEvent(query.charAt(i)));
+        }
+        keyPressed(new KeyEvent(InputConstants.KEY_RETURN, 0, 0));
     }
 
     /** The zoom being drawn right now, part-way through an animation and all. */
@@ -1385,5 +1765,12 @@ public class LokaMapScreen extends Screen {
     public void onClose() {
         rememberView();
         this.minecraft.gui.setScreen(parent);
+    }
+
+    @Override
+    public void removed() {
+        // Closed by any route — the map key, a teleport, a disconnect — the texture goes with it.
+        highlight.clear();
+        super.removed();
     }
 }

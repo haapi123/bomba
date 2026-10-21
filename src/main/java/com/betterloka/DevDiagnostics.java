@@ -43,6 +43,11 @@ public final class DevDiagnostics {
         step(80, () -> { });
         step(5, this::createWorld);
         step(300, () -> { });
+        if ("map".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            mapInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
 
         step(1, () -> heldPerContinent());
         step(1, () -> bonusesOnBalak());
@@ -395,7 +400,8 @@ public final class DevDiagnostics {
         }
         double x = client.getWindow().getGuiScaledWidth() / 2.0;
         double y = client.getWindow().getGuiScaledHeight() / 2.0;
-        var input = new net.minecraft.client.input.MouseButtonInfo(0, 0);
+        var input = new net.minecraft.client.input.MouseButtonInfo(
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0);
         map.mouseClicked(new net.minecraft.client.input.MouseButtonEvent(x, y, input), false);
         for (int moved = 4; moved <= pixels; moved += 4) {
             map.mouseDragged(new net.minecraft.client.input.MouseButtonEvent(x + moved, y, input), 4, 0);
@@ -429,12 +435,15 @@ public final class DevDiagnostics {
         double cursorX = client.mouseHandler.getScaledXPos(client.getWindow());
         double cursorY = client.mouseHandler.getScaledYPos(client.getWindow());
         map.mouseClicked(new net.minecraft.client.input.MouseButtonEvent(point[0], point[1],
-                new net.minecraft.client.input.MouseButtonInfo(0, 0)), false);
+                new net.minecraft.client.input.MouseButtonInfo(
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0)), false);
         map.mouseDragged(new net.minecraft.client.input.MouseButtonEvent(cursorX, cursorY,
-                new net.minecraft.client.input.MouseButtonInfo(0, 0)),
+                new net.minecraft.client.input.MouseButtonInfo(
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0)),
                 cursorX - point[0], cursorY - point[1]);
         map.mouseReleased(new net.minecraft.client.input.MouseButtonEvent(cursorX, cursorY,
-                new net.minecraft.client.input.MouseButtonInfo(0, 0)));
+                new net.minecraft.client.input.MouseButtonInfo(
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT, 0)));
         BetterLoka.LOGGER.info("DIAG dragged a bonus hex under the pointer");
     }
 
@@ -700,6 +709,145 @@ public final class DevDiagnostics {
         step(wait, () -> net.minecraft.client.Screenshot.grab(
                 client().gameDirectory, name + ".png", client().gameRenderer.mainRenderTarget(), 1,
                 message -> BetterLoka.LOGGER.info("DIAG shot {} -> {}", name, message.getString())));
+    }
+
+    // --- the map's controls, pressed the way a hand presses them ---
+
+    /**
+     * Clicks, right clicks and the search, each sent through the screen's own mouse and key handlers
+     * at a point on screen, with the button numbers Minecraft 26.3 really sends.
+     *
+     * <p>The rest of this driver presses buttons by calling them directly, which is how the map's
+     * clicks came to be broken in a release without one check noticing: nothing went through the
+     * code that reads which button was pressed. This does nothing else.
+     */
+    private void mapInput() {
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(100, () -> { });
+        step(1, () -> mapCheck("opened"));
+        step(2, () -> realClick("Ascalon", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(60, () -> mapCheck("left click on the Ascalon tab -> continent should be ASCALON"));
+        step(2, () -> realClick("Fit continent", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(20, () -> mapCheck("left click on Fit continent"));
+        step(2, () -> realClickAt(mapScreen().devZoomInButton(),
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(20, () -> mapCheck("left click on + -> zoom should drop by 1.25x"));
+        step(2, () -> realClickAt(mapScreen().devZoomOutButton(),
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(20, () -> mapCheck("left click on - -> zoom back"));
+        step(2, () -> realClickAt(mapScreen().devZoomInButton(),
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT));
+        step(20, () -> mapCheck("right click on + -> no zoom, no pin"));
+        step(2, () -> realClickAt(new int[] {client().getWindow().getGuiScaledWidth() / 2,
+                client().getWindow().getGuiScaledHeight() / 2},
+                com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT));
+        step(5, () -> mapCheck("right click on the map -> pin"));
+        shot(5, "map-right-click-pin");
+        step(2, () -> realClick("Balak", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(40, () -> mapCheck("left click on the Balak tab -> continent should be BALAK"));
+        step(2, () -> realClick("Ascalon", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(40, () -> mapCheck("back to Ascalon"));
+
+        // The search, with the example it was asked for.
+        step(2, () -> mapScreen().devSearch("Forest 65"));
+        step(1, () -> {
+            mapCheck("searched Forest 65, first frame");
+            mapFrameCost("search: Forest 65 lit, in flight");
+        });
+        shot(8, "map-search-forest65-pulse");
+        step(60, () -> {
+            mapCheck("searched Forest 65, settled");
+            mapFrameCost("search: Forest 65 lit, at rest");
+        });
+        shot(5, "map-search-forest65");
+        step(2, () -> mapScreen().devSearch("proxima"));
+        step(60, () -> {
+            mapCheck("searched proxima (a town)");
+            mapFrameCost("search: Proxima's 18 territories lit");
+        });
+        shot(5, "map-search-town");
+        step(2, () -> mapScreen().devSearch("floralys"));
+        step(40, () -> mapCheck("searched floralys (Florálys, accent left out)"));
+        step(2, () -> mapScreen().devSearch("Forest 9999"));
+        step(5, () -> mapCheck("searched Forest 9999 -> not found"));
+        shot(5, "map-search-miss");
+        step(2, () -> {
+            var map = mapScreen();
+            map.devSearch("");
+            // Typing without Enter: the line under the field says where Enter would go.
+            for (char c : "mang".toCharArray()) {
+                map.charTyped(new net.minecraft.client.input.CharacterEvent(c));
+            }
+        });
+        step(5, () -> mapCheck("typed 'mang' without Enter"));
+        shot(5, "map-search-typing");
+        step(2, () -> {
+            var map = mapScreen();
+            map.devSearch("Forest 65");
+        });
+        step(40, () -> { });
+        // A real left click on another hex: selects it and puts the search's light out.
+        step(2, () -> {
+            var map = mapScreen();
+            int[] point = map.devPointAt(t -> !"65".equals(t.number()));
+            realClickAt(point, com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+        });
+        step(5, () -> mapCheck("left click on another hex -> selected, light out"));
+        step(2, () -> client().gui.setScreen(null));
+        step(20, () -> BetterLoka.LOGGER.info("DIAG map input checks done"));
+    }
+
+    private static com.betterloka.gui.LokaMapScreen mapScreen() {
+        return client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map ? map : null;
+    }
+
+    private static void mapCheck(String label) {
+        var map = mapScreen();
+        if (map == null) {
+            BetterLoka.LOGGER.info("DIAG map check {}: map not open", label);
+            return;
+        }
+        double[] center = map.devTargetCenter();
+        BetterLoka.LOGGER.info("DIAG map check {}: continent={} zoom={} center={},{} pinned={}"
+                        + " selected={} lit={} line={}",
+                label, map.devContinent(), String.format(java.util.Locale.ROOT, "%.3f", map.devTargetZoom()),
+                Math.round(center[0]), Math.round(center[1]), map.devPinned(), map.devSelectedLabel(),
+                map.devLitCount(), map.devSearchLine());
+    }
+
+    /** Presses a button by where it is on screen, through the screen's own mouse handlers. */
+    private static void realClick(String label, int button) {
+        Screen screen = client().gui.screen();
+        if (screen == null) {
+            return;
+        }
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof Button widget && widget.getMessage().getString().contains(label)) {
+                realClickAt(new int[] {widget.getX() + widget.getWidth() / 2,
+                        widget.getY() + widget.getHeight() / 2}, button);
+                return;
+            }
+        }
+        BetterLoka.LOGGER.info("DIAG no button labelled {}", label);
+    }
+
+    private static void realClickAt(int[] point, int button) {
+        Screen screen = client().gui.screen();
+        if (screen == null || point == null) {
+            BetterLoka.LOGGER.info("DIAG nothing to click");
+            return;
+        }
+        var info = new net.minecraft.client.input.MouseButtonInfo(button, 0);
+        boolean handled = screen.mouseClicked(
+                new net.minecraft.client.input.MouseButtonEvent(point[0], point[1], info), false);
+        screen.mouseReleased(new net.minecraft.client.input.MouseButtonEvent(point[0], point[1], info));
+        BetterLoka.LOGGER.info("DIAG {} click at {},{} handled={}",
+                button == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT ? "right" : "left",
+                point[0], point[1], handled);
     }
 
     /** Scrolls the open screen, for a profile whose interesting part is below the fold. */

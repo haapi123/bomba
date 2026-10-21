@@ -177,6 +177,37 @@ class TerritoryOverlayTest {
         assertEquals(0xFFFFFFFF, TerritoryOverlay.blend(0xFF102030, 0xFFFFFFFF, 1));
     }
 
+    // --- the search highlight ---
+
+    @Test
+    void theHighlightWashesTheInsideAtTheAskedAlpha() {
+        int[] mask = TerritoryOverlay.highlight(SIZE, SIZE, 0, 0, 1,
+                List.of(square("1", 10, 10, 30, 0, 0.65, 0, 1.0, 1)), 0.4, 2);
+        assertEquals(Math.round(0.4 * 255), at(mask, 25, 25) >>> 24);
+        assertEquals(0xFFFFFF, at(mask, 25, 25) & 0xFFFFFF, "always white; only the alpha varies");
+    }
+
+    @Test
+    void theHighlightsEdgeIsOpaqueAndTheRestClear() {
+        int[] mask = TerritoryOverlay.highlight(SIZE, SIZE, 0, 0, 1,
+                List.of(square("1", 10, 10, 30, 0, 0.65, 0, 1.0, 1)), 0.4, 2);
+        assertEquals(0xFF, Math.max(at(mask, 9, 25), at(mask, 10, 25)) >>> 24);
+        assertEquals(TerritoryOverlay.CLEAR_WHITE, at(mask, 55, 55),
+                "clear texels are white, so smooth sampling does not ring the edge with grey");
+    }
+
+    @Test
+    void theHighlightCoversEveryTerritoryGivenAndCanBeOblong() {
+        int width = 80;
+        int height = 40;
+        int[] mask = TerritoryOverlay.highlight(width, height, 0, 0, 1,
+                List.of(square("1", 5, 5, 20, 0, 0.65, 0, 1.0, 1),
+                        square("2", 50, 5, 20, 0, 0.65, 0, 1.0, 1)), 0.4, 2);
+        assertTrue((mask[15 * width + 15] >>> 24) > 0);
+        assertTrue((mask[15 * width + 60] >>> 24) > 0);
+        assertEquals(0, mask[15 * width + 38] >>> 24, "the ground between them stays clear");
+    }
+
     private static double brightness(int argb) {
         return ((argb >> 16) & 0xFF) + ((argb >> 8) & 0xFF) + (argb & 0xFF);
     }
