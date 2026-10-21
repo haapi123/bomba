@@ -325,9 +325,17 @@ they are the real polygons, up to twenty-six sides apiece, 516 of them across th
 About 440 KB in total, cached for a day, because a border moves when a territory is captured and not
 otherwise.
 
-Each territory is filled in the colour Loka gives it, outlined in the same near-black its own map
-uses, and carries the same marker in the middle — the keep for a held territory, the plainer one for
-neutral ground. **Hovering** one shows the card the website shows: the holding town, its alliance and
+Each territory is drawn exactly as the website draws it: its fill colour at the fill opacity the
+marker file gives it, its outline colour at the file's outline opacity and weight, and the same
+marker in the middle — the keep for a held territory, the plainer one for neutral ground. Those
+values are copied rather than approximated because no fixed table could match them: across the five
+continents the file uses six fill opacities, two outline opacities and two weights.
+
+The claims are painted into the ground tiles once, as each tile is decoded in the background, rather
+than drawn every frame. Drawing them per frame — one small quad per pixel of outline — was what made
+the map lag: with a whole continent on screen it was twenty thousand quads and three tenths of a
+second a frame. Painted into the tiles, a frame of the map costs well under a millisecond. When a
+territory changes hands, every tile it touches is repainted in the background and swapped in place. **Hovering** one shows the card the website shows: the holding town, its alliance and
 strength, its members and how many territories it holds.
 
 The markers are Loka's artwork, so they are fetched at runtime the way a browser viewing the map
@@ -354,13 +362,11 @@ It opens about six territories across — measured, not guessed: Kalros's territ
 width of 584 blocks, and a first attempt at two blocks to a pixel put one hex wider than the whole
 panel. Drag to move, scroll to zoom about the cursor, **Fit continent** to get back out.
 
-**The terrain only appears zoomed right in**, and that is a limit of Loka's map rather than a
-choice. Its tiles are 32 blocks each and roughly a quarter of them exist even where it has rendered
-most — sampling a hundred in the middle of Kalros found 24 at the detailed zoom, 11 one step out and
-none two steps out. A view wide enough to read as a map is over seven thousand tiles and would still
-be three-quarters holes. Close in on one territory it is a couple of hundred, so that is where it
-draws: fetched a tile at a time for the window on screen, capped at six requests a frame, cached to
-disk.
+The ground is Loka's own, the tiles its website draws, fetched from `assets.lokamc.com` at whatever
+zoom the screen needs and kept on disk. Each continent's coarsest level — the whole island in a few
+dozen tiles, under two hundred across all five — is fetched in the background shortly after the game
+starts, so opening a continent shows the island at once and sharpens as the closer tiles arrive. The
+download button under the zoom controls fetches a continent's closer levels ahead of time as well.
 
 The map opens on the centre Loka publishes rather than the middle of the territory outlines. That is
 not cosmetic either: the geometric centre of Kalros is bare sea floor with no tiles at all, against

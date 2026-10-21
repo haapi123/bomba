@@ -20,53 +20,17 @@ public final class MapStyle {
     // --- the map itself ---
 
     /** Deep water: what lies under everything, the way Loka's map shows the gaps between land. */
-    public static final int OCEAN = 0xFF17263A;
+    public static final int OCEAN = com.betterloka.map.TerritoryOverlay.OCEAN_ARGB;
 
-    /**
-     * How much of a claim's colour survives over the ground.
-     *
-     * <p>The ground is the point of the map — the desert, the lava, the coastline — so the claim
-     * colours sit over it as a wash rather than a coat of paint, and the borders carry the reading.
+    /*
+     * There are no claim colours, alphas or border widths here any more, and that is deliberate.
+     * The claims are drawn with the exact style Loka's marker file gives each polygon — see
+     * TerritoryOverlay — because that is what makes the map look like the website. The table that
+     * used to stand here was this map's own invention, and no fixed table could have matched: the
+     * file uses six fill opacities, two outline opacities and two weights across the continents.
      */
-    public static final int FILL_ALPHA_NEUTRAL = 0x30;
-    public static final int FILL_ALPHA_OWNED = 0x4A;
-    public static final int FILL_ALPHA_SELECTED = 0x66;
 
-    /**
-     * The hex a town is actually built on, drawn heavier than its outlying claims.
-     *
-     * <p>Loka does the same thing and by the same margin — 0.92 opacity for a town's own hex against
-     * 0.65 for the rest of its land — because that one hex is the town, and everything else is
-     * territory it holds.
-     */
-    public static final int FILL_ALPHA_SEAT = 0x6E;
-
-    /** The seat's border is drawn as heavily as a town's outer boundary, and never hairline. */
-    public static final int BORDER_SEAT_WIDTH = 3;
-
-    /**
-     * Neutral ground is outlined faintly and held ground firmly.
-     *
-     * <p>That contrast is the point: with every hex outlined alike, the eye has to read the fills to
-     * find where somebody's land begins.
-     */
-    public static final int BORDER_NEUTRAL = 0x55000000;
-    public static final int BORDER_NEUTRAL_WIDTH = 1;
-
-    /** Inside a town's own land the line is hairline; the edge of its holding is drawn heavily. */
-    public static final int BORDER_INNER_WIDTH = 1;
-    public static final int BORDER_OUTER_WIDTH = 2;
-
-    /**
-     * A dark rim under a town's outer border.
-     *
-     * <p>Loka's ground runs from near-white desert to black volcanic rock inside a single territory,
-     * and no single colour reads on both. The rim gives every border its own dark backing so the
-     * town colour only ever has to contrast with that.
-     */
-    public static final int BORDER_RIM = 0xC0000000;
-    public static final int BORDER_RIM_WIDTH = 4;
-
+    /** The one outline drawn per frame: the selection, so a click shows immediately. */
     public static final int BORDER_SELECTED = 0xFFFFFFFF;
     public static final int BORDER_SELECTED_WIDTH = 2;
 

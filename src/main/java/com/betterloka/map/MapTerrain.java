@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -86,12 +87,35 @@ public final class MapTerrain {
     private final HttpTransport transport;
     private final Path cacheDir;
 
+    /** One uploaded tile, and the claims that were painted into it. */
+    private record Uploaded(Identifier id, long claims) {
+    }
+
     /** Drawn textures, in the order they were last used, so the oldest can be dropped. */
-    private final LinkedHashMap<Key, Identifier> textures = new LinkedHashMap<>(64, 0.75f, true);
+    private final LinkedHashMap<Key, Uploaded> textures = new LinkedHashMap<>(64, 0.75f, true);
 
     /** Tiles already asked for, whether they arrived or turned out not to exist. */
     private final Set<Key> attempted = ConcurrentHashMap.newKeySet();
-    private final Set<Key> missing = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Tiles found to hold nothing, and the claims they held nothing under.
+     *
+     * <p>Keyed to the claims because a square of empty sea stops being empty the moment a territory
+     * is drawn across it — that tile then has to be made, out of plain water with the claim on top.
+     */
+    private final Map<Key, Long> missing = new ConcurrentHashMap<>();
+
+    /** Tiles being repainted because the claims changed; the old texture stays up meanwhile. */
+    private final Set<Key> repainting = ConcurrentHashMap.newKeySet();
+
+    /** Where the claims for a world come from: the map's data store, read fresh each time. */
+    private volatile java.util.function.Function<String, List<MapTerritory>> claimsOf = world -> List.of();
+
+    /** The last claims list seen for each world and its digest, so the digest is worked out once. */
+    private record Digest(List<MapTerritory> list, long value) {
+    }
+
+    private final Map<String, Digest> digests = new ConcurrentHashMap<>();
 
     /** Reset every frame by the screen, to cap how much a single pan can kick off. */
     private final AtomicInteger fetchesThisFrame = new AtomicInteger();
@@ -99,6 +123,69 @@ public final class MapTerrain {
     public MapTerrain(HttpTransport transport, Path cacheDir) {
         this.transport = transport;
         this.cacheDir = cacheDir;
+    }
+
+    /** Tells the terrain where to find the claims it paints into each tile. */
+    public void setClaims(java.util.function.Function<String, List<MapTerritory>> source) {
+        this.claimsOf = source;
+    }
+
+    /** The claims for a world, and their digest, recomputing the digest only when the list changes. */
+    private Digest claims(String world) {
+        List<MapTerritory> list = claimsOf.apply(world);
+        Digest known = digests.get(world);
+        if (known != null && known.list() == list) {
+            return known;
+        }
+        Digest fresh = new Digest(list, TerritoryOverlay.fingerprint(list));
+        digests.put(world, fresh);
+        if (known != null && known.value() != fresh.value()) {
+            repaintAll(world, fresh);
+        }
+        return fresh;
+    }
+
+    /**
+     * Repaints every uploaded tile of a world whose claims just changed, not only the ones on screen.
+     *
+     * <p>Waiting for each tile to be drawn again before repainting it — which is what happens
+     * otherwise — leaves the ground away from the view painted with the old claims, and panning onto
+     * it shows the old colours for a moment before they change. Measured after a faked capture: the
+     * tiles in view repainted within a second and nearly two hundred elsewhere stayed stale. They are
+     * all small jobs off the render thread, so doing them at once costs a fraction of a second.
+     */
+    private void repaintAll(String world, Digest claims) {
+        java.util.List<Key> stale = new java.util.ArrayList<>();
+        synchronized (textures) {
+            for (Map.Entry<Key, Uploaded> entry : textures.entrySet()) {
+                if (entry.getKey().world().equals(world) && entry.getValue().claims() != claims.value()) {
+                    stale.add(entry.getKey());
+                }
+            }
+        }
+        for (Key key : stale) {
+            if (repainting.add(key)) {
+                fetch(key, claims);
+            }
+        }
+    }
+
+    /**
+     * Development only: uploaded tiles of a world still painted under claims older than the current.
+     *
+     * <p>After the claims change this has to fall to zero on its own, or a capture would never show.
+     */
+    public int devStaleTiles(String world) {
+        long current = claims(world).value();
+        int stale = 0;
+        synchronized (textures) {
+            for (Map.Entry<Key, Uploaded> entry : textures.entrySet()) {
+                if (entry.getKey().world().equals(world) && entry.getValue().claims() != current) {
+                    stale++;
+                }
+            }
+        }
+        return stale;
     }
 
     /** Called once per frame before drawing, so the per-frame fetch budget starts fresh. */
@@ -117,7 +204,7 @@ public final class MapTerrain {
             }
         }
         int gone = 0;
-        for (Key key : missing) {
+        for (Key key : missing.keySet()) {
             if (key.level() == level) {
                 gone++;
             }
@@ -133,18 +220,31 @@ public final class MapTerrain {
      */
     public Identifier tile(Continent continent, int level, int tileX, int tileY) {
         Key key = new Key(continent.world(), level, tileX, tileY);
+        Digest claims = claims(key.world());
+        Uploaded existing;
         synchronized (textures) {
-            Identifier existing = textures.get(key);
-            if (existing != null) {
-                return existing;
-            }
+            existing = textures.get(key);
         }
-        if (missing.contains(key)) {
+        if (existing != null) {
+            // Painted under older claims: repaint in the background and keep showing this one, so a
+            // capture recolours the map without it blinking out first.
+            if (existing.claims() != claims.value() && repainting.add(key)) {
+                if (fetchesThisFrame.incrementAndGet() <= FETCHES_PER_FRAME) {
+                    fetch(key, claims);
+                } else {
+                    repainting.remove(key);
+                }
+            }
+            return existing.id();
+        }
+        Long emptyUnder = missing.get(key);
+        if (emptyUnder != null && emptyUnder == claims.value()) {
             return null;
         }
         if (attempted.add(key)) {
             if (fetchesThisFrame.incrementAndGet() <= FETCHES_PER_FRAME) {
-                fetch(key);
+                missing.remove(key);
+                fetch(key, claims);
             } else {
                 // Over budget for this frame: forget the attempt so a later frame picks it up.
                 attempted.remove(key);
@@ -177,17 +277,41 @@ public final class MapTerrain {
         }
     }
 
-    private void fetch(Key key) {
+    /**
+     * Loads a tile, paints the claims into it, and hands it to the render thread.
+     *
+     * <p>All of it off the render thread: reading, decoding and painting are the expensive parts,
+     * and the render thread only ever uploads finished pixels.
+     */
+    private void fetch(Key key, Digest claims) {
         transport.tileExecutor().execute(() -> {
-            byte[] jpeg = load(key);
-            Pixels pixels = jpeg == null ? null : decode(key, jpeg);
-            if (pixels == null) {
-                missing.add(key);
-                return;
-            }
-            Minecraft client = Minecraft.getInstance();
-            if (client != null) {
-                client.execute(() -> register(key, pixels));
+            try {
+                byte[] jpeg = load(key);
+                Pixels pixels = jpeg == null ? null : decode(key, jpeg);
+                double span = blocksPerTile(key.level());
+                double left = tileWorldX(key.x());
+                double top = tileWorldZ(key.y());
+                if (pixels == null) {
+                    // Nothing rendered here. If a claim runs across it, it still has to be drawn —
+                    // over plain water, as the website draws it — so the tile is made from scratch.
+                    if (!TerritoryOverlay.touches(left, top, span, claims.list())) {
+                        missing.put(key, claims.value());
+                        // Let go of the attempt: the missing entry is what holds it back now, and
+                        // only while the claims stay the same — when they change it is tried again.
+                        attempted.remove(key);
+                        return;
+                    }
+                    pixels = new Pixels(TILE_PIXELS, TILE_PIXELS, TerritoryOverlay.ocean(TILE_PIXELS));
+                }
+                TerritoryOverlay.paint(pixels.argb(), pixels.width(), left, top,
+                        span / pixels.width(), claims.list());
+                Pixels painted = pixels;
+                Minecraft client = Minecraft.getInstance();
+                if (client != null) {
+                    client.execute(() -> register(key, painted, claims.value()));
+                }
+            } finally {
+                repainting.remove(key);
             }
         });
     }
@@ -293,6 +417,42 @@ public final class MapTerrain {
     }
 
     /**
+     * Puts a continent's coarsest ground on disk, quietly, if it is not there already.
+     *
+     * <p>That level is what the map shows the moment a continent is opened — the whole island in a
+     * few dozen tiles — and across all five continents it is under two hundred tiles and about a
+     * megabyte. Fetching it once in the background after the game starts is what lets opening a
+     * continent show the island straight away instead of square by square. Tiles already held are
+     * skipped without a request, and the fetches go down the tile lane as background work.
+     *
+     * @return how many tiles were queued
+     */
+    public int warmBase(Continent continent, TerrainDownload.Bounds bounds) {
+        if (!bounds.valid()) {
+            return 0;
+        }
+        int level = BASE_LEVEL;
+        int step = 1 << level;
+        int queued = 0;
+        int firstX = tileXAt(bounds.minX(), level);
+        int lastX = tileXAt(bounds.maxX(), level);
+        int firstY = tileYAt(bounds.maxZ(), level);
+        int lastY = tileYAt(bounds.minZ(), level);
+        for (int tileX = firstX; tileX <= lastX; tileX += step) {
+            for (int tileY = firstY; tileY <= lastY; tileY += step) {
+                if (onDisk(new Key(continent.world(), level, tileX, tileY))) {
+                    continue;
+                }
+                int x = tileX;
+                int y = tileY;
+                transport.tileExecutor().execute(() -> download(continent, level, x, y));
+                queued++;
+            }
+        }
+        return queued;
+    }
+
+    /**
      * Pulls one tile into the cache without uploading it, for a whole-continent download.
      *
      * <p>Blocking, and meant for a background worker. Nothing is decoded and no texture is made:
@@ -327,7 +487,7 @@ public final class MapTerrain {
         return level == 0 ? "" : "z".repeat(level) + "_";
     }
 
-    private void register(Key key, Pixels pixels) {
+    private void register(Key key, Pixels pixels, long claims) {
         try {
             // Deliberately not closed: the texture takes ownership and frees it on eviction.
             NativeImage image = new NativeImage(pixels.width(), pixels.height(), false);
@@ -343,19 +503,21 @@ public final class MapTerrain {
             Minecraft client = Minecraft.getInstance();
             client.getTextureManager().register(id, new SmoothTexture(image));
 
-            Map.Entry<Key, Identifier> evicted = null;
+            // Registering under an id already in use replaces and closes the old texture, which is
+            // what lets a repaint swap in place.
+            Map.Entry<Key, Uploaded> evicted = null;
             synchronized (textures) {
-                textures.put(key, id);
+                textures.put(key, new Uploaded(id, claims));
                 if (textures.size() > MAX_TEXTURES) {
                     var iterator = textures.entrySet().iterator();
-                    Map.Entry<Key, Identifier> oldest = iterator.next();
+                    Map.Entry<Key, Uploaded> oldest = iterator.next();
                     evicted = Map.entry(oldest.getKey(), oldest.getValue());
                     iterator.remove();
                 }
             }
             if (evicted != null) {
                 // Dropped from the atlas as well, or a long pan would grow without bound.
-                client.getTextureManager().release(evicted.getValue());
+                client.getTextureManager().release(evicted.getValue().id());
                 attempted.remove(evicted.getKey());
             }
         } catch (RuntimeException e) {

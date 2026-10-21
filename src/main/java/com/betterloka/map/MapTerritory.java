@@ -33,7 +33,20 @@ package com.betterloka.map;
 public record MapTerritory(String number, String areaName, String owner, String alliance,
                            String mutator, double[] xs, double[] zs,
                            double centerX, double centerZ, int fillColor, int strokeColor,
-                           String icon, int conquestPoints, boolean seat, String bonus) {
+                           String icon, int conquestPoints, boolean seat, String bonus,
+                           double fillOpacity, double strokeOpacity, int strokeWeight) {
+
+    /**
+     * The style Loka gives a territory when nothing better is known: the values its marker file
+     * uses for most of the map. Only reached by a map cached before these were kept, and only until
+     * the first refresh replaces it.
+     */
+    public static double defaultFillOpacity(boolean seat, boolean neutral) {
+        return seat ? 0.92 : neutral ? 0.27 : 0.65;
+    }
+
+    public static final double DEFAULT_STROKE_OPACITY = 1.0;
+    public static final int DEFAULT_STROKE_WEIGHT = 1;
 
     /** Whether Loka published a conquest-point value for this territory. */
     public boolean hasConquestPoints() {

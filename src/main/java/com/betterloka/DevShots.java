@@ -355,7 +355,8 @@ public final class DevShots {
                         "BetterLoka Test Co", "BetterLoka Test Co", territory.mutator(),
                         territory.xs(), territory.zs(), territory.centerX(), territory.centerZ(),
                         territory.fillColor(), territory.strokeColor(), "territory_owned",
-                        territory.conquestPoints(), territory.seat(), territory.bonus()));
+                        territory.conquestPoints(), territory.seat(), territory.bonus(),
+                        territory.fillOpacity(), territory.strokeOpacity(), territory.strokeWeight()));
                 done = true;
             } else {
                 changed.add(territory);

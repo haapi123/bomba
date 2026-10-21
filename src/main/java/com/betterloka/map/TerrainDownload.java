@@ -120,6 +120,21 @@ public final class TerrainDownload {
         public boolean valid() {
             return maxX >= minX && maxZ >= minZ;
         }
+
+        /** The corners of everything claimed; not valid when there are no claims to measure. */
+        public static Bounds of(java.util.List<MapTerritory> territories) {
+            double minX = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE;
+            double minZ = Double.MAX_VALUE;
+            double maxZ = -Double.MAX_VALUE;
+            for (MapTerritory territory : territories) {
+                minX = Math.min(minX, territory.minX());
+                maxX = Math.max(maxX, territory.maxX());
+                minZ = Math.min(minZ, territory.minZ());
+                maxZ = Math.max(maxZ, territory.maxZ());
+            }
+            return new Bounds(minX, maxX, minZ, maxZ);
+        }
     }
 
     private static int rowsAndColumns(Bounds bounds, int level) {

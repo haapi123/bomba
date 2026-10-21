@@ -558,7 +558,11 @@ public class LokaMapScreen extends Screen {
 
         // Opaque, and the colour of deep water: Loka's own draws its hexes over sea.
         context.fill(mapX, mapY, mapX + mapWidth, mapY + mapHeight, MapStyle.OCEAN);
+        devFrameQuads = 0;
+        long devStart = System.nanoTime();
         drawTerrain(context);
+        long devAfterTerrain = System.nanoTime();
+        devTerrainNanos = devAfterTerrain - devStart;
 
         // The claims ride on the same fraction of a pixel the ground does, so the outlines stay
         // welded to the coast through a drag instead of stepping off it and back on. Placed against
@@ -567,47 +571,24 @@ public class LokaMapScreen extends Screen {
         matrices.pushMatrix();
         matrices.translate(originFracX, originFracY);
 
-        // Fills first, then every border, then the markers. A neighbour's fill drawn after a border
-        // paints over it, and the hexes run together into one blob.
-        for (MapTerritory territory : territories()) {
-            if (offScreen(territory)) {
-                continue;
-            }
-            int alpha = territory == selected ? MapStyle.FILL_ALPHA_SELECTED
-                    : territory.seat() ? MapStyle.FILL_ALPHA_SEAT
-                    : territory.neutral() ? MapStyle.FILL_ALPHA_NEUTRAL : MapStyle.FILL_ALPHA_OWNED;
-            fill(context, territory, (alpha << 24) | territory.fillColor());
-        }
-
-        for (MapTerritory territory : territories()) {
-            if (!territory.neutral() || offScreen(territory)) {
-                continue;
-            }
-            drawBorder(context, territory, MapStyle.BORDER_NEUTRAL,
-                    MapStyle.BORDER_NEUTRAL_WIDTH, MapStyle.BORDER_NEUTRAL_WIDTH, false);
-        }
-        for (MapTerritory territory : territories()) {
-            if (territory.neutral() || offScreen(territory)) {
-                continue;
-            }
-            int color = 0xFF000000 | snapshot.palette().colorOf(territory.owner());
-            // A town's own hex is ringed all the way round rather than having its seams thinned
-            // away: it is the thing on the map somebody is looking for.
-            int inner = territory.seat() ? MapStyle.BORDER_SEAT_WIDTH : MapStyle.BORDER_INNER_WIDTH;
-            int outer = territory.seat() ? MapStyle.BORDER_SEAT_WIDTH : MapStyle.BORDER_OUTER_WIDTH;
-            drawBorder(context, territory, color, inner, outer, true);
-        }
-        // Last, so the selection is never buried under a neighbour's border.
+        // The claims themselves — fills and outlines — are painted into the ground tiles as they are
+        // decoded (see TerritoryOverlay), so there is nothing to draw for them here. Drawing them
+        // here, one quad per pixel of outline every frame, is what made the map lag: twenty thousand
+        // quads and three tenths of a second a frame with a whole continent on screen.
+        // The one outline still drawn per frame: the selection follows a click, and painting it into
+        // the tiles would mean repainting tiles on every click.
         if (selected != null && !offScreen(selected)) {
-            drawBorder(context, selected, MapStyle.BORDER_SELECTED,
-                    MapStyle.BORDER_SELECTED_WIDTH, MapStyle.BORDER_SELECTED_WIDTH, false);
+            drawSelection(context, selected);
         }
 
+        long devAfterBorders = System.nanoTime();
+        devSelectionNanos = devAfterBorders - devAfterTerrain;
         for (MapTerritory territory : territories()) {
             if (!offScreen(territory)) {
                 drawIcon(context, territory);
             }
         }
+        devIconNanos = System.nanoTime() - devAfterBorders;
         matrices.popMatrix();
 
         drawZoomButtons(context, mouseX, mouseY);
@@ -778,57 +759,19 @@ public class LokaMapScreen extends Screen {
      * pairs, rather than testing every pixel for being inside — which for 143 polygons of twenty-six
      * edges was tens of millions of tests a frame and made the screen a slideshow.
      */
-    private void fill(GuiGraphicsExtractor context, MapTerritory territory, int color) {
-        double[] xs = territory.xs();
-        double[] zs = territory.zs();
+    /** Development only: quads issued and nanoseconds spent by the last frame's map layer. */
+    public static int devFrameQuads;
+    public static long devTerrainNanos;
+    public static long devSelectionNanos;
+    public static long devIconNanos;
 
-        int top = Math.max(mapY, screenYOf(territory.minZ()));
-        int bottom = Math.min(mapY + mapHeight - 1, screenYOf(territory.maxZ()));
-        double[] crossings = new double[xs.length];
-
-        for (int row = top; row <= bottom; row++) {
-            double worldZ = worldZAt(row + 0.5);
-            int found = 0;
-            for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-                if ((zs[i] > worldZ) != (zs[j] > worldZ)) {
-                    crossings[found++] =
-                            xs[i] + (xs[j] - xs[i]) * (worldZ - zs[i]) / (zs[j] - zs[i]);
-                }
-            }
-            if (found < 2) {
-                continue;
-            }
-            java.util.Arrays.sort(crossings, 0, found);
-
-            for (int pair = 0; pair + 1 < found; pair += 2) {
-                int from = Math.max(mapX, screenXOf(crossings[pair]));
-                int to = Math.min(mapX + mapWidth, screenXOf(crossings[pair + 1]));
-                if (to > from) {
-                    context.fill(from, row, to, row + 1, color);
-                }
-            }
-        }
-    }
-
-    /**
-     * One territory's outline, thin where it meets its own town and heavy where the holding ends.
-     *
-     * <p>Loka's map has no notion of a town's outer boundary, so six hexes held by one town read as
-     * six separate claims. Drawing the seams between them faintly and the rest heavily is what makes
-     * a holding read as one shape.
-     */
-    private void drawBorder(GuiGraphicsExtractor context, MapTerritory territory, int color,
-                            int innerWidth, int outerWidth, boolean rimOuter) {
+    /** The selected territory's outline, drawn over the painted map so a click shows at once. */
+    private void drawSelection(GuiGraphicsExtractor context, MapTerritory territory) {
         double[] xs = territory.xs();
         double[] zs = territory.zs();
         for (int i = 0, j = xs.length - 1; i < xs.length; j = i++) {
-            boolean inner = snapshot.borders().isInternal(xs[j], zs[j], xs[i], zs[i]);
-            int width = inner ? innerWidth : outerWidth;
-            if (rimOuter && !inner) {
-                line(context, xs[j], zs[j], xs[i], zs[i], MapStyle.BORDER_RIM,
-                        MapStyle.BORDER_RIM_WIDTH);
-            }
-            line(context, xs[j], zs[j], xs[i], zs[i], color, width);
+            line(context, xs[j], zs[j], xs[i], zs[i], MapStyle.BORDER_SELECTED,
+                    MapStyle.BORDER_SELECTED_WIDTH);
         }
     }
 
@@ -856,6 +799,7 @@ public class LokaMapScreen extends Screen {
             int px = px1 + (px2 - px1) * step / Math.max(1, steps);
             int py = py1 + (py2 - py1) * step / Math.max(1, steps);
             context.fill(px - half, py - half, px - half + thickness, py - half + thickness, color);
+            devFrameQuads++;
         }
     }
 
@@ -890,17 +834,7 @@ public class LokaMapScreen extends Screen {
 
     /** The corners of everything claimed on this continent, which is the ground worth having. */
     private TerrainDownload.Bounds continentBounds() {
-        double minX = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-        for (MapTerritory territory : territories()) {
-            minX = Math.min(minX, territory.minX());
-            maxX = Math.max(maxX, territory.maxX());
-            minZ = Math.min(minZ, territory.minZ());
-            maxZ = Math.max(maxZ, territory.maxZ());
-        }
-        return new TerrainDownload.Bounds(minX, maxX, minZ, maxZ);
+        return TerrainDownload.Bounds.of(territories());
     }
 
     /** Starts the download for this continent, or stops the one running. */

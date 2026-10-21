@@ -361,10 +361,18 @@ public final class DynmapApi {
         double centerX = center != null ? center[0] : average(xs);
         double centerZ = center != null ? center[1] : average(zs);
 
+        // The three numbers Leaflet styles each polygon with, carried as they are. They are what
+        // makes the map look like the website; see TerritoryOverlay.
+        double fillOpacity = Json.doubleValue(area, "fillopacity",
+                MapTerritory.defaultFillOpacity(seat != null, owner == null || owner.isBlank()));
+        double strokeOpacity = Json.doubleValue(area, "opacity", MapTerritory.DEFAULT_STROKE_OPACITY);
+        int strokeWeight = (int) Math.round(Json.doubleValue(area, "weight",
+                MapTerritory.DEFAULT_STROKE_WEIGHT));
+
         return new MapTerritory(number, areaName, owner, alliance, mutator, xs, zs,
                 centerX, centerZ, color(Json.string(area, "fillcolor")),
                 color(Json.string(area, "color")), icon, conquestPoints(plain),
-                seat != null, group(BONUS, plain));
+                seat != null, group(BONUS, plain), fillOpacity, strokeOpacity, strokeWeight);
     }
 
     /**

@@ -14,6 +14,7 @@ import com.betterloka.grind.GrindTimers;
 import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.helper.GuiScaleController;
+import com.betterloka.map.Continent;
 import com.betterloka.map.DynmapApi;
 import com.betterloka.map.MapDataStore;
 import com.betterloka.map.MapIcons;
@@ -126,7 +127,14 @@ public class BetterLokaClient implements ClientModInitializer {
         mapData.start();
         mapIcons = new MapIcons(transport, configDir().resolve("map-icons"));
         mapTerrain = new MapTerrain(transport, configDir().resolve("map-terrain"));
+        // The terrain paints the claims into each tile as it decodes it, from the same store the
+        // screen reads, so the two can never disagree about who holds what.
+        mapTerrain.setClaims(world -> {
+            Continent continent = Continent.ofWorld(world);
+            return continent == null ? java.util.List.of() : mapData.snapshot(continent).territories();
+        });
         terrainDownload = new com.betterloka.map.TerrainDownload(transport, mapTerrain);
+        warmMapBase();
         new WaypointHud(map).register();
         new WaypointWorldRenderer(map, mapIcons).register();
         townActivity = new TownActivityStore(configDir().resolve("town-activity.json"));
@@ -278,6 +286,41 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static MapTerrain mapTerrain() {
         return mapTerrain;
+    }
+
+    /**
+     * Fetches every continent's coarsest ground in the background, once its claims are known.
+     *
+     * <p>Waits on the claims because they are what says where a continent is. The map store reads
+     * them off disk within a moment of starting and off the network a few seconds later, so the loop
+     * tries every few seconds for a while and stops once each continent has been done.
+     */
+    private static void warmMapBase() {
+        Thread warmer = new Thread(() -> {
+            java.util.Set<Continent> done = java.util.EnumSet.noneOf(Continent.class);
+            for (int attempt = 0; attempt < 60 && done.size() < Continent.values().length; attempt++) {
+                try {
+                    Thread.sleep(attempt == 0 ? 8_000 : 5_000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                for (Continent continent : Continent.values()) {
+                    if (done.contains(continent)) {
+                        continue;
+                    }
+                    var territories = mapData.snapshot(continent).territories();
+                    if (territories.isEmpty()) {
+                        continue;
+                    }
+                    int queued = mapTerrain.warmBase(continent,
+                            com.betterloka.map.TerrainDownload.Bounds.of(territories));
+                    BetterLoka.LOGGER.debug("[betterloka] queued {} base tiles for {}", queued, continent);
+                    done.add(continent);
+                }
+            }
+        }, "BetterLoka-MapWarm");
+        warmer.setDaemon(true);
+        warmer.start();
     }
 
     /** The whole-continent map download, which the map screen starts and reports on. */

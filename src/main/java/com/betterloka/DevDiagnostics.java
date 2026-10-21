@@ -204,12 +204,14 @@ public final class DevDiagnostics {
         step(60, () -> { });
         step(5, () -> bringUnderCursor(com.betterloka.map.MapTerritory::hasBonus));
         step(20, () -> terrainState("Balak, as opened"));
+        step(1, () -> mapFrameCost("Balak, as opened"));
         step(2, () -> zoomIn(6));
         step(60, () -> { });
         step(1, () -> terrainState("Balak, zoomed in six steps"));
         shot(20, "map-zoomed-detail");
         step(60, () -> { });
         step(1, () -> terrainState("Balak, after another 3 s"));
+        step(1, () -> mapFrameCost("Balak, zoomed in"));
         shot(20, "map-terrain-new");
         // The same view drawn the old way, so the two pictures differ in the level alone.
         step(2, () -> com.betterloka.gui.LokaMapScreen.devLegacyTerrain = true);
@@ -230,6 +232,47 @@ public final class DevDiagnostics {
         step(10, () -> click(client().gui.screen(), "Fit continent"));
         step(120, () -> { });
         step(1, () -> terrainState("Kalros, whole continent"));
+        step(1, () -> mapFrameCost("Kalros, whole continent"));
+        step(5, () -> selectContinent("Ascalon"));
+        step(10, () -> click(client().gui.screen(), "Fit continent"));
+        step(60, () -> { });
+        step(1, () -> mapFrameCost("Ascalon, whole continent"));
+        shot(20, "map-ascalon-whole");
+
+        // How fast a continent appears that has not been opened in this session yet.
+        step(2, () -> selectContinent("Garama"));
+        step(10, () -> terrainState("Garama, 0.5 s after opening"));
+        step(10, () -> terrainState("Garama, 1 s after opening"));
+        step(20, () -> terrainState("Garama, 2 s after opening"));
+        step(1, () -> mapFrameCost("Garama, whole continent"));
+
+        // Balak framed whole, the view the website opens on, for a side by side.
+        step(5, () -> selectContinent("Balak"));
+        step(10, () -> click(client().gui.screen(), "Fit continent"));
+        step(80, () -> { });
+        shot(20, "map-balak-fit");
+
+        // A capture, faked: one territory changes colour. Every uploaded tile painted under the old
+        // claims has to repaint by itself — in view or not — or captures would silently never reach
+        // the map, or would show late wherever the player pans next.
+        step(2, () -> {
+            var data = BetterLokaClient.mapData();
+            var before = data.snapshot(com.betterloka.map.Continent.BALAK).territories();
+            var changed = new java.util.ArrayList<com.betterloka.map.MapTerritory>(before);
+            var t = changed.get(0);
+            changed.set(0, new com.betterloka.map.MapTerritory(t.number(), t.areaName(), t.owner(),
+                    t.alliance(), t.mutator(), t.xs(), t.zs(), t.centerX(), t.centerZ(), 0xFFE0115F,
+                    t.strokeColor(), t.icon(), t.conquestPoints(), t.seat(), t.bonus(), 0.92,
+                    t.strokeOpacity(), t.strokeWeight()));
+            data.devApply(com.betterloka.map.Continent.BALAK, changed);
+            BetterLoka.LOGGER.info("DIAG repaint: changed territory {}; stale tiles right after = {}",
+                    t.number(), BetterLokaClient.mapTerrain().devStaleTiles("bigboi"));
+        });
+        step(20, () -> BetterLoka.LOGGER.info("DIAG repaint: stale tiles after 1 s = {}",
+                BetterLokaClient.mapTerrain().devStaleTiles("bigboi")));
+        step(40, () -> BetterLoka.LOGGER.info("DIAG repaint: stale tiles after 3 s = {}",
+                BetterLokaClient.mapTerrain().devStaleTiles("bigboi")));
+        shot(20, "map-balak-repainted");
         shot(20, "map-kalros-whole");
 
         // The whole-continent download, on the smallest continent so a test run can finish it.
@@ -421,6 +464,20 @@ public final class DevDiagnostics {
             client().gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(
                     client().player));
         }
+    }
+
+    /** What one frame of the map layer cost: quads issued and time per part. */
+    private static void mapFrameCost(String label) {
+        BetterLoka.LOGGER.info("DIAG map frame {}: quads={} | terrain and claims {} ms, selection {} ms,"
+                        + " icons {} ms",
+                label, com.betterloka.gui.LokaMapScreen.devFrameQuads,
+                ms(com.betterloka.gui.LokaMapScreen.devTerrainNanos),
+                ms(com.betterloka.gui.LokaMapScreen.devSelectionNanos),
+                ms(com.betterloka.gui.LokaMapScreen.devIconNanos));
+    }
+
+    private static String ms(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.2f", nanos / 1_000_000.0);
     }
 
     /** Which terrain zoom the map is drawing, and whether its tiles have arrived. */
