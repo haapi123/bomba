@@ -5,13 +5,13 @@ import com.betterloka.api.model.Territory;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.towns.TownLogEvent;
 import com.betterloka.towns.TownLogger;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
@@ -52,7 +52,7 @@ public class TownLoggerScreen extends Screen {
     private Tab tab = Tab.FALLEN;
 
     public TownLoggerScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.town_logger"));
+        super(Component.translatable("betterloka.module.town_logger"));
         this.parent = parent;
     }
 
@@ -88,50 +88,50 @@ public class TownLoggerScreen extends Screen {
         for (Tab value : Tab.values()) {
             Tab target = value;
             int thisWidth = value == Tab.UNOWNED ? left + width - x : tabWidth;
-            addDrawableChild(ButtonWidget.builder(tabLabel(value), button -> selectTab(target))
-                    .dimensions(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
+                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
             x += tabWidth + 4;
         }
 
         int third = (width - 8) / 3;
-        addDrawableChild(ButtonWidget.builder(watchLabel(), button -> {
+        addRenderableWidget(Button.builder(watchLabel(), button -> {
                     config().setTownLogEnabled(!config().townLogEnabled());
                     button.setMessage(watchLabel());
                     if (config().townLogEnabled()) {
                         logger().poll();
                     }
                 })
-                .dimensions(left, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
 
-        addDrawableChild(ButtonWidget.builder(intervalLabel(), button -> {
+        addRenderableWidget(Button.builder(intervalLabel(), button -> {
                     config().setTownLogIntervalMinutes(nextInterval(config().townLogIntervalMinutes()));
                     button.setMessage(intervalLabel());
                 })
-                .dimensions(left + third + 4, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left + third + 4, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.town_log.check_now"),
+        addRenderableWidget(Button.builder(Component.translatable("betterloka.town_log.check_now"),
                         button -> logger().poll())
-                .dimensions(left + (third + 4) * 2, CONTROL_ROW_Y, width - (third + 4) * 2, CONTROL_ROW_HEIGHT)
+                .bounds(left + (third + 4) * 2, CONTROL_ROW_Y, width - (third + 4) * 2, CONTROL_ROW_HEIGHT)
                 .build());
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
     }
 
-    private Text tabLabel(Tab value) {
-        Text label = Text.translatable(value.key);
-        return value == tab ? label.copy().formatted(Formatting.YELLOW) : label;
+    private Component tabLabel(Tab value) {
+        Component label = Component.translatable(value.key);
+        return value == tab ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
-    private static Text watchLabel() {
+    private static Component watchLabel() {
         boolean on = config().townLogEnabled();
-        return Text.translatable("betterloka.town_log.watching")
-                .append(Text.translatable(on ? "betterloka.on" : "betterloka.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.RED));
+        return Component.translatable("betterloka.town_log.watching")
+                .append(Component.translatable(on ? "betterloka.on" : "betterloka.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED));
     }
 
-    private static Text intervalLabel() {
-        return Text.translatable("betterloka.town_log.every", config().townLogIntervalMinutes());
+    private static Component intervalLabel() {
+        return Component.translatable("betterloka.town_log.every", config().townLogIntervalMinutes());
     }
 
     private static int nextInterval(int current) {
@@ -150,7 +150,7 @@ public class TownLoggerScreen extends Screen {
         }
         tab = target;
         scrollPanel.reset();
-        clearAndInit();
+        rebuildWidgets();
     }
 
     @Override
@@ -160,25 +160,25 @@ public class TownLoggerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -199,30 +199,30 @@ public class TownLoggerScreen extends Screen {
     }
 
     /** One line saying whether the watch is running and when it last looked. */
-    private void renderStatus(DrawContext context, int left, int width) {
+    private void renderStatus(GuiGraphicsExtractor context, int left, int width) {
         TownLogger logger = logger();
         int y = VIEWPORT_TOP - 12;
 
-        Text status = switch (logger.state()) {
-            case OFF -> Text.translatable("betterloka.town_log.state.off");
-            case POLLING -> Text.translatable("betterloka.town_log.state.polling");
-            case FAILED -> Text.translatable("betterloka.town_log.state.failed",
+        Component status = switch (logger.state()) {
+            case OFF -> Component.translatable("betterloka.town_log.state.off");
+            case POLLING -> Component.translatable("betterloka.town_log.state.polling");
+            case FAILED -> Component.translatable("betterloka.town_log.state.failed",
                     logger.lastError() == null ? "?" : logger.lastError());
             case IDLE -> logger.lastPollAt() == 0
-                    ? Text.translatable("betterloka.town_log.state.waiting")
-                    : Text.translatable("betterloka.town_log.state.checked", TimeFormat.ago(logger.lastPollAt()));
+                    ? Component.translatable("betterloka.town_log.state.waiting")
+                    : Component.translatable("betterloka.town_log.state.checked", TimeFormat.ago(logger.lastPollAt()));
         };
-        context.drawTextWithShadow(this.textRenderer, status, left, y,
+        context.text(this.font, status, left, y,
                 logger.state() == TownLogger.State.FAILED ? GuiTheme.BAD : GuiTheme.MUTED);
 
-        String counts = Text.translatable("betterloka.town_log.counts",
+        String counts = Component.translatable("betterloka.town_log.counts",
                 logger.territoryCount(), logger.deletedTownCount()).getString();
-        context.drawTextWithShadow(this.textRenderer, counts,
-                left + width - this.textRenderer.getWidth(counts), y, GuiTheme.MUTED);
+        context.text(this.font, counts,
+                left + width - this.font.width(counts), y, GuiTheme.MUTED);
     }
 
     /** @return the y just past the last card. */
-    private int renderEvents(DrawContext context, int left, int y, int width, List<TownLogEvent> events) {
+    private int renderEvents(GuiGraphicsExtractor context, int left, int y, int width, List<TownLogEvent> events) {
         if (events.isEmpty()) {
             return renderEmpty(context, left, y, width, tab == Tab.FALLEN
                     ? "betterloka.town_log.none_fallen" : "betterloka.town_log.none_yet");
@@ -240,14 +240,14 @@ public class TownLoggerScreen extends Screen {
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
 
-            Text headline = switch (event.kind()) {
-                case TOWN_FELL -> Text.translatable("betterloka.town_log.fell", event.townName());
-                case CAPTURED -> Text.translatable("betterloka.town_log.captured", event.townName(),
+            Component headline = switch (event.kind()) {
+                case TOWN_FELL -> Component.translatable("betterloka.town_log.fell", event.townName());
+                case CAPTURED -> Component.translatable("betterloka.town_log.captured", event.townName(),
                         event.otherTown());
-                case RELEASED -> Text.translatable("betterloka.town_log.released", event.townName());
-                case CLAIMED -> Text.translatable("betterloka.town_log.claimed", event.townName());
+                case RELEASED -> Component.translatable("betterloka.town_log.released", event.townName());
+                case CLAIMED -> Component.translatable("betterloka.town_log.claimed", event.townName());
             };
-            context.drawTextWithShadow(this.textRenderer, headline, textX, textY,
+            context.text(this.font, headline, textX, textY,
                     fell ? GuiTheme.BAD : GuiTheme.TEXT);
 
             // A town found by the claims it left behind was already gone when the mod first looked,
@@ -255,25 +255,25 @@ public class TownLoggerScreen extends Screen {
             // beats printing a date that reads like a fact and is not one.
             boolean dated = !fell || !event.hasTerritory();
             String when = dated ? TimeFormat.ago(event.at())
-                    : Text.translatable("betterloka.town_log.already_gone").getString();
-            context.drawTextWithShadow(this.textRenderer, when,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(when), textY,
+                    : Component.translatable("betterloka.town_log.already_gone").getString();
+            context.text(this.font, when,
+                    left + width - CARD_PADDING - this.font.width(when), textY,
                     dated ? GuiTheme.MUTED : GuiTheme.ACCENT);
 
             // The line the whole module exists for: where the territory was. A town seen falling
             // names no territory — the fall is the event, and its land is a separate question.
             String where = event.hasTerritory()
-                    ? Text.translatable("betterloka.town_log.where", event.continent(),
+                    ? Component.translatable("betterloka.town_log.where", event.continent(),
                             event.num(), event.coordinates()).getString()
-                    : Text.translatable("betterloka.town_log.town_gone",
+                    : Component.translatable("betterloka.town_log.town_gone",
                             event.continent() == null ? "?" : event.continent()).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(where, inner - 60), textX, textY + ROW_HEIGHT,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(where, inner - 60), textX, textY + ROW_HEIGHT,
                     fell ? GuiTheme.TEXT : GuiTheme.MUTED);
 
             if (event.areaName() != null) {
-                context.drawTextWithShadow(this.textRenderer, event.areaName(),
-                        left + width - CARD_PADDING - this.textRenderer.getWidth(event.areaName()),
+                context.text(this.font, event.areaName(),
+                        left + width - CARD_PADDING - this.font.width(event.areaName()),
                         textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
@@ -282,26 +282,26 @@ public class TownLoggerScreen extends Screen {
         return y;
     }
 
-    private int renderUnowned(DrawContext context, int left, int y, int width) {
+    private int renderUnowned(GuiGraphicsExtractor context, int left, int y, int width) {
         List<Territory> free = logger().unowned();
         if (free.isEmpty()) {
             return renderEmpty(context, left, y, width, "betterloka.town_log.none_yet");
         }
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.town_log.unowned_count", free.size()), left, y + 2, GuiTheme.MUTED);
+        context.text(this.font,
+                Component.translatable("betterloka.town_log.unowned_count", free.size()), left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         int height = CARD_PADDING * 2 + ROW_HEIGHT;
         for (Territory territory : free) {
             GuiTheme.panel(context, left, y, width, height);
-            String where = Text.translatable("betterloka.town_log.where", territory.continent(),
+            String where = Component.translatable("betterloka.town_log.where", territory.continent(),
                     territory.num(), territory.coordinates()).getString();
-            context.drawTextWithShadow(this.textRenderer, where, left + CARD_PADDING, y + CARD_PADDING,
+            context.text(this.font, where, left + CARD_PADDING, y + CARD_PADDING,
                     GuiTheme.TEXT);
             if (territory.areaName() != null) {
-                context.drawTextWithShadow(this.textRenderer, territory.areaName(),
-                        left + width - CARD_PADDING - this.textRenderer.getWidth(territory.areaName()),
+                context.text(this.font, territory.areaName(),
+                        left + width - CARD_PADDING - this.font.width(territory.areaName()),
                         y + CARD_PADDING, GuiTheme.MUTED);
             }
             y += height + CARD_GAP;
@@ -309,16 +309,16 @@ public class TownLoggerScreen extends Screen {
         return y;
     }
 
-    private int renderEmpty(DrawContext context, int left, int y, int width, String key) {
+    private int renderEmpty(GuiGraphicsExtractor context, int left, int y, int width, String key) {
         GuiTheme.panel(context, left, y, width, CARD_PADDING * 2 + ROW_HEIGHT);
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(Text.translatable(key).getString(), width - CARD_PADDING * 2),
+        context.text(this.font,
+                this.font.plainSubstrByWidth(Component.translatable(key).getString(), width - CARD_PADDING * 2),
                 left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
         return y + CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

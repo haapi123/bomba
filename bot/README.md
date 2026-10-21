@@ -19,7 +19,8 @@ Several towns in one sweep are batched into a single message, ten to a post, whi
 
 ## Running it
 
-Requires Java 21. Build the jar:
+Runs on Java 21 or newer. Building it needs JDK 25, because the bot lives in the same Gradle build
+as the mod and the mod's build tooling will not start on anything older:
 
 ```bash
 ./gradlew :bot:botJar        # lands in bot/build/libs/betterloka-bot-<version>.jar
@@ -170,7 +171,7 @@ file.
 
 ### On a hosting panel (Pterodactyl and friends)
 
-Pick a **Java 21** docker image and set the startup command to `java -jar bot.jar`. Give the jar a
+Pick a **Java 21** (or newer) docker image and set the startup command to `java -jar bot.jar`. Give the jar a
 name that will not change between versions — the startup command points at it by name, so uploading
 `betterloka-bot-0.9.0.jar` over `betterloka-bot-0.8.3.jar` would break it.
 

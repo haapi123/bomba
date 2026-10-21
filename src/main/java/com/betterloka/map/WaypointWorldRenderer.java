@@ -2,12 +2,12 @@ package com.betterloka.map;
 
 import com.betterloka.BetterLoka;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.Camera;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -44,13 +44,13 @@ public final class WaypointWorldRenderer {
     }
 
     public void register() {
-        HudElementRegistry.addLast(Identifier.of(BetterLoka.MOD_ID, "waypoint_markers"), this::render);
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "waypoint_markers"), this::render);
     }
 
-    private void render(DrawContext context, net.minecraft.client.render.RenderTickCounter tick) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.options.hudHidden
-                || client.currentScreen != null) {
+    private void render(GuiGraphicsExtractor context, net.minecraft.client.DeltaTracker tick) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.gui.hud.isHidden()
+                || client.gui.screen() != null) {
             return;
         }
         var waypoints = map.waypoints();
@@ -58,15 +58,15 @@ public final class WaypointWorldRenderer {
             return;
         }
 
-        Camera camera = client.gameRenderer.getCamera();
-        Vec3d eye = camera.getCameraPos();
-        String here = client.world == null
+        Camera camera = client.gameRenderer.mainCamera();
+        Vec3 eye = camera.position();
+        String here = client.level == null
                 ? null
-                : client.world.getRegistryKey().getValue().getPath();
+                : client.level.dimension().identifier().getPath();
 
-        int screenWidth = context.getScaledWindowWidth();
-        int screenHeight = context.getScaledWindowHeight();
-        double fov = Math.toRadians(client.options.getFov().getValue());
+        int screenWidth = context.guiWidth();
+        int screenHeight = context.guiHeight();
+        double fov = Math.toRadians(client.options.fov().get());
 
         for (Waypoint waypoint : waypoints) {
             if (!onThisContinent(here, waypoint)) {
@@ -94,7 +94,7 @@ public final class WaypointWorldRenderer {
         return true;
     }
 
-    private void draw(DrawContext context, MinecraftClient client, Camera camera, Vec3d eye,
+    private void draw(GuiGraphicsExtractor context, Minecraft client, Camera camera, Vec3 eye,
                       Waypoint waypoint, int screenWidth, int screenHeight, double fov) {
         Vector3f view = toViewSpace(camera, eye, waypoint);
 
@@ -117,12 +117,12 @@ public final class WaypointWorldRenderer {
         }
 
         double distance = waypoint.distanceTo(eye.x, eye.z);
-        Text label = Text.literal(waypoint.label());
-        Text below = Text.literal(range(distance) + " / " + waypoint.chunksTo(eye.x, eye.z) + "ch");
+        Component label = Component.literal(waypoint.label());
+        Component below = Component.literal(range(distance) + " / " + waypoint.chunksTo(eye.x, eye.z) + "ch");
 
         Identifier icon = waypoint.icon() == null ? null : icons.get(waypoint.icon(), Continent.KALROS);
         if (icon != null) {
-            context.drawTexture(net.minecraft.client.gl.RenderPipelines.GUI_TEXTURED, icon,
+            context.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, icon,
                     x - ICON_SIZE / 2, y - ICON_SIZE / 2, 0, 0,
                     ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE, 0xFFFFFFFF);
         } else {
@@ -132,20 +132,20 @@ public final class WaypointWorldRenderer {
         }
 
         int color = 0xFF000000 | waypoint.color();
-        context.drawTextWithShadow(client.textRenderer, label,
-                x - client.textRenderer.getWidth(label) / 2, y - ICON_SIZE / 2 - 11, color);
-        context.drawTextWithShadow(client.textRenderer, below,
-                x - client.textRenderer.getWidth(below) / 2, y + ICON_SIZE / 2 + 2, 0xFFC8C8C8);
+        context.text(client.font, label,
+                x - client.font.width(label) / 2, y - ICON_SIZE / 2 - 11, color);
+        context.text(client.font, below,
+                x - client.font.width(below) / 2, y + ICON_SIZE / 2 + 2, 0xFFC8C8C8);
     }
 
     /** The waypoint's offset from the eye, turned into the camera's own frame. */
-    private static Vector3f toViewSpace(Camera camera, Vec3d eye, Waypoint waypoint) {
+    private static Vector3f toViewSpace(Camera camera, Vec3 eye, Waypoint waypoint) {
         Vector3f delta = new Vector3f(
                 (float) (waypoint.x() - eye.x),
                 (float) (waypoint.y() + LIFT - eye.y),
                 (float) (waypoint.z() - eye.z));
         // getRotation turns camera-local into world, so its conjugate does the reverse.
-        Quaternionf toCamera = new Quaternionf(camera.getRotation()).conjugate();
+        Quaternionf toCamera = new Quaternionf(camera.rotation()).conjugate();
         return toCamera.transform(delta);
     }
 

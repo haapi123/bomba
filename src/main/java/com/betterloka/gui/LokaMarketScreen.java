@@ -7,17 +7,17 @@ import com.betterloka.api.model.MarketListing;
 import com.betterloka.api.model.MarketSort;
 import com.betterloka.async.AsyncSlot;
 import com.betterloka.async.Debounce;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,8 +71,8 @@ public class LokaMarketScreen extends Screen {
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
-    private TextFieldWidget queryField;
-    private ButtonWidget searchButton;
+    private EditBox queryField;
+    private Button searchButton;
 
     /**
      * The search and its suggestions hold a slot each, so a late answer to one cannot be written
@@ -99,7 +99,7 @@ public class LokaMarketScreen extends Screen {
     private final List<String> visibleOwners = new ArrayList<>();
 
     public LokaMarketScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.loka_market"));
+        super(Component.translatable("betterloka.module.loka_market"));
         this.parent = parent;
     }
 
@@ -110,12 +110,12 @@ public class LokaMarketScreen extends Screen {
      * read from {@code render} on every frame and written only from this queue.
      */
     private void onClientThread(Runnable action) {
-        MinecraftClient client = this.client;
+        Minecraft client = this.minecraft;
         if (client == null) {
             return;
         }
         client.execute(() -> {
-            if (client.currentScreen == this) {
+            if (client.gui.screen() == this) {
                 action.run();
             }
         });
@@ -148,33 +148,33 @@ public class LokaMarketScreen extends Screen {
         for (int i = 0; i < orders.length; i++) {
             MarketSort target = orders[i];
             int thisWidth = i == orders.length - 1 ? left + width - x : buttonWidth;
-            addDrawableChild(ButtonWidget.builder(sortLabel(target), button -> selectSort(target))
-                    .dimensions(x, SORT_ROW_Y, thisWidth, SORT_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(sortLabel(target), button -> selectSort(target))
+                    .bounds(x, SORT_ROW_Y, thisWidth, SORT_ROW_HEIGHT).build());
             x += buttonWidth + SORT_GAP;
         }
 
-        String previous = queryField != null ? queryField.getText() : "";
-        queryField = new TextFieldWidget(this.textRenderer, left, SEARCH_ROW_Y,
-                width - SEARCH_BUTTON_WIDTH - 4, SEARCH_ROW_HEIGHT, Text.translatable("betterloka.market.field"));
+        String previous = queryField != null ? queryField.getValue() : "";
+        queryField = new EditBox(this.font, left, SEARCH_ROW_Y,
+                width - SEARCH_BUTTON_WIDTH - 4, SEARCH_ROW_HEIGHT, Component.translatable("betterloka.market.field"));
         queryField.setMaxLength(48);
-        queryField.setPlaceholder(Text.translatable("betterloka.market.placeholder").formatted(Formatting.DARK_GRAY));
-        queryField.setText(previous);
-        addDrawableChild(queryField);
+        queryField.setHint(Component.translatable("betterloka.market.placeholder").withStyle(ChatFormatting.DARK_GRAY));
+        queryField.setValue(previous);
+        addRenderableWidget(queryField);
 
-        searchButton = ButtonWidget.builder(Text.translatable("betterloka.market.search"), button -> search())
-                .dimensions(left + width - SEARCH_BUTTON_WIDTH, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
+        searchButton = Button.builder(Component.translatable("betterloka.market.search"), button -> search())
+                .bounds(left + width - SEARCH_BUTTON_WIDTH, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
                 .build();
-        addDrawableChild(searchButton);
+        addRenderableWidget(searchButton);
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
         setInitialFocus(queryField);
     }
 
-    private Text sortLabel(MarketSort value) {
-        Text label = Text.translatable(value.key());
-        return value == sort ? label.copy().formatted(Formatting.YELLOW) : label;
+    private Component sortLabel(MarketSort value) {
+        Component label = Component.translatable(value.key());
+        return value == sort ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
     /**
@@ -189,11 +189,11 @@ public class LokaMarketScreen extends Screen {
         }
         sort = target;
         scrollPanel.reset();
-        clearAndInit();
+        rebuildWidgets();
     }
 
     private void search() {
-        String query = queryField.getText().trim();
+        String query = queryField.getValue().trim();
         if (query.isEmpty()) {
             return;
         }
@@ -237,8 +237,8 @@ public class LokaMarketScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
-        if ((input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER) && queryField.isFocused()) {
+    public boolean keyPressed(KeyEvent input) {
+        if (input.isConfirmation() && queryField.isFocused()) {
             search();
             return true;
         }
@@ -252,13 +252,13 @@ public class LokaMarketScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         List<String> suggestions = suggestions();
         for (int i = 0; i < suggestionBounds.size() && i < suggestions.size(); i++) {
             int[] bounds = suggestionBounds.get(i);
             if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
                     && click.y() >= bounds[1] && click.y() < bounds[1] + bounds[3]) {
-                queryField.setText(suggestions.get(i));
+                queryField.setValue(suggestions.get(i));
                 // Dropped, or the list would reopen on the very text just chosen.
                 suggestSlot.reset();
                 search();
@@ -269,27 +269,27 @@ public class LokaMarketScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         long frameStart = System.nanoTime();
-        super.render(context, mouseX, mouseY, delta);
-        searchButton.active = !searchSlot.loading() && !queryField.getText().trim().isEmpty();
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        searchButton.active = !searchSlot.loading() && !queryField.getValue().trim().isEmpty();
         lastMouseX = mouseX;
         lastMouseY = mouseY;
         refreshSuggestions();
         visibleOwners.clear();
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -300,17 +300,17 @@ public class LokaMarketScreen extends Screen {
         int used;
 
         if (searchSlot.loading()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.market.searching"), left, y + 4, GuiTheme.MUTED);
+            context.text(this.font,
+                    Component.translatable("betterloka.market.searching"), left, y + 4, GuiTheme.MUTED);
             used = 20;
         } else if (searchSlot.failed()) {
             // A failed search says so and offers the way out, rather than sitting on "loading" for
             // a request that is never coming back.
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.market.unreachable").formatted(Formatting.RED),
+            context.text(this.font,
+                    Component.translatable("betterloka.market.unreachable").withStyle(ChatFormatting.RED),
                     left, y + 4, GuiTheme.BAD);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.market.retry_search"),
+            context.text(this.font,
+                    Component.translatable("betterloka.market.retry_search"),
                     left, y + 4 + ROW_HEIGHT + 2, GuiTheme.MUTED);
             used = 20 + ROW_HEIGHT;
         } else {
@@ -332,19 +332,19 @@ public class LokaMarketScreen extends Screen {
     }
 
     /** The offers, or why there are none. */
-    private int renderSearch(DrawContext context, int left, int y, int width) {
+    private int renderSearch(GuiGraphicsExtractor context, int left, int y, int width) {
         Found found = searchSlot.value();
         if (found == null) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(searchSlot.state() == AsyncSlot.State.READY
+            context.text(this.font,
+                    Component.translatable(searchSlot.state() == AsyncSlot.State.READY
                             ? "betterloka.market.no_type" : "betterloka.market.hint",
-                            queryField.getText().trim()),
+                            queryField.getValue().trim()),
                     left, y + 4, GuiTheme.MUTED);
             return y + 20;
         }
         if (found.listings().isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.market.no_offers", found.type()),
+            context.text(this.font,
+                    Component.translatable("betterloka.market.no_offers", found.type()),
                     left, y + 4, GuiTheme.MUTED);
             return y + 20;
         }
@@ -362,7 +362,7 @@ public class LokaMarketScreen extends Screen {
      * <p>Held back until typing stops, so "Diamond Sword" is one lookup rather than thirteen.
      */
     private void refreshSuggestions() {
-        String query = queryField.getText().trim();
+        String query = queryField.getValue().trim();
         if (query.length() < 2 || !queryField.isFocused()) {
             suggestSlot.reset();
             suggestDebounce.clear();
@@ -387,14 +387,14 @@ public class LokaMarketScreen extends Screen {
     private List<String> suggestions() {
         List<String> found = suggestSlot.valueOr(List.of());
         if (found.size() == 1
-                && found.get(0).equalsIgnoreCase(queryField.getText().trim().replace(' ', '_'))) {
+                && found.get(0).equalsIgnoreCase(queryField.getValue().trim().replace(' ', '_'))) {
             return List.of();
         }
         return found;
     }
 
     /** Draws the suggestion list over the content, and remembers where each row landed. */
-    private void renderSuggestions(DrawContext context, int left, int width) {
+    private void renderSuggestions(GuiGraphicsExtractor context, int left, int width) {
         suggestionBounds.clear();
         List<String> suggestions = suggestions();
         if (suggestions.isEmpty() || !queryField.isFocused()) {
@@ -415,8 +415,8 @@ public class LokaMarketScreen extends Screen {
             if (hovered) {
                 context.fill(left + 1, rowY, left + panelWidth - 1, rowY + rowHeight, 0x40FFFFFF);
             }
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(prettify(suggestions.get(i)), panelWidth - 10),
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(prettify(suggestions.get(i)), panelWidth - 10),
                     left + 5, rowY + 2, hovered ? GuiTheme.ACCENT : GuiTheme.TEXT);
             suggestionBounds.add(new int[]{left, rowY, panelWidth, rowHeight});
         }
@@ -437,11 +437,11 @@ public class LokaMarketScreen extends Screen {
     }
 
     /** @return the y just past the last row. */
-    private int renderListings(DrawContext context, int left, int y, int width,
+    private int renderListings(GuiGraphicsExtractor context, int left, int y, int width,
                                List<MarketListing> listings, String type) {
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.market.offers", listings.get(0).prettyType(),
-                        listings.size(), Text.translatable(sort.orderKey())),
+        context.text(this.font,
+                Component.translatable("betterloka.market.offers", listings.get(0).prettyType(),
+                        listings.size(), Component.translatable(sort.orderKey())),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
@@ -465,7 +465,7 @@ public class LokaMarketScreen extends Screen {
             // middle, what it costs on the right.
             List<String> leftLines = new ArrayList<>();
             leftLines.add(listing.displayName());
-            leftLines.add(Text.translatable("betterloka.market.seller", sellerOf(listing)).getString());
+            leftLines.add(Component.translatable("betterloka.market.seller", sellerOf(listing)).getString());
             if (special) {
                 leftLines.add(listing.prettyType());
             }
@@ -474,13 +474,13 @@ public class LokaMarketScreen extends Screen {
             // When the order is by date, the date is what the reader is comparing, so it takes the
             // second line; otherwise that line is what the offer works out at each.
             String second = sort == MarketSort.NEWEST || sort == MarketSort.OLDEST
-                    ? Text.translatable("betterloka.market.listed",
+                    ? Component.translatable("betterloka.market.listed",
                             TimeFormat.ago(listedAtMillis(listing))).getString()
-                    : Text.translatable("betterloka.market.stock", listing.quantity()).getString()
+                    : Component.translatable("betterloka.market.stock", listing.quantity()).getString()
                             + "  ·  " + money(listing.pricePerUnit())
-                            + Text.translatable("betterloka.market.each").getString();
+                            + Component.translatable("betterloka.market.each").getString();
 
-            int rightWidth = Math.max(this.textRenderer.getWidth(price), this.textRenderer.getWidth(second)) + COLUMN_GAP;
+            int rightWidth = Math.max(this.font.width(price), this.font.width(second)) + COLUMN_GAP;
             int middleWidth = enchantLines.isEmpty()
                     ? 0
                     : Math.max(MIN_ENCHANT_WIDTH, (inner - rightWidth) * 2 / 5);
@@ -491,26 +491,26 @@ public class LokaMarketScreen extends Screen {
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
 
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(leftLines.get(0), leftWidth), textX, textY,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(leftLines.get(0), leftWidth), textX, textY,
                     special ? GuiTheme.ACCENT : GuiTheme.TEXT);
             for (int i = 1; i < leftLines.size(); i++) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(leftLines.get(i), leftWidth),
+                context.text(this.font,
+                        this.font.plainSubstrByWidth(leftLines.get(i), leftWidth),
                         textX, textY + ROW_HEIGHT * i, GuiTheme.MUTED);
             }
 
             int middleX = textX + leftWidth + COLUMN_GAP;
             for (int i = 0; i < enchantLines.size(); i++) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(enchantLines.get(i), middleWidth),
+                context.text(this.font,
+                        this.font.plainSubstrByWidth(enchantLines.get(i), middleWidth),
                         middleX, textY + ROW_HEIGHT * i, GuiTheme.ENCHANT);
             }
 
-            context.drawTextWithShadow(this.textRenderer, price,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(price), textY, GuiTheme.GOOD);
-            context.drawTextWithShadow(this.textRenderer, second,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(second), textY + ROW_HEIGHT,
+            context.text(this.font, price,
+                    left + width - CARD_PADDING - this.font.width(price), textY, GuiTheme.GOOD);
+            context.text(this.font, second,
+                    left + width - CARD_PADDING - this.font.width(second), textY + ROW_HEIGHT,
                     GuiTheme.MUTED);
 
             y += height + CARD_GAP;
@@ -537,7 +537,7 @@ public class LokaMarketScreen extends Screen {
             return enchantments;
         }
         List<String> shown = new ArrayList<>(enchantments.subList(0, MAX_ENCHANT_ROWS - 1));
-        shown.add(Text.translatable("betterloka.market.more_enchants",
+        shown.add(Component.translatable("betterloka.market.more_enchants",
                 enchantments.size() - (MAX_ENCHANT_ROWS - 1)).getString());
         return shown;
     }
@@ -590,7 +590,7 @@ public class LokaMarketScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

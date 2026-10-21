@@ -3,10 +3,10 @@ package com.betterloka.grind;
 import com.betterloka.BetterLoka;
 import com.betterloka.config.BetterLokaConfig;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 /**
  * Draws the running timers in the corner of the screen.
@@ -32,12 +32,12 @@ public final class GrindHud {
     }
 
     public void register() {
-        HudElementRegistry.addLast(Identifier.of(BetterLoka.MOD_ID, "grind_timers"), this::render);
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "grind_timers"), this::render);
     }
 
-    private void render(DrawContext context, net.minecraft.client.render.RenderTickCounter tick) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.options.hudHidden || client.currentScreen != null) {
+    private void render(GuiGraphicsExtractor context, net.minecraft.client.DeltaTracker tick) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.gui.hud.isHidden() || client.gui.screen() != null) {
             return;
         }
 
@@ -49,19 +49,19 @@ public final class GrindHud {
     }
 
     /** @return the y for the next line, unchanged when nothing was drawn. */
-    private int drawTimer(DrawContext context, MinecraftClient client, int y, GrindTimer timer,
+    private int drawTimer(GuiGraphicsExtractor context, Minecraft client, int y, GrindTimer timer,
                           boolean enabled, String key, int color) {
         if (!enabled || (!timer.running() && !timer.finished())) {
             return y;
         }
         // "ready" rather than 0:00 once it runs out: the number stops being the useful part then.
-        Text line = timer.finished()
-                ? Text.translatable(key, Text.translatable("betterloka.grind.ready").getString())
-                : Text.translatable(key, timer.remainingText());
+        Component line = timer.finished()
+                ? Component.translatable(key, Component.translatable("betterloka.grind.ready").getString())
+                : Component.translatable(key, timer.remainingText());
 
-        int width = client.textRenderer.getWidth(line);
-        int x = context.getScaledWindowWidth() - width - MARGIN;
-        context.drawTextWithShadow(client.textRenderer, line, x, y, color);
+        int width = client.font.width(line);
+        int x = context.guiWidth() - width - MARGIN;
+        context.text(client.font, line, x, y, color);
         return y + LINE_HEIGHT;
     }
 }

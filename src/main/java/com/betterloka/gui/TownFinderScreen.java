@@ -5,20 +5,20 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
+import com.betterloka.api.model.Territory;
 import com.betterloka.towns.TownActivityStore;
 import com.betterloka.towns.TownInfoReading;
-import com.betterloka.api.model.Territory;
 import com.betterloka.towns.TownLogStore;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -62,8 +62,8 @@ public class TownFinderScreen extends Screen {
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
-    private TextFieldWidget queryField;
-    private ButtonWidget searchButton;
+    private EditBox queryField;
+    private Button searchButton;
 
     private LokaTown town;
     private List<Territory> held = List.of();
@@ -74,7 +74,7 @@ public class TownFinderScreen extends Screen {
     private int continent;
     private boolean recruitingLoaded;
 
-    private Text message;
+    private Component message;
     /** The lookup for one town. Kept apart from the roster load so a slow roster cannot block it. */
     private boolean loading;
     private boolean loadingRecruiting;
@@ -88,7 +88,7 @@ public class TownFinderScreen extends Screen {
     private final List<LokaTown> rowTowns = new ArrayList<>();
 
     public TownFinderScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.town_finder"));
+        super(Component.translatable("betterloka.module.town_finder"));
         this.parent = parent;
     }
 
@@ -115,20 +115,20 @@ public class TownFinderScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        String previous = queryField != null ? queryField.getText() : "";
-        queryField = new TextFieldWidget(this.textRenderer, left, SEARCH_ROW_Y,
+        String previous = queryField != null ? queryField.getValue() : "";
+        queryField = new EditBox(this.font, left, SEARCH_ROW_Y,
                 width - SEARCH_BUTTON_WIDTH - 4, SEARCH_ROW_HEIGHT,
-                Text.translatable("betterloka.town_finder.field"));
+                Component.translatable("betterloka.town_finder.field"));
         queryField.setMaxLength(32);
-        queryField.setPlaceholder(Text.translatable("betterloka.town_finder.placeholder")
-                .formatted(Formatting.DARK_GRAY));
-        queryField.setText(previous);
-        addDrawableChild(queryField);
+        queryField.setHint(Component.translatable("betterloka.town_finder.placeholder")
+                .withStyle(ChatFormatting.DARK_GRAY));
+        queryField.setValue(previous);
+        addRenderableWidget(queryField);
 
-        searchButton = ButtonWidget.builder(Text.translatable("betterloka.finder.search"), button -> search())
-                .dimensions(left + width - SEARCH_BUTTON_WIDTH, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
+        searchButton = Button.builder(Component.translatable("betterloka.finder.search"), button -> search())
+                .bounds(left + width - SEARCH_BUTTON_WIDTH, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
                 .build();
-        addDrawableChild(searchButton);
+        addRenderableWidget(searchButton);
 
         if (town == null) {
             int filterWidth = (width - 12) / 4;
@@ -136,22 +136,22 @@ public class TownFinderScreen extends Screen {
             for (int i = 0; i < CONTINENTS.length; i++) {
                 int target = i;
                 int thisWidth = i == CONTINENTS.length - 1 ? left + width - x : filterWidth;
-                addDrawableChild(ButtonWidget.builder(continentLabel(i), button -> {
+                addRenderableWidget(Button.builder(continentLabel(i), button -> {
                             continent = target;
                             scrollPanel.reset();
-                            clearAndInit();
+                            rebuildWidgets();
                         })
-                        .dimensions(x, FILTER_ROW_Y, thisWidth, FILTER_ROW_HEIGHT).build());
+                        .bounds(x, FILTER_ROW_Y, thisWidth, FILTER_ROW_HEIGHT).build());
                 x += filterWidth + 4;
             }
         } else {
-            addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.town_finder.back_to_list"),
+            addRenderableWidget(Button.builder(Component.translatable("betterloka.town_finder.back_to_list"),
                             button -> showList())
-                    .dimensions(left, FILTER_ROW_Y, width, FILTER_ROW_HEIGHT).build());
+                    .bounds(left, FILTER_ROW_Y, width, FILTER_ROW_HEIGHT).build());
         }
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
         if (town == null) {
             setInitialFocus(queryField);
@@ -159,12 +159,12 @@ public class TownFinderScreen extends Screen {
         }
     }
 
-    private Text continentLabel(int index) {
+    private Component continentLabel(int index) {
         String world = CONTINENTS[index];
-        Text label = world == null
-                ? Text.translatable("betterloka.town_finder.all")
-                : Text.literal(Territory.continentOf(world));
-        return index == continent ? label.copy().formatted(Formatting.YELLOW) : label;
+        Component label = world == null
+                ? Component.translatable("betterloka.town_finder.all")
+                : Component.literal(Territory.continentOf(world));
+        return index == continent ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
     private void showList() {
@@ -174,7 +174,7 @@ public class TownFinderScreen extends Screen {
         partners = List.of();
         message = null;
         scrollPanel.reset();
-        clearAndInit();
+        rebuildWidgets();
     }
 
     /**
@@ -196,7 +196,7 @@ public class TownFinderScreen extends Screen {
                     loadingRecruiting = false;
                     recruitingLoaded = true;
                     if (error != null || all == null) {
-                        message = Text.translatable("betterloka.town_finder.unreachable").formatted(Formatting.RED);
+                        message = Component.translatable("betterloka.town_finder.unreachable").withStyle(ChatFormatting.RED);
                         return;
                     }
                     List<LokaTown> open = new ArrayList<>();
@@ -212,7 +212,7 @@ public class TownFinderScreen extends Screen {
     }
 
     private void search() {
-        String query = queryField.getText().trim();
+        String query = queryField.getValue().trim();
         if (query.isEmpty() || loading) {
             return;
         }
@@ -225,7 +225,7 @@ public class TownFinderScreen extends Screen {
                 .whenComplete((found, error) -> onClientThread(mine, () -> {
                     loading = false;
                     if (error != null) {
-                        message = Text.translatable("betterloka.town_finder.unreachable").formatted(Formatting.RED);
+                        message = Component.translatable("betterloka.town_finder.unreachable").withStyle(ChatFormatting.RED);
                         return;
                     }
                     if (found != null) {
@@ -238,8 +238,8 @@ public class TownFinderScreen extends Screen {
                     if (dead != null) {
                         show(dead);
                     } else {
-                        message = Text.translatable("betterloka.town_finder.not_found", query)
-                                .formatted(Formatting.RED);
+                        message = Component.translatable("betterloka.town_finder.not_found", query)
+                                .withStyle(ChatFormatting.RED);
                     }
                 }));
     }
@@ -252,7 +252,7 @@ public class TownFinderScreen extends Screen {
         partners = BetterLokaClient.townLogger().partnersOf(found.id());
         scrollPanel.reset();
         resolveNames(found);
-        clearAndInit();
+        rebuildWidgets();
     }
 
     /** Owners and sub-owners are recorded by identity, so each needs a small lookup of its own. */
@@ -287,19 +287,19 @@ public class TownFinderScreen extends Screen {
     }
 
     private void onScreen(Runnable action) {
-        if (this.client == null) {
+        if (this.minecraft == null) {
             return;
         }
-        this.client.execute(() -> {
-            if (this.client.currentScreen == this) {
+        this.minecraft.execute(() -> {
+            if (this.minecraft.gui.screen() == this) {
                 action.run();
             }
         });
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
-        if ((input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER) && queryField.isFocused()) {
+    public boolean keyPressed(KeyEvent input) {
+        if (input.isConfirmation() && queryField.isFocused()) {
             search();
             return true;
         }
@@ -313,7 +313,7 @@ public class TownFinderScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         if (scrollPanel.mouseClicked(click.x(), click.y())) {
             return true;
         }
@@ -331,21 +331,21 @@ public class TownFinderScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        searchButton.active = !loading && !queryField.getText().trim().isEmpty();
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        searchButton.active = !loading && !queryField.getValue().trim().isEmpty();
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -356,13 +356,13 @@ public class TownFinderScreen extends Screen {
         int used;
 
         if (loading || (town == null && loadingRecruiting)) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(loading ? "betterloka.finder.searching"
+            context.text(this.font,
+                    Component.translatable(loading ? "betterloka.finder.searching"
                             : "betterloka.town_finder.loading_towns"),
                     left, y + 4, GuiTheme.MUTED);
             used = 20;
         } else if (message != null) {
-            context.drawTextWithShadow(this.textRenderer, message, left, y + 4, GuiTheme.BAD);
+            context.text(this.font, message, left, y + 4, GuiTheme.BAD);
             used = 20;
         } else if (town == null) {
             used = renderRecruiting(context, left, y, cardWidth, mouseX, mouseY) - y;
@@ -376,7 +376,7 @@ public class TownFinderScreen extends Screen {
     }
 
     /** @return the y just past the last row. */
-    private int renderRecruiting(DrawContext context, int left, int y, int width, int mouseX, int mouseY) {
+    private int renderRecruiting(GuiGraphicsExtractor context, int left, int y, int width, int mouseX, int mouseY) {
         rowBounds.clear();
         rowTowns.clear();
 
@@ -387,15 +387,15 @@ public class TownFinderScreen extends Screen {
             }
         }
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.town_finder.recruiting_count", shown.size()), left, y + 2,
+        context.text(this.font,
+                Component.translatable("betterloka.town_finder.recruiting_count", shown.size()), left, y + 2,
                 GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (shown.isEmpty()) {
             GuiTheme.panel(context, left, y, width, CARD_PADDING * 2 + ROW_HEIGHT);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.town_finder.none_recruiting"), left + CARD_PADDING,
+            context.text(this.font,
+                    Component.translatable("betterloka.town_finder.none_recruiting"), left + CARD_PADDING,
                     y + CARD_PADDING, GuiTheme.MUTED);
             return y + CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
         }
@@ -412,30 +412,30 @@ public class TownFinderScreen extends Screen {
 
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
-            context.drawTextWithShadow(this.textRenderer, candidate.name(), textX, textY,
+            context.text(this.font, candidate.name(), textX, textY,
                     hovered ? GuiTheme.ACCENT : GuiTheme.TEXT);
 
-            String level = Text.translatable("betterloka.town_finder.level_short",
+            String level = Component.translatable("betterloka.town_finder.level_short",
                     (int) candidate.townLevel(), candidate.memberCount()).getString();
-            context.drawTextWithShadow(this.textRenderer, level,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(level), textY, GuiTheme.MUTED);
+            context.text(this.font, level,
+                    left + width - CARD_PADDING - this.font.width(level), textY, GuiTheme.MUTED);
 
             StringBuilder second = new StringBuilder();
             if (candidate.continentName() != null) {
                 second.append(candidate.continentName());
             }
             if (candidate.vulnerabilityWindow() >= 0) {
-                second.append("  ·  ").append(Text.translatable("betterloka.town_finder.vuln_short",
+                second.append("  ·  ").append(Component.translatable("betterloka.town_finder.vuln_short",
                         vulnText(candidate)).getString());
             }
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(second.toString(), inner - 100), textX, textY + ROW_HEIGHT,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(second.toString(), inner - 100), textX, textY + ROW_HEIGHT,
                     GuiTheme.MUTED);
 
             if (candidate.slogan() != null && !candidate.slogan().isBlank()) {
-                String slogan = this.textRenderer.trimToWidth(candidate.slogan(), inner / 2);
-                context.drawTextWithShadow(this.textRenderer, slogan,
-                        left + width - CARD_PADDING - this.textRenderer.getWidth(slogan), textY + ROW_HEIGHT,
+                String slogan = this.font.plainSubstrByWidth(candidate.slogan(), inner / 2);
+                context.text(this.font, slogan,
+                        left + width - CARD_PADDING - this.font.width(slogan), textY + ROW_HEIGHT,
                         GuiTheme.MUTED);
             }
 
@@ -446,24 +446,24 @@ public class TownFinderScreen extends Screen {
         return y;
     }
 
-    private int renderTown(DrawContext context, int left, int y, int width) {
+    private int renderTown(GuiGraphicsExtractor context, int left, int y, int width) {
         int inner = width - CARD_PADDING * 2;
 
         int headHeight = CARD_PADDING * 2 + ROW_HEIGHT * 2;
         GuiTheme.panel(context, left, y, width, headHeight);
-        Text name = Text.literal(town.name()).formatted(Formatting.BOLD);
-        context.drawTextWithShadow(this.textRenderer, name, left + CARD_PADDING, y + CARD_PADDING,
+        Component name = Component.literal(town.name()).withStyle(ChatFormatting.BOLD);
+        context.text(this.font, name, left + CARD_PADDING, y + CARD_PADDING,
                 town.deleted() ? GuiTheme.BAD : GuiTheme.ACCENT);
         String continentName = town.continentName() == null ? "?" : town.continentName();
-        context.drawTextWithShadow(this.textRenderer, continentName,
-                left + width - CARD_PADDING - this.textRenderer.getWidth(continentName), y + CARD_PADDING,
+        context.text(this.font, continentName,
+                left + width - CARD_PADDING - this.font.width(continentName), y + CARD_PADDING,
                 GuiTheme.MUTED);
         String second = town.deleted()
-                ? Text.translatable("betterloka.town_finder.deleted").getString()
+                ? Component.translatable("betterloka.town_finder.deleted").getString()
                 : town.slogan();
         if (second != null && !second.isBlank()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(second, inner), left + CARD_PADDING,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(second, inner), left + CARD_PADDING,
                     y + CARD_PADDING + ROW_HEIGHT, town.deleted() ? GuiTheme.BAD : GuiTheme.MUTED);
         }
         y += headHeight + CARD_GAP;
@@ -478,24 +478,24 @@ public class TownFinderScreen extends Screen {
         GuiTheme.panel(context, left, y, width, statsHeight);
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                Text.translatable("betterloka.town_finder.level").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY, inner,
+                Component.translatable("betterloka.town_finder.level").getString(),
                 String.format(Locale.ROOT, "%.0f", town.townLevel()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
-                Text.translatable("betterloka.town_finder.strength").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT, inner,
+                Component.translatable("betterloka.town_finder.strength").getString(),
                 String.format(Locale.ROOT, "%.0f", town.strength()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
-                Text.translatable("betterloka.town_finder.members").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 2, inner,
+                Component.translatable("betterloka.town_finder.members").getString(),
                 String.valueOf(town.memberCount()), GuiTheme.TEXT);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
-                Text.translatable("betterloka.town_finder.recruiting").getString(),
-                Text.translatable(town.recruiting() ? "betterloka.yes" : "betterloka.no").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 3, inner,
+                Component.translatable("betterloka.town_finder.recruiting").getString(),
+                Component.translatable(town.recruiting() ? "betterloka.yes" : "betterloka.no").getString(),
                 town.recruiting() ? GuiTheme.GOOD : GuiTheme.MUTED);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, inner,
-                Text.translatable("betterloka.town_finder.vuln").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 4, inner,
+                Component.translatable("betterloka.town_finder.vuln").getString(),
                 vulnText(town), GuiTheme.LIVE);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 5, inner,
-                Text.translatable(town.foundedIsImport()
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 5, inner,
+                Component.translatable(town.foundedIsImport()
                         ? "betterloka.town_finder.on_record_since"
                         : "betterloka.town_finder.founded").getString(),
                 TimeFormat.dateTime(town.founded()),
@@ -542,7 +542,7 @@ public class TownFinderScreen extends Screen {
      * off the screen when the player opened it. With nothing read yet the card says so and how to
      * fill it, rather than leaving a blank that looks like a town with no members.
      */
-    private int renderActivity(DrawContext context, int left, int y, int width, int inner,
+    private int renderActivity(GuiGraphicsExtractor context, int left, int y, int width, int inner,
                                LokaTown town) {
         TownActivityStore activity = BetterLokaClient.townActivity();
         TownInfoReading reading = activity == null ? null : activity.latest(town.name());
@@ -550,9 +550,9 @@ public class TownFinderScreen extends Screen {
         if (reading == null) {
             int emptyHeight = CARD_PADDING * 2 + ROW_HEIGHT;
             GuiTheme.panel(context, left, y, width, emptyHeight);
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(
-                            Text.translatable("betterloka.town_finder.no_activity").getString(), inner),
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(
+                            Component.translatable("betterloka.town_finder.no_activity").getString(), inner),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + emptyHeight + CARD_GAP;
         }
@@ -567,21 +567,21 @@ public class TownFinderScreen extends Screen {
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
 
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                Text.translatable("betterloka.town_finder.active").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY, inner,
+                Component.translatable("betterloka.town_finder.active").getString(),
                 reading.hasActive()
                         ? reading.active() + " / " + reading.members()
                         : "—",
                 zero ? GuiTheme.BAD : GuiTheme.GOOD);
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
-                Text.translatable("betterloka.town_finder.read_at").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT, inner,
+                Component.translatable("betterloka.town_finder.read_at").getString(),
                 TimeFormat.ago(reading.readAt()), GuiTheme.MUTED);
 
         if (zero) {
             // Deliberately "no earlier than": the count may have been zero long before anybody
             // opened the panel, and the run here is only as old as the first reading.
-            GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 2, inner,
-                    Text.translatable("betterloka.town_finder.falls_after", days).getString(),
+            GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 2, inner,
+                    Component.translatable("betterloka.town_finder.falls_after", days).getString(),
                     TimeFormat.date(java.time.Instant.ofEpochMilli(deletion)), GuiTheme.LIVE);
         }
         return y + height + CARD_GAP;
@@ -593,23 +593,23 @@ public class TownFinderScreen extends Screen {
      * <p>Every sub-owner gets a line of its own and the card grows to fit: a town with five of them
      * used to lose the last name to a trim, which is the one thing a list of officers must not do.
      */
-    private int renderPeople(DrawContext context, int left, int y, int width, int inner) {
+    private int renderPeople(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         List<String> subOwners = town.subOwnerIds();
         int height = CARD_PADDING * 2 + ROW_HEIGHT * (1 + subOwners.size());
         GuiTheme.panel(context, left, y, width, height);
 
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                Text.translatable("betterloka.town_finder.leader").getString(),
+        GuiTheme.statRow(context, this.font, textX, textY, inner,
+                Component.translatable("betterloka.town_finder.leader").getString(),
                 nameOf(town.ownerId()), GuiTheme.TEXT);
 
         for (int i = 0; i < subOwners.size(); i++) {
             textY += ROW_HEIGHT;
             String label = i == 0
-                    ? Text.translatable("betterloka.town_finder.subowners", subOwners.size()).getString()
+                    ? Component.translatable("betterloka.town_finder.subowners", subOwners.size()).getString()
                     : "";
-            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, label,
+            GuiTheme.statRow(context, this.font, textX, textY, inner, label,
                     nameOf(subOwners.get(i)), GuiTheme.MUTED);
         }
         return y + height + CARD_GAP;
@@ -626,38 +626,38 @@ public class TownFinderScreen extends Screen {
         return name.isEmpty() ? "?" : name;
     }
 
-    private int renderAlliance(DrawContext context, int left, int y, int width, int inner) {
+    private int renderAlliance(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         int rows = 1 + Math.min(MAX_PARTNERS, partners.size()) + (partners.isEmpty() ? 1 : 1);
         int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
         GuiTheme.panel(context, left, y, width, height);
 
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                Text.translatable("betterloka.town_finder.alliance").getString(),
-                alliance == null ? Text.translatable("betterloka.town_finder.no_alliance").getString()
+        GuiTheme.statRow(context, this.font, textX, textY, inner,
+                Component.translatable("betterloka.town_finder.alliance").getString(),
+                alliance == null ? Component.translatable("betterloka.town_finder.no_alliance").getString()
                         : alliance.name(),
                 alliance == null ? GuiTheme.MUTED : GuiTheme.ACCENT);
         textY += ROW_HEIGHT;
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.town_finder.usual_allies"), textX, textY, GuiTheme.MUTED);
+        context.text(this.font,
+                Component.translatable("betterloka.town_finder.usual_allies"), textX, textY, GuiTheme.MUTED);
         textY += ROW_HEIGHT;
 
         if (partners.isEmpty()) {
             // Loka publishes no alliance history, so this fills in from the Logger's own watching.
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(
-                            Text.translatable("betterloka.town_finder.no_ally_history").getString(), inner),
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(
+                            Component.translatable("betterloka.town_finder.no_ally_history").getString(), inner),
                     textX, textY, GuiTheme.MUTED);
             return y + height + CARD_GAP;
         }
 
         for (TownLogStore.TownPartner partner : partners.subList(0, Math.min(MAX_PARTNERS, partners.size()))) {
             String label = partner.name() != null ? partner.name() : partner.townId();
-            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                    this.textRenderer.trimToWidth(label, inner / 2),
-                    Text.translatable("betterloka.town_finder.ally_days", partner.days()).getString(),
+            GuiTheme.statRow(context, this.font, textX, textY, inner,
+                    this.font.plainSubstrByWidth(label, inner / 2),
+                    Component.translatable("betterloka.town_finder.ally_days", partner.days()).getString(),
                     GuiTheme.TEXT);
             textY += ROW_HEIGHT;
         }
@@ -665,32 +665,32 @@ public class TownFinderScreen extends Screen {
     }
 
     /** Territories come from the logger's standing sweep, so this costs nothing extra. */
-    private int renderTerritories(DrawContext context, int left, int y, int width, int inner) {
+    private int renderTerritories(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         int headerHeight = CARD_PADDING * 2 + ROW_HEIGHT;
         GuiTheme.panel(context, left, y, width, headerHeight);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.town_finder.territories", held.size()),
+        context.text(this.font,
+                Component.translatable("betterloka.town_finder.territories", held.size()),
                 left + CARD_PADDING, y + CARD_PADDING, GuiTheme.TEXT);
         y += headerHeight + CARD_GAP;
 
         if (held.isEmpty()) {
             GuiTheme.panel(context, left, y, width, headerHeight);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.town_finder.no_territories"),
+            context.text(this.font,
+                    Component.translatable("betterloka.town_finder.no_territories"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + headerHeight + CARD_GAP;
         }
 
         for (Territory territory : held) {
             GuiTheme.panel(context, left, y, width, headerHeight);
-            String where = Text.translatable("betterloka.town_log.where", territory.continent(),
+            String where = Component.translatable("betterloka.town_log.where", territory.continent(),
                     territory.num(), territory.coordinates()).getString();
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(where, inner - 70), left + CARD_PADDING, y + CARD_PADDING,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(where, inner - 70), left + CARD_PADDING, y + CARD_PADDING,
                     GuiTheme.TEXT);
             if (territory.areaName() != null) {
-                context.drawTextWithShadow(this.textRenderer, territory.areaName(),
-                        left + width - CARD_PADDING - this.textRenderer.getWidth(territory.areaName()),
+                context.text(this.font, territory.areaName(),
+                        left + width - CARD_PADDING - this.font.width(territory.areaName()),
                         y + CARD_PADDING, GuiTheme.MUTED);
             }
             y += headerHeight + CARD_GAP;
@@ -699,7 +699,7 @@ public class TownFinderScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

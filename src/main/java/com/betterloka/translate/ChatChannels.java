@@ -1,8 +1,8 @@
 package com.betterloka.translate;
 
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +23,7 @@ public final class ChatChannels {
     }
 
     /** @return the message text with its colours, ready for {@link ChatLog#record}. */
-    public static ChatMessage read(Text message) {
+    public static ChatMessage read(Component message) {
         if (message == null) {
             return ChatMessage.plain("");
         }
@@ -33,7 +33,7 @@ public final class ChatChannels {
         // Returning empty keeps the walk going; every run has to be collected.
         message.visit((style, run) -> {
             TextColor color = style.getColor();
-            runs.add(new Run(run, color == null ? -1 : color.getRgb()));
+            runs.add(new Run(run, color == null ? -1 : color.getValue()));
             total[0] += run.length();
             return Optional.empty();
         }, Style.EMPTY);

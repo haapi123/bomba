@@ -2,8 +2,8 @@ package com.betterloka.gui;
 
 import com.betterloka.stats.PlayerTrait;
 import com.betterloka.translate.ChatChannel;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /** Shared colours and small drawing helpers, so every BetterLoka screen looks like the same mod. */
 public final class GuiTheme {
@@ -20,7 +20,7 @@ public final class GuiTheme {
      * <p>The fill is a dimmed version of the outline rather than a flat dark, so a row of chips reads
      * as coloured at a glance without the text having to fight its own background.
      */
-    public static void chip(DrawContext context, int x, int y, int width, int height, int color) {
+    public static void chip(GuiGraphicsExtractor context, int x, int y, int width, int height, int color) {
         int fill = (color & 0x00FFFFFF) | 0x30000000;
         // Corners left unpainted, which reads as rounded at this size.
         context.fill(x + 1, y, x + width - 1, y + height, fill);
@@ -58,7 +58,7 @@ public final class GuiTheme {
     }
 
     /** A dark rounded-looking card with a one pixel border. */
-    public static void panel(DrawContext context, int x, int y, int width, int height) {
+    public static void panel(GuiGraphicsExtractor context, int x, int y, int width, int height) {
         context.fill(x, y, x + width, y + height, PANEL_FILL);
         context.fill(x, y, x + width, y + 1, PANEL_BORDER);
         context.fill(x, y + height - 1, x + width, y + height, PANEL_BORDER);
@@ -66,19 +66,19 @@ public final class GuiTheme {
         context.fill(x + width - 1, y, x + width, y + height, PANEL_BORDER);
     }
 
-    public static void separator(DrawContext context, int x, int y, int width) {
+    public static void separator(GuiGraphicsExtractor context, int x, int y, int width) {
         context.fill(x, y, x + width, y + 1, SEPARATOR);
     }
 
     /** A label/value pair, with the value right-aligned inside {@code width}. */
-    public static void statRow(DrawContext context, TextRenderer textRenderer, int x, int y, int width,
+    public static void statRow(GuiGraphicsExtractor context, Font textRenderer, int x, int y, int width,
                                String label, String value, int valueColor) {
-        context.drawTextWithShadow(textRenderer, label, x, y, MUTED);
-        int valueWidth = textRenderer.getWidth(value);
-        context.drawTextWithShadow(textRenderer, value, x + width - valueWidth, y, valueColor);
+        context.text(textRenderer, label, x, y, MUTED);
+        int valueWidth = textRenderer.width(value);
+        context.text(textRenderer, value, x + width - valueWidth, y, valueColor);
     }
 
-    public static void progressBar(DrawContext context, int x, int y, int width, int height, float fraction) {
+    public static void progressBar(GuiGraphicsExtractor context, int x, int y, int width, int height, float fraction) {
         context.fill(x, y, x + width, y + height, 0xFF23232B);
         int filled = Math.round(Math.max(0f, Math.min(1f, fraction)) * (width - 2));
         if (filled > 0) {

@@ -7,14 +7,14 @@ import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.async.AsyncSlot;
 import com.betterloka.stats.PlayerTrait;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -65,22 +65,22 @@ public class FightManagerScreen extends Screen {
     /** This screen's own state, which no other screen's answer can write into. */
     private final AsyncSlot<List<Row>> slot = new AsyncSlot<>("fight manager", this::onClientThread);
 
-    private ButtonWidget refreshButton;
+    private Button refreshButton;
     private long loadedAt;
 
     public FightManagerScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.fight_manager"));
+        super(Component.translatable("betterloka.module.fight_manager"));
         this.parent = parent;
     }
 
     /** Runs an action on the client thread, and only while this screen is still the open one. */
     private void onClientThread(Runnable action) {
-        MinecraftClient client = this.client;
+        Minecraft client = this.minecraft;
         if (client == null) {
             return;
         }
         client.execute(() -> {
-            if (client.currentScreen == this) {
+            if (client.gui.screen() == this) {
                 loadedAt = System.currentTimeMillis();
                 action.run();
             }
@@ -106,12 +106,12 @@ public class FightManagerScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        refreshButton = ButtonWidget.builder(Text.translatable("betterloka.fights.refresh"), button -> load())
-                .dimensions(left, CONTROL_ROW_Y, width, CONTROL_ROW_HEIGHT).build();
-        addDrawableChild(refreshButton);
+        refreshButton = Button.builder(Component.translatable("betterloka.fights.refresh"), button -> load())
+                .bounds(left, CONTROL_ROW_Y, width, CONTROL_ROW_HEIGHT).build();
+        addRenderableWidget(refreshButton);
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
         load();
     }
@@ -199,41 +199,41 @@ public class FightManagerScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         boolean loading = slot.loading();
         List<Row> rows = slot.valueOr(List.of());
         // Disabled while it runs, and labelled for what it is doing, so a refresh that is under way
         // looks like one rather than like a button that stopped working.
         refreshButton.active = !loading;
-        refreshButton.setMessage(Text.translatable(loading
+        refreshButton.setMessage(Component.translatable(loading
                 ? "betterloka.fights.refreshing" : "betterloka.fights.refresh"));
 
         int left = contentLeft();
         int width = contentWidth();
 
-        Text status = loading
-                ? Text.translatable("betterloka.fights.loading")
-                : Text.translatable("betterloka.fights.count", rows.size(), TimeFormat.ago(loadedAt));
-        context.drawTextWithShadow(this.textRenderer, status, left, VIEWPORT_TOP - 12, GuiTheme.MUTED);
+        Component status = loading
+                ? Component.translatable("betterloka.fights.loading")
+                : Component.translatable("betterloka.fights.count", rows.size(), TimeFormat.ago(loadedAt));
+        context.text(this.font, status, left, VIEWPORT_TOP - 12, GuiTheme.MUTED);
 
         context.enableScissor(left, VIEWPORT_TOP, left + width, viewportBottom());
         int y = scrollPanel.contentTop();
@@ -241,17 +241,17 @@ public class FightManagerScreen extends Screen {
         int used;
 
         if (slot.failed()) {
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.fights.unreachable").formatted(Formatting.RED),
+            context.text(this.font,
+                    Component.translatable("betterloka.fights.unreachable").withStyle(ChatFormatting.RED),
                     left, y + 4, GuiTheme.BAD);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable("betterloka.fights.retry_hint"),
+            context.text(this.font,
+                    Component.translatable("betterloka.fights.retry_hint"),
                     left, y + 4 + ROW_HEIGHT + 2, GuiTheme.MUTED);
             used = 20 + ROW_HEIGHT;
         } else if (rows.isEmpty()) {
             GuiTheme.panel(context, left, y, cardWidth, CARD_PADDING * 2 + ROW_HEIGHT);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(loading ? "betterloka.fights.loading" : "betterloka.fights.none"),
+            context.text(this.font,
+                    Component.translatable(loading ? "betterloka.fights.loading" : "betterloka.fights.none"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             used = CARD_PADDING * 2 + ROW_HEIGHT + CARD_GAP;
         } else {
@@ -271,24 +271,24 @@ public class FightManagerScreen extends Screen {
      *
      * @return the x the next thing may start at
      */
-    private int drawSide(DrawContext context, int x, int y, Text name,
+    private int drawSide(GuiGraphicsExtractor context, int x, int y, Component name,
                          com.betterloka.api.model.ScheduledFight.Side side) {
-        context.drawTextWithShadow(this.textRenderer, name, x, y, GuiTheme.TEXT);
-        x += this.textRenderer.getWidth(name) + 4;
+        context.text(this.font, name, x, y, GuiTheme.TEXT);
+        x += this.font.width(name) + 4;
 
         String present = String.valueOf(side.present());
-        context.drawTextWithShadow(this.textRenderer, present, x, y, GuiTheme.TURNOUT_PRESENT);
-        x += this.textRenderer.getWidth(present);
+        context.text(this.font, present, x, y, GuiTheme.TURNOUT_PRESENT);
+        x += this.font.width(present);
 
-        context.drawTextWithShadow(this.textRenderer, "/", x, y, GuiTheme.MUTED);
-        x += this.textRenderer.getWidth("/");
+        context.text(this.font, "/", x, y, GuiTheme.MUTED);
+        x += this.font.width("/");
 
         String signedUp = String.valueOf(side.signedUp());
-        context.drawTextWithShadow(this.textRenderer, signedUp, x, y, GuiTheme.TURNOUT_SIGNED_UP);
-        return x + this.textRenderer.getWidth(signedUp);
+        context.text(this.font, signedUp, x, y, GuiTheme.TURNOUT_SIGNED_UP);
+        return x + this.font.width(signedUp);
     }
 
-    private int renderFights(DrawContext context, int left, int y, int width, List<Row> rows) {
+    private int renderFights(GuiGraphicsExtractor context, int left, int y, int width, List<Row> rows) {
         int inner = width - CARD_PADDING * 2;
         for (Row row : rows) {
             ScheduledFight fight = row.fight();
@@ -312,61 +312,61 @@ public class FightManagerScreen extends Screen {
             // Neither side named: fall back to the fight's own identifier, made readable, rather
             // than showing "the_verdant_hallows" or a bare question mark.
             String fallback = fight.readableName();
-            Text attacker = Text.literal(row.attacker() != null ? row.attacker()
-                    : fallback != null ? fallback : "?").formatted(Formatting.BOLD);
-            Text defender = Text.literal(row.defender() == null ? "?" : row.defender())
-                    .formatted(Formatting.BOLD);
+            Component attacker = Component.literal(row.attacker() != null ? row.attacker()
+                    : fallback != null ? fallback : "?").withStyle(ChatFormatting.BOLD);
+            Component defender = Component.literal(row.defender() == null ? "?" : row.defender())
+                    .withStyle(ChatFormatting.BOLD);
             String arrow = "  vs  ";
 
             int attackerX = textX;
             int afterAttacker = drawSide(context, attackerX, textY, attacker, fight.attackers());
             int arrowX = afterAttacker;
-            context.drawTextWithShadow(this.textRenderer, arrow, arrowX, textY, GuiTheme.MUTED);
-            int defenderX = arrowX + this.textRenderer.getWidth(arrow);
+            context.text(this.font, arrow, arrowX, textY, GuiTheme.MUTED);
+            int defenderX = arrowX + this.font.width(arrow);
             drawSide(context, defenderX, textY, defender, fight.defenders());
 
-            Text when = fight.started()
-                    ? Text.translatable("betterloka.fights.live")
-                    : Text.literal(windowText(row.defenderVulnHour()));
-            context.drawTextWithShadow(this.textRenderer, when,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(when), textY,
+            Component when = fight.started()
+                    ? Component.translatable("betterloka.fights.live")
+                    : Component.literal(windowText(row.defenderVulnHour()));
+            context.text(this.font, when,
+                    left + width - CARD_PADDING - this.font.width(when), textY,
                     fight.started() ? GuiTheme.LIVE : GuiTheme.ACCENT);
 
             // Each town's alliance sits directly under its name, so the two never get mixed up.
             if (row.attackerAlliance() != null) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(row.attackerAlliance(), defenderX - attackerX - 4),
+                context.text(this.font,
+                        this.font.plainSubstrByWidth(row.attackerAlliance(), defenderX - attackerX - 4),
                         attackerX, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
             if (row.defenderAlliance() != null) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(row.defenderAlliance(), inner / 3),
+                context.text(this.font,
+                        this.font.plainSubstrByWidth(row.defenderAlliance(), inner / 3),
                         defenderX, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
             // Where it is being fought. Loka leaves the world off some records, and "? - territory
             // #117" says nothing; the fight's own name, made readable, always says something.
             String where = fight.continent() != null
-                    ? Text.translatable("betterloka.fights.where", fight.continent(),
+                    ? Component.translatable("betterloka.fights.where", fight.continent(),
                             fight.territoryNumber() == null ? "?" : fight.territoryNumber())
                             .getString()
                     : fight.readableName();
             if (where != null) {
-                context.drawTextWithShadow(this.textRenderer,
-                        this.textRenderer.trimToWidth(where, inner - 90), textX,
+                context.text(this.font,
+                        this.font.plainSubstrByWidth(where, inner - 90), textX,
                         textY + ROW_HEIGHT * 2, GuiTheme.MUTED);
             }
 
             // Whether reinforcements can be called decides whether a fight stays the size it looks,
             // so it gets a chip rather than a line of grey text.
-            Text reins = Text.translatable(fight.reinforcementsAllowed()
+            Component reins = Component.translatable(fight.reinforcementsAllowed()
                     ? "betterloka.fights.reins_on" : "betterloka.fights.reins_off");
             int reinsColor = fight.reinforcementsAllowed() ? GuiTheme.traitColor(PlayerTrait.Level.GOOD)
                     : GuiTheme.traitColor(PlayerTrait.Level.POOR);
-            int chipWidth = this.textRenderer.getWidth(reins) + CHIP_PADDING * 2;
+            int chipWidth = this.font.width(reins) + CHIP_PADDING * 2;
             int chipX = left + width - CARD_PADDING - chipWidth;
             GuiTheme.chip(context, chipX, textY + ROW_HEIGHT * 2 - 2, chipWidth, CHIP_HEIGHT, reinsColor);
-            context.drawTextWithShadow(this.textRenderer, reins, chipX + CHIP_PADDING,
+            context.text(this.font, reins, chipX + CHIP_PADDING,
                     textY + ROW_HEIGHT * 2 + 1, reinsColor);
 
             y += height + CARD_GAP;
@@ -382,7 +382,7 @@ public class FightManagerScreen extends Screen {
      */
     private static String windowText(int hour) {
         if (hour < 0) {
-            return Text.translatable("betterloka.fights.window_unknown").getString();
+            return Component.translatable("betterloka.fights.window_unknown").getString();
         }
         return String.format(Locale.ROOT, "%02d:00 – %02d:00", hour, (hour + VULN_HOURS) % 24);
     }
@@ -395,7 +395,7 @@ public class FightManagerScreen extends Screen {
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

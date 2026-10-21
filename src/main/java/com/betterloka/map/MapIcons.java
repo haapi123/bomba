@@ -2,10 +2,10 @@ package com.betterloka.map;
 
 import com.betterloka.BetterLoka;
 import com.betterloka.api.HttpTransport;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -72,7 +72,7 @@ public final class MapIcons {
             if (png == null) {
                 return;
             }
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             if (client == null) {
                 return;
             }
@@ -109,10 +109,10 @@ public final class MapIcons {
             // Deliberately not closed: the texture takes ownership of the image and frees it when
             // the texture manager drops it.
             NativeImage image = NativeImage.read(new ByteArrayInputStream(png));
-            Identifier id = Identifier.of(BetterLoka.MOD_ID,
+            Identifier id = Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID,
                     "map_icon_" + icon.toLowerCase(Locale.ROOT));
-            MinecraftClient.getInstance().getTextureManager().registerTexture(id,
-                    new NativeImageBackedTexture(() -> "betterloka/" + icon, image));
+            Minecraft.getInstance().getTextureManager().register(id,
+                    new DynamicTexture(() -> "betterloka/" + icon, image));
             ready.put(icon, id);
         } catch (IOException | RuntimeException e) {
             BetterLoka.LOGGER.debug("Could not decode the map icon {}", icon, e);

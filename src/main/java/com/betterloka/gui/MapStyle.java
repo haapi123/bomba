@@ -1,8 +1,8 @@
 package com.betterloka.gui;
 
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -149,7 +149,7 @@ public final class MapStyle {
      * The card's body: translucent dark, corners cut back a pixel so they read as rounded, and a
      * border in whatever colour the thing being described is.
      */
-    public static void card(DrawContext context, int x, int y, int width, int height,
+    public static void card(GuiGraphicsExtractor context, int x, int y, int width, int height,
                             int borderColor) {
         int right = x + width;
         int bottom = y + height;
@@ -173,7 +173,7 @@ public final class MapStyle {
     }
 
     /** A square button with a hover state, drawn by hand so it can sit over the map. */
-    public static void button(DrawContext context, TextRenderer textRenderer, int x, int y,
+    public static void button(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
                               int size, String label, boolean hovered, boolean enabled) {
         context.fill(x, y, x + size, y + size, hovered && enabled ? BUTTON_FILL_HOVER : BUTTON_FILL);
         int border = hovered && enabled ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
@@ -182,9 +182,9 @@ public final class MapStyle {
         context.fill(x, y, x + 1, y + size, border);
         context.fill(x + size - 1, y, x + size, y + size, border);
 
-        int width = textRenderer.getWidth(label);
-        context.drawTextWithShadow(textRenderer, label,
-                x + (size - width) / 2, y + (size - textRenderer.fontHeight) / 2 + 1,
+        int width = textRenderer.width(label);
+        context.text(textRenderer, label,
+                x + (size - width) / 2, y + (size - textRenderer.lineHeight) / 2 + 1,
                 enabled ? BUTTON_TEXT : BUTTON_TEXT_DISABLED);
     }
 
@@ -195,7 +195,7 @@ public final class MapStyle {
      * this — a downward arrow — is not one the game's own font is guaranteed to carry, and a button
      * whose label silently becomes a missing-character box is worse than no button.
      */
-    public static void downloadButton(DrawContext context, int x, int y, int size,
+    public static void downloadButton(GuiGraphicsExtractor context, int x, int y, int size,
                                       boolean hovered, boolean enabled, boolean running) {
         context.fill(x, y, x + size, y + size, hovered && enabled ? BUTTON_FILL_HOVER : BUTTON_FILL);
         int border = hovered && enabled ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
@@ -220,8 +220,8 @@ public final class MapStyle {
     }
 
     /** A full-width button, for the one inside the coordinate bubble. */
-    public static void wideButton(DrawContext context, TextRenderer textRenderer, int x, int y,
-                                  int width, Text label, boolean hovered, boolean confirmed) {
+    public static void wideButton(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
+                                  int width, Component label, boolean hovered, boolean confirmed) {
         int fill = confirmed ? 0xE0204A2A : hovered ? BUTTON_FILL_HOVER : BUTTON_FILL;
         int border = confirmed ? 0xFF5FD37A : hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
         context.fill(x, y, x + width, y + PIN_BUTTON_HEIGHT, fill);
@@ -230,24 +230,24 @@ public final class MapStyle {
         context.fill(x, y, x + 1, y + PIN_BUTTON_HEIGHT, border);
         context.fill(x + width - 1, y, x + width, y + PIN_BUTTON_HEIGHT, border);
 
-        int textWidth = textRenderer.getWidth(label);
-        context.drawTextWithShadow(textRenderer, label, x + (width - textWidth) / 2,
-                y + (PIN_BUTTON_HEIGHT - textRenderer.fontHeight) / 2 + 1, BUTTON_TEXT);
+        int textWidth = textRenderer.width(label);
+        context.text(textRenderer, label, x + (width - textWidth) / 2,
+                y + (PIN_BUTTON_HEIGHT - textRenderer.lineHeight) / 2 + 1, BUTTON_TEXT);
     }
 
     /** Text at the secondary size, for the side notes under the main rows. */
-    public static void small(DrawContext context, TextRenderer textRenderer, Text text,
+    public static void small(GuiGraphicsExtractor context, Font textRenderer, Component text,
                             int x, int y, int color) {
-        var matrices = context.getMatrices();
+        var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(SMALL_SCALE, SMALL_SCALE);
-        context.drawTextWithShadow(textRenderer, text, 0, 0, color);
+        context.text(textRenderer, text, 0, 0, color);
         matrices.popMatrix();
     }
 
-    public static int smallWidth(TextRenderer textRenderer, Text text) {
-        return Math.round(textRenderer.getWidth(text) * SMALL_SCALE);
+    public static int smallWidth(Font textRenderer, Component text) {
+        return Math.round(textRenderer.width(text) * SMALL_SCALE);
     }
 
     /**
@@ -264,7 +264,7 @@ public final class MapStyle {
      * <p>Split on spaces rather than by character: a bonus is prose, and a word cut in half reads as
      * a rendering fault.
      */
-    public static List<String> wrapSmall(TextRenderer textRenderer, String text, int maxWidth) {
+    public static List<String> wrapSmall(Font textRenderer, String text, int maxWidth) {
         List<String> lines = new ArrayList<>();
         if (text == null || text.isBlank()) {
             return lines;
@@ -273,7 +273,7 @@ public final class MapStyle {
         for (String word : text.trim().split("\\s+")) {
             String candidate = line.isEmpty() ? word : line + " " + word;
             if (!line.isEmpty()
-                    && Math.round(textRenderer.getWidth(candidate) * SMALL_SCALE) > maxWidth) {
+                    && Math.round(textRenderer.width(candidate) * SMALL_SCALE) > maxWidth) {
                 lines.add(line.toString());
                 line = new StringBuilder(word);
             } else {
@@ -286,7 +286,7 @@ public final class MapStyle {
         return lines;
     }
 
-    public static int smallHeight(TextRenderer textRenderer) {
-        return Math.round((textRenderer.fontHeight + 1) * SMALL_SCALE);
+    public static int smallHeight(Font textRenderer) {
+        return Math.round((textRenderer.lineHeight + 1) * SMALL_SCALE);
     }
 }

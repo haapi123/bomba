@@ -1,6 +1,6 @@
 package com.betterloka.gui;
 
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
  * Scrolling for a rectangular region of a screen, with a draggable scrollbar down its right edge.
@@ -150,7 +150,7 @@ public final class ScrollPanel {
     }
 
     /** Draws the bar. Call after the content, and outside any scissor covering the viewport. */
-    public void render(DrawContext context, double mouseX, double mouseY) {
+    public void render(GuiGraphicsExtractor context, double mouseX, double mouseY) {
         if (!needsBar()) {
             return;
         }

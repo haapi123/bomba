@@ -1,6 +1,6 @@
 # BetterLoka
 
-A client-side Fabric mod for **[Loka](https://lokamc.com)** (`play.lokamc.com`), Minecraft **1.21.11**.
+A client-side Fabric mod for **[Loka](https://lokamc.com)** (`play.lokamc.com`), Minecraft **26.3**.
 
 BetterLoka adds an in-game menu, opened with a key you bind yourself, that pulls live data from
 Loka's public API and from [EldritchBot](https://eldritchbot.com). It is entirely client-side: it
@@ -475,7 +475,7 @@ sweep, and the whole thing can be switched off.
 
 ## Installing
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer) 0.19.0+ for Minecraft 1.21.11.
+1. Install [Fabric Loader](https://fabricmc.net/use/installer) 0.20.0+ for Minecraft 26.3.
 2. Drop [Fabric API](https://modrinth.com/mod/fabric-api) into `mods/`.
 3. Drop `betterloka-<version>.jar` into `mods/`.
 
@@ -544,7 +544,9 @@ not balances.
 
 ## Building
 
-Requires JDK 21.
+Requires JDK 25 — the version Minecraft 26.3 itself runs on, and the one the Fabric build tooling
+now needs just to start. From 26.1 the game ships unobfuscated with Mojang's own names, so there are
+no mappings to download and the code reads the same as the game.
 
 ```bash
 ./gradlew build          # jar lands in build/libs/

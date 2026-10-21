@@ -3,29 +3,29 @@ package com.betterloka;
 import com.betterloka.api.ArenaApi;
 import com.betterloka.api.EldritchApi;
 import com.betterloka.api.HttpTransport;
+import com.betterloka.api.LabyApi;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
+import com.betterloka.grind.GrindTimer;
+import com.betterloka.grind.GrindTimers;
+import com.betterloka.grind.ShulkerWatcher;
+import com.betterloka.gui.BetterLokaMenuScreen;
+import com.betterloka.helper.GuiScaleController;
 import com.betterloka.map.DynmapApi;
-import com.betterloka.map.MapIcons;
-import com.betterloka.api.LabyApi;
 import com.betterloka.map.MapDataStore;
-import com.betterloka.stats.NameHistoryService;
+import com.betterloka.map.MapIcons;
 import com.betterloka.map.MapService;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.WaypointHud;
 import com.betterloka.map.WaypointWorldRenderer;
-import com.betterloka.grind.GrindTimer;
-import com.betterloka.grind.GrindTimers;
-import com.betterloka.grind.ShulkerWatcher;
-import com.betterloka.helper.GuiScaleController;
-import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.BattleIndex;
-import com.betterloka.stats.NemesisIndex;
+import com.betterloka.stats.NameHistoryService;
 import com.betterloka.stats.NameplateKdService;
+import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.towns.TownActivityStore;
 import com.betterloka.towns.TownInfoReader;
@@ -34,14 +34,14 @@ import com.betterloka.towns.TownLogger;
 import com.betterloka.translate.ChatChannels;
 import com.betterloka.translate.ChatLog;
 import com.betterloka.translate.TranslationService;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.util.Identifier;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
 
 import java.nio.file.Path;
 
@@ -57,12 +57,12 @@ public class BetterLokaClient implements ClientModInitializer {
      * Registered once at class initialisation; {@code Category.create} throws if the same identifier
      * is registered twice.
      */
-    private static final KeyBinding.Category KEY_CATEGORY =
-            KeyBinding.Category.create(Identifier.of(BetterLoka.MOD_ID, "main"));
+    private static final KeyMapping.Category KEY_CATEGORY =
+            KeyMapping.Category.register(Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "main"));
 
-    private static KeyBinding openMenuKey;
-    private static KeyBinding shulkerTimerKey;
-    private static KeyBinding glowstoneTimerKey;
+    private static KeyMapping openMenuKey;
+    private static KeyMapping shulkerTimerKey;
+    private static KeyMapping glowstoneTimerKey;
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
@@ -150,24 +150,24 @@ public class BetterLokaClient implements ClientModInitializer {
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) ->
                 chatLog.record(ChatChannels.read(message)));
 
-        openMenuKey = KeyBindingHelper.registerKeyBinding(
-                new KeyBinding("key.betterloka.open_menu", GLFW.GLFW_KEY_L, KEY_CATEGORY));
+        openMenuKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.betterloka.open_menu", InputConstants.KEY_L, KEY_CATEGORY));
         // G and H are free in vanilla, and both are rebindable from Options -> Controls.
-        shulkerTimerKey = KeyBindingHelper.registerKeyBinding(
-                new KeyBinding("key.betterloka.shulker_timer", GLFW.GLFW_KEY_G, KEY_CATEGORY));
-        glowstoneTimerKey = KeyBindingHelper.registerKeyBinding(
-                new KeyBinding("key.betterloka.glowstone_timer", GLFW.GLFW_KEY_H, KEY_CATEGORY));
+        shulkerTimerKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.betterloka.shulker_timer", InputConstants.KEY_G, KEY_CATEGORY));
+        glowstoneTimerKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.betterloka.glowstone_timer", InputConstants.KEY_H, KEY_CATEGORY));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (openMenuKey.wasPressed()) {
-                if (client.currentScreen == null) {
-                    client.setScreen(new BetterLokaMenuScreen(null));
+            while (openMenuKey.consumeClick()) {
+                if (client.gui.screen() == null) {
+                    client.gui.setScreen(new BetterLokaMenuScreen(null));
                 }
             }
-            while (shulkerTimerKey.wasPressed()) {
+            while (shulkerTimerKey.consumeClick()) {
                 toggleTimer(grindTimers.shulker(), "betterloka.grind.tab.shulker");
             }
-            while (glowstoneTimerKey.wasPressed()) {
+            while (glowstoneTimerKey.consumeClick()) {
                 toggleTimer(grindTimers.glowstone(), "betterloka.grind.tab.glowstone");
             }
         });
@@ -196,11 +196,11 @@ public class BetterLokaClient implements ClientModInitializer {
             timer.stop();
             action = "betterloka.grind.stopped";
         }
-        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
         if (client != null && client.player != null) {
             // The action bar, not chat: this fires while grinding, and it should not build a log.
-            client.player.sendMessage(net.minecraft.text.Text.translatable(action,
-                    net.minecraft.text.Text.translatable(nameKey), timer.durationText()), true);
+            client.player.sendOverlayMessage(net.minecraft.network.chat.Component.translatable(action,
+                    net.minecraft.network.chat.Component.translatable(nameKey), timer.durationText()));
         }
     }
 
@@ -243,11 +243,11 @@ public class BetterLokaClient implements ClientModInitializer {
         return grindTimers;
     }
 
-    public static KeyBinding shulkerTimerKey() {
+    public static KeyMapping shulkerTimerKey() {
         return shulkerTimerKey;
     }
 
-    public static KeyBinding glowstoneTimerKey() {
+    public static KeyMapping glowstoneTimerKey() {
         return glowstoneTimerKey;
     }
 

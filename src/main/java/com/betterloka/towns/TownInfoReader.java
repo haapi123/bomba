@@ -2,14 +2,14 @@ package com.betterloka.towns;
 
 import com.betterloka.BetterLoka;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.LoreComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemLore;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,9 +60,9 @@ public final class TownInfoReader {
         });
     }
 
-    private void scan(MinecraftClient client) {
-        Screen screen = client == null ? null : client.currentScreen;
-        if (!(screen instanceof HandledScreen<?> handled)) {
+    private void scan(Minecraft client) {
+        Screen screen = client == null ? null : client.gui.screen();
+        if (!(screen instanceof AbstractContainerScreen<?> handled)) {
             lastScanned = null;
             return;
         }
@@ -73,8 +73,8 @@ public final class TownInfoReader {
 
         // The panel's title is the town's name; the lore lives on one of the items inside it.
         String title = screen.getTitle() == null ? null : screen.getTitle().getString();
-        for (Slot slot : handled.getScreenHandler().slots) {
-            TownInfoReading reading = read(slot.getStack(), title);
+        for (Slot slot : handled.getMenu().slots) {
+            TownInfoReading reading = read(slot.getItem(), title);
             if (reading != null) {
                 if (store.record(reading)) {
                     BetterLoka.LOGGER.info("Read {}: {} members, {} active", reading.townName(),
@@ -93,20 +93,20 @@ public final class TownInfoReader {
         if (stack == null || stack.isEmpty()) {
             return null;
         }
-        LoreComponent lore = stack.get(DataComponentTypes.LORE);
+        ItemLore lore = stack.get(DataComponents.LORE);
         if (lore == null || lore.lines().isEmpty()) {
             return null;
         }
 
         List<String> lines = new ArrayList<>(lore.lines().size());
-        for (Text line : lore.lines()) {
+        for (Component line : lore.lines()) {
             lines.add(line.getString());
         }
         return parse(lines, name(stack, fallbackName));
     }
 
     private static String name(ItemStack stack, String fallbackName) {
-        Text custom = stack.get(DataComponentTypes.CUSTOM_NAME);
+        Component custom = stack.get(DataComponents.CUSTOM_NAME);
         String named = custom == null ? null : custom.getString();
         if (named != null && !named.isBlank()) {
             // "Duskfall — Neutral": the panel puts the town's standing after a dash.

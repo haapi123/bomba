@@ -3,10 +3,10 @@ package com.betterloka.map;
 import com.betterloka.BetterLoka;
 import com.betterloka.api.ApiException;
 import com.betterloka.api.HttpTransport;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
 
 import javax.imageio.ImageIO;
 
@@ -169,11 +169,11 @@ public final class MapTerrain {
      * off the texture — it calls {@code getSampler()} and hands the result to the render state — so
      * the texture is the only place a choice can be made.
      */
-    private static final class SmoothTexture extends NativeImageBackedTexture {
+    private static final class SmoothTexture extends DynamicTexture {
         SmoothTexture(NativeImage image) {
             super(() -> "betterloka/terrain", image);
             this.sampler = com.mojang.blaze3d.systems.RenderSystem.getSamplerCache()
-                    .get(com.mojang.blaze3d.textures.FilterMode.LINEAR);
+                    .getClampToEdge(com.mojang.renderpearl.api.textures.FilterMode.LINEAR);
         }
     }
 
@@ -185,7 +185,7 @@ public final class MapTerrain {
                 missing.add(key);
                 return;
             }
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
             if (client != null) {
                 client.execute(() -> register(key, pixels));
             }
@@ -334,14 +334,14 @@ public final class MapTerrain {
             for (int y = 0; y < pixels.height(); y++) {
                 int row = y * pixels.width();
                 for (int x = 0; x < pixels.width(); x++) {
-                    image.setColorArgb(x, y, pixels.argb()[row + x]);
+                    image.setPixel(x, y, pixels.argb()[row + x]);
                 }
             }
-            Identifier id = Identifier.of(BetterLoka.MOD_ID, "terrain_"
+            Identifier id = Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "terrain_"
                     + key.world().toLowerCase(Locale.ROOT) + "_" + key.level()
                     + "_" + tag(key.x()) + "_" + tag(key.y()));
-            MinecraftClient client = MinecraftClient.getInstance();
-            client.getTextureManager().registerTexture(id, new SmoothTexture(image));
+            Minecraft client = Minecraft.getInstance();
+            client.getTextureManager().register(id, new SmoothTexture(image));
 
             Map.Entry<Key, Identifier> evicted = null;
             synchronized (textures) {
@@ -355,7 +355,7 @@ public final class MapTerrain {
             }
             if (evicted != null) {
                 // Dropped from the atlas as well, or a long pan would grow without bound.
-                client.getTextureManager().destroyTexture(evicted.getValue());
+                client.getTextureManager().release(evicted.getValue());
                 attempted.remove(evicted.getKey());
             }
         } catch (RuntimeException e) {
@@ -419,9 +419,9 @@ public final class MapTerrain {
 
     /** How many blocks one real screen pixel covers, given a zoom stated in GUI pixels. */
     public static double perRealPixel(double blocksPerGuiPixel) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         double scale = client == null || client.getWindow() == null
-                ? 1.0 : client.getWindow().getScaleFactor();
+                ? 1.0 : client.getWindow().getGuiScale();
         return blocksPerGuiPixel / Math.max(1.0, scale);
     }
 

@@ -5,16 +5,16 @@ import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.translate.ChatChannel;
 import com.betterloka.translate.ChatLog;
 import com.betterloka.translate.TranslationService;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,17 +47,17 @@ public class TranslatorScreen extends Screen {
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
-    private TextFieldWidget composeField;
-    private ButtonWidget translateButton;
-    private ButtonWidget copyButton;
+    private EditBox composeField;
+    private Button translateButton;
+    private Button copyButton;
 
     private String translated = "";
     private boolean translating;
-    private Text status;
+    private Component status;
     private int translateGeneration;
 
     public TranslatorScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.translator"));
+        super(Component.translatable("betterloka.module.translator"));
         this.parent = parent;
     }
 
@@ -89,20 +89,20 @@ public class TranslatorScreen extends Screen {
 
         scrollPanel.setViewport(left, CHAT_TOP, width, Math.max(20, composeY() - 6 - CHAT_TOP));
 
-        addDrawableChild(ButtonWidget.builder(nativeLanguageLabel(), button -> {
+        addRenderableWidget(Button.builder(nativeLanguageLabel(), button -> {
                     config().setNativeLanguage(nextLanguage(config().nativeLanguage()));
                     button.setMessage(nativeLanguageLabel());
                     retranslateChat();
                 })
-                .dimensions(left, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
 
-        addDrawableChild(ButtonWidget.builder(chatLanguageLabel(), button -> {
+        addRenderableWidget(Button.builder(chatLanguageLabel(), button -> {
                     config().setChatLanguage(nextLanguage(config().chatLanguage()));
                     button.setMessage(chatLanguageLabel());
                 })
-                .dimensions(left + third + 4, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left + third + 4, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
 
-        addDrawableChild(ButtonWidget.builder(autoLabel(), button -> {
+        addRenderableWidget(Button.builder(autoLabel(), button -> {
                     boolean on = !config().translateIncoming();
                     config().setTranslateIncoming(on);
                     button.setMessage(autoLabel());
@@ -110,45 +110,45 @@ public class TranslatorScreen extends Screen {
                         BetterLokaClient.chatLog().translateAll();
                     }
                 })
-                .dimensions(left + (third + 4) * 2, CONTROL_ROW_Y, width - (third + 4) * 2, CONTROL_ROW_HEIGHT).build());
+                .bounds(left + (third + 4) * 2, CONTROL_ROW_Y, width - (third + 4) * 2, CONTROL_ROW_HEIGHT).build());
 
-        String previous = composeField != null ? composeField.getText() : "";
-        composeField = new TextFieldWidget(this.textRenderer, left, composeY(), width - ACTION_WIDTH - 4,
-                COMPOSE_HEIGHT, Text.translatable("betterloka.translator.compose"));
+        String previous = composeField != null ? composeField.getValue() : "";
+        composeField = new EditBox(this.font, left, composeY(), width - ACTION_WIDTH - 4,
+                COMPOSE_HEIGHT, Component.translatable("betterloka.translator.compose"));
         composeField.setMaxLength(TranslationService.MAX_LENGTH);
-        composeField.setPlaceholder(Text.translatable("betterloka.translator.compose_hint").formatted(Formatting.DARK_GRAY));
-        composeField.setText(previous);
-        addDrawableChild(composeField);
+        composeField.setHint(Component.translatable("betterloka.translator.compose_hint").withStyle(ChatFormatting.DARK_GRAY));
+        composeField.setValue(previous);
+        addRenderableWidget(composeField);
 
-        translateButton = ButtonWidget.builder(Text.translatable("betterloka.translator.translate"), button -> translate())
-                .dimensions(left + width - ACTION_WIDTH, composeY(), ACTION_WIDTH, COMPOSE_HEIGHT).build();
-        addDrawableChild(translateButton);
+        translateButton = Button.builder(Component.translatable("betterloka.translator.translate"), button -> translate())
+                .bounds(left + width - ACTION_WIDTH, composeY(), ACTION_WIDTH, COMPOSE_HEIGHT).build();
+        addRenderableWidget(translateButton);
 
-        copyButton = ButtonWidget.builder(Text.translatable("betterloka.translator.copy"), button -> copy())
-                .dimensions(left + width - ACTION_WIDTH, outputY(), ACTION_WIDTH, OUTPUT_HEIGHT).build();
-        addDrawableChild(copyButton);
+        copyButton = Button.builder(Component.translatable("betterloka.translator.copy"), button -> copy())
+                .bounds(left + width - ACTION_WIDTH, outputY(), ACTION_WIDTH, OUTPUT_HEIGHT).build();
+        addRenderableWidget(copyButton);
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 26, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
         setInitialFocus(composeField);
     }
 
-    private Text nativeLanguageLabel() {
-        return Text.translatable("betterloka.translator.my_language",
+    private Component nativeLanguageLabel() {
+        return Component.translatable("betterloka.translator.my_language",
                 TranslationService.languageName(config().nativeLanguage()));
     }
 
-    private Text chatLanguageLabel() {
-        return Text.translatable("betterloka.translator.chat_language",
+    private Component chatLanguageLabel() {
+        return Component.translatable("betterloka.translator.chat_language",
                 TranslationService.languageName(config().chatLanguage()));
     }
 
-    private Text autoLabel() {
+    private Component autoLabel() {
         boolean on = config().translateIncoming();
-        return Text.translatable("betterloka.translator.auto",
-                Text.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.GRAY));
+        return Component.translatable("betterloka.translator.auto",
+                Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
     /** Cycles through the offered languages, so the picker needs no dropdown widget. */
@@ -165,7 +165,7 @@ public class TranslatorScreen extends Screen {
     }
 
     private void translate() {
-        String text = composeField.getText().trim();
+        String text = composeField.getValue().trim();
         if (text.isEmpty() || translating) {
             return;
         }
@@ -177,16 +177,16 @@ public class TranslatorScreen extends Screen {
         BetterLokaClient.translations()
                 .translate(text, config().nativeLanguage(), config().chatLanguage())
                 .whenComplete((result, error) -> {
-                    if (this.client == null) {
+                    if (this.minecraft == null) {
                         return;
                     }
-                    this.client.execute(() -> {
-                        if (generation != translateGeneration || this.client.currentScreen != this) {
+                    this.minecraft.execute(() -> {
+                        if (generation != translateGeneration || this.minecraft.gui.screen() != this) {
                             return;
                         }
                         translating = false;
                         if (error != null) {
-                            status = Text.translatable("betterloka.translator.failed").formatted(Formatting.RED);
+                            status = Component.translatable("betterloka.translator.failed").withStyle(ChatFormatting.RED);
                         } else {
                             translated = result;
                         }
@@ -198,13 +198,13 @@ public class TranslatorScreen extends Screen {
         if (translated.isEmpty()) {
             return;
         }
-        this.client.keyboard.setClipboard(translated);
-        status = Text.translatable("betterloka.translator.copied").formatted(Formatting.GREEN);
+        this.minecraft.keyboardHandler.setClipboard(translated);
+        status = Component.translatable("betterloka.translator.copied").withStyle(ChatFormatting.GREEN);
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
-        if ((input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER) && composeField.isFocused()) {
+    public boolean keyPressed(KeyEvent input) {
+        if (input.isConfirmation() && composeField.isFocused()) {
             translate();
             return true;
         }
@@ -218,34 +218,34 @@ public class TranslatorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        translateButton.active = !translating && !composeField.getText().trim().isEmpty();
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        translateButton.active = !translating && !composeField.getValue().trim().isEmpty();
         copyButton.active = !translated.isEmpty();
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         renderChat(context, mouseX, mouseY);
         renderOutput(context, contentLeft(), contentWidth());
     }
 
-    private void renderChat(DrawContext context, int mouseX, int mouseY) {
+    private void renderChat(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         int left = contentLeft();
         int width = contentWidth();
         List<ChatLog.Line> lines = BetterLokaClient.chatLog().recent(VISIBLE_HISTORY);
@@ -253,7 +253,7 @@ public class TranslatorScreen extends Screen {
         context.enableScissor(left, scrollPanel.viewportTop(), left + width, scrollPanel.viewportBottom());
 
         if (lines.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.translator.no_chat"),
+            context.text(this.font, Component.translatable("betterloka.translator.no_chat"),
                     left, scrollPanel.viewportTop() + 4, GuiTheme.MUTED);
             context.disableScissor();
             scrollPanel.setContentHeight(0);
@@ -283,34 +283,34 @@ public class TranslatorScreen extends Screen {
             int textY = y + CARD_PADDING;
             int used = 0;
 
-            Text badge = channelBadge(channel);
+            Component badge = channelBadge(channel);
             if (badge != null) {
-                context.drawTextWithShadow(this.textRenderer, badge, textX, textY, channelColor);
-                int badgeWidth = this.textRenderer.getWidth(badge) + 4;
+                context.text(this.font, badge, textX, textY, channelColor);
+                int badgeWidth = this.font.width(badge) + 4;
                 textX += badgeWidth;
                 used += badgeWidth;
             }
 
             // Name and time share the first line; the message body sits under them.
-            Text sender = Text.literal(line.sender()).formatted(Formatting.BOLD);
-            context.drawTextWithShadow(this.textRenderer, sender, textX, textY, channelColor);
+            Component sender = Component.literal(line.sender()).withStyle(ChatFormatting.BOLD);
+            context.text(this.font, sender, textX, textY, channelColor);
             String when = TimeFormat.ago(line.receivedAt());
-            context.drawTextWithShadow(this.textRenderer, when,
-                    left + cardWidth - CARD_PADDING - this.textRenderer.getWidth(when), textY, GuiTheme.MUTED);
+            context.text(this.font, when,
+                    left + cardWidth - CARD_PADDING - this.font.width(when), textY, GuiTheme.MUTED);
 
             // Measured on the styled text: bold is wider than the plain string, and measuring the
             // plain one runs the message into the name.
-            int senderWidth = this.textRenderer.getWidth(sender) + 6;
+            int senderWidth = this.font.width(sender) + 6;
             used += senderWidth;
             // Measured, not guessed: "just now" and "12m ago" are different widths, and a fixed
             // reserve runs the message under the timestamp.
-            used += this.textRenderer.getWidth(when) + 8;
+            used += this.font.width(when) + 8;
             String headline = showTranslation ? line.translated() : line.message();
-            context.drawTextWithShadow(this.textRenderer, elide(headline, Math.max(20, inner - used)),
+            context.text(this.font, elide(headline, Math.max(20, inner - used)),
                     textX + senderWidth, textY, line.failed() ? GuiTheme.BAD : GuiTheme.TEXT);
 
             if (showTranslation) {
-                context.drawTextWithShadow(this.textRenderer, elide(line.message(), inner),
+                context.text(this.font, elide(line.message(), inner),
                         left + CARD_PADDING, textY + ROW_HEIGHT, GuiTheme.MUTED);
             }
 
@@ -324,49 +324,49 @@ public class TranslatorScreen extends Screen {
 
     /** Trims to width, marking the cut — a message that simply stops mid-word reads as a bug. */
     private String elide(String text, int width) {
-        String trimmed = this.textRenderer.trimToWidth(text, width);
+        String trimmed = this.font.plainSubstrByWidth(text, width);
         if (trimmed.length() == text.length()) {
             return text;
         }
-        return this.textRenderer.trimToWidth(text, Math.max(0, width - this.textRenderer.getWidth("…"))) + "…";
+        return this.font.plainSubstrByWidth(text, Math.max(0, width - this.font.width("…"))) + "…";
     }
 
     /** @return the {@code [Town]} / {@code [Alliance]} marker, or {@code null} for public chat. */
-    private static Text channelBadge(ChatChannel channel) {
+    private static Component channelBadge(ChatChannel channel) {
         return switch (channel) {
-            case TOWN -> Text.translatable("betterloka.translator.channel.town");
-            case ALLIANCE -> Text.translatable("betterloka.translator.channel.alliance");
+            case TOWN -> Component.translatable("betterloka.translator.channel.town");
+            case ALLIANCE -> Component.translatable("betterloka.translator.channel.alliance");
             case PUBLIC -> null;
         };
     }
 
-    private void renderOutput(DrawContext context, int left, int width) {
+    private void renderOutput(GuiGraphicsExtractor context, int left, int width) {
         int panelWidth = width - ACTION_WIDTH - 4;
         GuiTheme.panel(context, left, outputY(), panelWidth, OUTPUT_HEIGHT);
 
         String shown;
         int color;
         if (translating) {
-            shown = Text.translatable("betterloka.translator.translating").getString();
+            shown = Component.translatable("betterloka.translator.translating").getString();
             color = GuiTheme.MUTED;
         } else if (!translated.isEmpty()) {
             shown = translated;
             color = GuiTheme.ACCENT;
         } else {
-            shown = Text.translatable("betterloka.translator.output_hint").getString();
+            shown = Component.translatable("betterloka.translator.output_hint").getString();
             color = GuiTheme.MUTED;
         }
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(shown, panelWidth - CARD_PADDING * 2),
+        context.text(this.font,
+                this.font.plainSubstrByWidth(shown, panelWidth - CARD_PADDING * 2),
                 left + CARD_PADDING, outputY() + (OUTPUT_HEIGHT - 8) / 2, color);
 
         if (status != null) {
-            context.drawTextWithShadow(this.textRenderer, status, left, outputY() + OUTPUT_HEIGHT + 3, GuiTheme.MUTED);
+            context.text(this.font, status, left, outputY() + OUTPUT_HEIGHT + 3, GuiTheme.MUTED);
         }
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

@@ -3,9 +3,9 @@ package com.betterloka.grind;
 import com.betterloka.config.BetterLokaConfig;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.mob.ShulkerEntity;
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Shulker;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -42,17 +42,17 @@ public final class ShulkerWatcher {
 
     public void register() {
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (world.isClient() && entity instanceof ShulkerEntity) {
+            if (world.isClientSide() && entity instanceof Shulker) {
                 synchronized (hit) {
                     hit.put(entity.getId(), System.currentTimeMillis());
                 }
             }
             // Purely an observer: the swing itself is none of this mod's business.
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (hit.isEmpty() || client.world == null) {
+            if (hit.isEmpty() || client.level == null) {
                 return;
             }
             long now = System.currentTimeMillis();
@@ -66,7 +66,7 @@ public final class ShulkerWatcher {
                         entries.remove();
                         continue;
                     }
-                    Entity entity = client.world.getEntityById(entry.getKey());
+                    Entity entity = client.level.getEntity(entry.getKey());
                     // Gone from the world, or playing its death animation: either way it is down.
                     if (entity == null || !entity.isAlive()) {
                         entries.remove();

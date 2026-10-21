@@ -8,23 +8,23 @@ import com.betterloka.api.model.EldritchStats;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.BattleIndex;
-import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.FightBreakdown;
 import com.betterloka.stats.FightSummary;
+import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.stats.PlayerTrait;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.OrderedText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -78,12 +78,12 @@ public class PlayerFinderScreen extends Screen {
     private final Screen parent;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
-    private TextFieldWidget nameField;
-    private ButtonWidget searchButton;
+    private EditBox nameField;
+    private Button searchButton;
 
     private PlayerProfile profile;
     private Tab tab = Tab.PROFILE;
-    private Text error;
+    private Component error;
     private boolean searching;
 
     /** Ranked 1v1: this season's standings, and the best rank of any season. */
@@ -108,7 +108,7 @@ public class PlayerFinderScreen extends Screen {
     private int searchGeneration;
 
     public PlayerFinderScreen(Screen parent) {
-        super(Text.translatable("betterloka.finder.title"));
+        super(Component.translatable("betterloka.finder.title"));
         this.parent = parent;
     }
 
@@ -132,24 +132,24 @@ public class PlayerFinderScreen extends Screen {
 
         scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
 
-        String previous = nameField != null ? nameField.getText() : "";
-        nameField = new TextFieldWidget(this.textRenderer, left, SEARCH_ROW_Y, fieldWidth, SEARCH_ROW_HEIGHT,
-                Text.translatable("betterloka.finder.field"));
+        String previous = nameField != null ? nameField.getValue() : "";
+        nameField = new EditBox(this.font, left, SEARCH_ROW_Y, fieldWidth, SEARCH_ROW_HEIGHT,
+                Component.translatable("betterloka.finder.field"));
         nameField.setMaxLength(16);
-        nameField.setPlaceholder(Text.translatable("betterloka.finder.placeholder").formatted(Formatting.DARK_GRAY));
-        nameField.setText(previous);
-        addDrawableChild(nameField);
+        nameField.setHint(Component.translatable("betterloka.finder.placeholder").withStyle(ChatFormatting.DARK_GRAY));
+        nameField.setValue(previous);
+        addRenderableWidget(nameField);
 
-        searchButton = ButtonWidget.builder(Text.translatable("betterloka.finder.search"), button -> search())
-                .dimensions(left + fieldWidth + 4, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
+        searchButton = Button.builder(Component.translatable("betterloka.finder.search"), button -> search())
+                .bounds(left + fieldWidth + 4, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
                 .build();
-        addDrawableChild(searchButton);
+        addRenderableWidget(searchButton);
 
-        addDrawableChild(ButtonWidget.builder(kdToggleLabel(), button -> {
+        addRenderableWidget(Button.builder(kdToggleLabel(), button -> {
                     BetterLokaClient.config().setShowNameplateKd(!BetterLokaClient.config().showNameplateKd());
                     button.setMessage(kdToggleLabel());
                 })
-                .dimensions(left, TOGGLE_ROW_Y, width, TOGGLE_ROW_HEIGHT)
+                .bounds(left, TOGGLE_ROW_Y, width, TOGGLE_ROW_HEIGHT)
                 .build());
 
         Tab[] tabs = Tab.values();
@@ -159,20 +159,20 @@ public class PlayerFinderScreen extends Screen {
             Tab target = tabs[i];
             // The last one takes whatever the division left over, so the row ends flush.
             int thisWidth = i == tabs.length - 1 ? left + width - tabX : share;
-            addDrawableChild(ButtonWidget.builder(tabLabel(target), button -> selectTab(target))
-                    .dimensions(tabX, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(tabLabel(target), button -> selectTab(target))
+                    .bounds(tabX, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
             tabX += share + 4;
         }
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
 
         setInitialFocus(nameField);
     }
 
-    private Text tabLabel(Tab value) {
-        Text label = Text.translatable(value.key);
-        return value == tab ? label.copy().formatted(Formatting.YELLOW) : label;
+    private Component tabLabel(Tab value) {
+        Component label = Component.translatable(value.key);
+        return value == tab ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
     private void selectTab(Tab target) {
@@ -181,7 +181,7 @@ public class PlayerFinderScreen extends Screen {
         }
         tab = target;
         scrollPanel.reset();
-        clearAndInit();
+        rebuildWidgets();
     }
 
     /**
@@ -208,16 +208,16 @@ public class PlayerFinderScreen extends Screen {
                 }));
     }
 
-    private Text kdToggleLabel() {
+    private Component kdToggleLabel() {
         boolean on = BetterLokaClient.config().showNameplateKd();
-        return Text.translatable("betterloka.finder.kd_toggle",
-                Text.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.GRAY));
+        return Component.translatable("betterloka.finder.kd_toggle",
+                Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
 
     private void search() {
-        String name = nameField.getText().trim();
+        String name = nameField.getValue().trim();
         if (name.isEmpty() || searching) {
             return;
         }
@@ -291,29 +291,29 @@ public class PlayerFinderScreen extends Screen {
 
     /** Runs {@code action} on the render thread, unless the search has been superseded or the screen closed. */
     private void applyOnClientThread(int generation, Runnable action) {
-        if (this.client == null) {
+        if (this.minecraft == null) {
             return;
         }
-        this.client.execute(() -> {
-            if (generation == searchGeneration && this.client.currentScreen == this) {
+        this.minecraft.execute(() -> {
+            if (generation == searchGeneration && this.minecraft.gui.screen() == this) {
                 action.run();
             }
         });
     }
 
-    private static Text describe(String name, Throwable throwable) {
+    private static Component describe(String name, Throwable throwable) {
         Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null
                 ? throwable.getCause()
                 : throwable;
         if (cause instanceof ApiException apiException && apiException.notFound()) {
-            return Text.translatable("betterloka.finder.not_found", name).formatted(Formatting.RED);
+            return Component.translatable("betterloka.finder.not_found", name).withStyle(ChatFormatting.RED);
         }
-        return Text.translatable("betterloka.finder.unreachable").formatted(Formatting.RED);
+        return Component.translatable("betterloka.finder.unreachable").withStyle(ChatFormatting.RED);
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
-        if ((input.key() == GLFW.GLFW_KEY_ENTER || input.key() == GLFW.GLFW_KEY_KP_ENTER) && nameField.isFocused()) {
+    public boolean keyPressed(KeyEvent input) {
+        if (input.isConfirmation() && nameField.isFocused()) {
             search();
             return true;
         }
@@ -327,30 +327,30 @@ public class PlayerFinderScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         scrollPanel.mouseReleased();
         return super.mouseReleased(click);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        searchButton.active = !searching && !nameField.getText().trim().isEmpty();
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        searchButton.active = !searching && !nameField.getValue().trim().isEmpty();
         lastMouseX = mouseX;
         lastMouseY = mouseY;
         hoveredTrait = null;
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 14, GuiTheme.TEXT);
+        context.centeredText(this.font, this.title, this.width / 2, 14, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -360,11 +360,11 @@ public class PlayerFinderScreen extends Screen {
         int cardWidth = scrollPanel.contentWidth();
         int used;
         if (searching) {
-            context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.searching"),
+            context.text(this.font, Component.translatable("betterloka.finder.searching"),
                     left, y + 4, GuiTheme.MUTED);
             used = 20;
         } else if (error != null) {
-            context.drawTextWithShadow(this.textRenderer, error, left, y + 4, GuiTheme.BAD);
+            context.text(this.font, error, left, y + 4, GuiTheme.BAD);
             used = 20;
         } else if (profile != null) {
             used = (switch (tab) {
@@ -372,7 +372,7 @@ public class PlayerFinderScreen extends Screen {
                 case PROFILE -> renderProfile(context, left, y, cardWidth);
             }) - y;
         } else {
-            context.drawTextWithShadow(this.textRenderer, Text.translatable("betterloka.finder.hint"),
+            context.text(this.font, Component.translatable("betterloka.finder.hint"),
                     left, y + 4, GuiTheme.MUTED);
             used = 20;
         }
@@ -385,19 +385,19 @@ public class PlayerFinderScreen extends Screen {
         if (hoveredTrait != null) {
             // Wrapped by hand: Minecraft draws a tooltip line as given, so a whole sentence would run
             // off the side of the screen.
-            List<OrderedText> lines = new ArrayList<>();
+            List<FormattedCharSequence> lines = new ArrayList<>();
             lines.add(chipLabel(hoveredTrait).copy()
-                    .withColor(GuiTheme.traitColor(hoveredTrait.level()) & 0xFFFFFF).asOrderedText());
-            lines.addAll(this.textRenderer.wrapLines(
-                    Text.translatable(hoveredTrait.kind().reasonKey(hoveredTrait.level()), hoveredTrait.detail())
-                            .formatted(Formatting.GRAY),
+                    .withColor(GuiTheme.traitColor(hoveredTrait.level()) & 0xFFFFFF).getVisualOrderText());
+            lines.addAll(this.font.split(
+                    Component.translatable(hoveredTrait.kind().reasonKey(hoveredTrait.level()), hoveredTrait.detail())
+                            .withStyle(ChatFormatting.GRAY),
                     TOOLTIP_WIDTH));
-            context.drawOrderedTooltip(this.textRenderer, lines, mouseX, mouseY);
+            context.setTooltipForNextFrame(this.font, lines, mouseX, mouseY);
         }
     }
 
     /** @return the y coordinate just past the rendered content. */
-    private int renderProfile(DrawContext context, int left, int top, int width) {
+    private int renderProfile(GuiGraphicsExtractor context, int left, int top, int width) {
         int inner = width - CARD_PADDING * 2;
         int y = top;
         EldritchStats stats = profile.stats();
@@ -444,7 +444,7 @@ public class PlayerFinderScreen extends Screen {
 
         if (stats.nemesisName() != null) {
             y = card(context, left, y, width, 1, (x, rowY) ->
-                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                    GuiTheme.statRow(context, this.font, x, rowY, inner,
                             label("betterloka.finder.nemesis"),
                             stats.nemesisName() + " (" + stats.nemesisDeaths() + ")", GuiTheme.BAD));
         }
@@ -460,19 +460,19 @@ public class PlayerFinderScreen extends Screen {
      * <p>Names come from Laby.net, which kept crawling after Mojang withdrew its own history in
      * 2022 and has more of them than the game's {@code /find} does.
      */
-    private int renderIdentity(DrawContext context, int left, int y, int width, int inner) {
+    private int renderIdentity(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         // Drawn empty or not: most players have no rename on record, and a section that vanishes in
         // that case looks exactly like a section that is broken.
-        context.drawTextWithShadow(this.textRenderer,
+        context.text(this.font,
                 previousNames.isEmpty()
-                        ? Text.translatable("betterloka.finder.previous_names")
-                        : Text.translatable("betterloka.finder.previous_count", previousNames.size()),
+                        ? Component.translatable("betterloka.finder.previous_names")
+                        : Component.translatable("betterloka.finder.previous_count", previousNames.size()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (previousNames.isEmpty()) {
             return card(context, left, y, width, 1, (x, rowY) ->
-                    context.drawTextWithShadow(this.textRenderer,
+                    context.text(this.font,
                             label(identityLoading ? "betterloka.finder.loading"
                                     : "betterloka.finder.previous_none"), x, rowY, GuiTheme.MUTED));
         }
@@ -487,8 +487,8 @@ public class PlayerFinderScreen extends Screen {
             // one Mojang published, which is everything since they closed the history in 2022.
             String when = entry.changedAt() == null ? ""
                     : (entry.accurate() ? "" : "~") + TimeFormat.monthAndYear(entry.changedAt());
-            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner,
-                    this.textRenderer.trimToWidth(entry.name(), inner - 60), when, GuiTheme.MUTED);
+            GuiTheme.statRow(context, this.font, textX, textY, inner,
+                    this.font.plainSubstrByWidth(entry.name(), inner - 60), when, GuiTheme.MUTED);
             textY += ROW_HEIGHT;
         }
         return y + height + CARD_GAP;
@@ -522,7 +522,7 @@ public class PlayerFinderScreen extends Screen {
      * <p>The hovered chip is only remembered here — the tooltip is drawn at the end of {@code render}
      * so it is not clipped by the scissor the content is drawn inside.
      */
-    private int renderTraits(DrawContext context, int left, int y, int width) {
+    private int renderTraits(GuiGraphicsExtractor context, int left, int y, int width) {
         List<PlayerTrait> traits = PlayerTrait.of(profile, arenaCurrent, LocalDate.now());
         if (traits.isEmpty()) {
             return y;
@@ -546,7 +546,7 @@ public class PlayerFinderScreen extends Screen {
                 int chipW = chipWidth(trait);
                 int color = GuiTheme.traitColor(trait.level());
                 GuiTheme.chip(context, chipX, rowY, chipW, CHIP_HEIGHT, color);
-                context.drawTextWithShadow(this.textRenderer, chipLabel(trait), chipX + CHIP_PADDING,
+                context.text(this.font, chipLabel(trait), chipX + CHIP_PADDING,
                         rowY + (CHIP_HEIGHT - 8) / 2, color);
                 if (hovering(chipX, rowY, chipW, CHIP_HEIGHT)) {
                     hoveredTrait = trait;
@@ -580,11 +580,11 @@ public class PlayerFinderScreen extends Screen {
     }
 
     private int chipWidth(PlayerTrait trait) {
-        return this.textRenderer.getWidth(chipLabel(trait)) + CHIP_PADDING * 2;
+        return this.font.width(chipLabel(trait)) + CHIP_PADDING * 2;
     }
 
-    private static Text chipLabel(PlayerTrait trait) {
-        return Text.translatable(trait.kind().labelKey(), trait.detail());
+    private static Component chipLabel(PlayerTrait trait) {
+        return Component.translatable(trait.kind().labelKey(), trait.detail());
     }
 
     private boolean hovering(int x, int y, int width, int height) {
@@ -592,21 +592,21 @@ public class PlayerFinderScreen extends Screen {
                 && lastMouseY >= VIEWPORT_TOP && lastMouseY < viewportBottom();
     }
 
-    private int renderIdentityCard(DrawContext context, int left, int y, int width, int inner) {
+    private int renderIdentityCard(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 2;
         GuiTheme.panel(context, left, y, width, height);
 
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
-        context.drawTextWithShadow(this.textRenderer,
-                Text.literal(profile.name()).formatted(Formatting.BOLD), textX, textY, GuiTheme.ACCENT);
+        context.text(this.font,
+                Component.literal(profile.name()).withStyle(ChatFormatting.BOLD), textX, textY, GuiTheme.ACCENT);
 
         String badge = profile.inFightNow()
-                ? Text.translatable("betterloka.finder.live").getString()
+                ? Component.translatable("betterloka.finder.live").getString()
                 : (profile.rank() == null ? null : profile.rank().toUpperCase(Locale.ROOT));
         if (badge != null) {
-            context.drawTextWithShadow(this.textRenderer, badge,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(badge), textY,
+            context.text(this.font, badge,
+                    left + width - CARD_PADDING - this.font.width(badge), textY,
                     profile.inFightNow() ? GuiTheme.LIVE : GuiTheme.MUTED);
         }
 
@@ -614,14 +614,14 @@ public class PlayerFinderScreen extends Screen {
         String value = haveFirstSeen
                 ? TimeFormat.date(profile.firstSeen())
                 : (profile.stats().lastFight() != null ? profile.stats().lastFight() : "—");
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT, inner,
                 label(haveFirstSeen ? "betterloka.finder.first_seen" : "betterloka.finder.last_fight"),
                 value, GuiTheme.TEXT);
 
         return y + height + CARD_GAP;
     }
 
-    private int renderTownCard(DrawContext context, int left, int y, int width, int inner) {
+    private int renderTownCard(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         LokaTown town = profile.town();
         int rows = town == null ? 2 : 3;
         int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
@@ -631,7 +631,7 @@ public class PlayerFinderScreen extends Screen {
         int textY = y + CARD_PADDING;
         String townName = profile.displayTown();
 
-        GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, label("betterloka.finder.town"),
+        GuiTheme.statRow(context, this.font, textX, textY, inner, label("betterloka.finder.town"),
                 townName != null ? townName : label("betterloka.finder.townless"),
                 townName != null ? GuiTheme.TEXT : GuiTheme.MUTED);
 
@@ -640,18 +640,18 @@ public class PlayerFinderScreen extends Screen {
             if (town.continentName() != null) {
                 details.append(" · ").append(town.continentName());
             }
-            details.append(" · ").append(Text.translatable("betterloka.finder.members", town.memberCount()).getString());
+            details.append(" · ").append(Component.translatable("betterloka.finder.members", town.memberCount()).getString());
             if (town.recruiting()) {
                 details.append(" · ").append(label("betterloka.finder.recruiting"));
             }
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(details.toString(), inner), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(details.toString(), inner), textX, textY + ROW_HEIGHT, GuiTheme.MUTED);
             textY += ROW_HEIGHT;
         }
 
         String fightingFor = profile.fightingFor();
         boolean known = fightingFor != null;
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT, inner,
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT, inner,
                 label("betterloka.finder.fighting_for"),
                 known ? fightingFor : (profile.fightsState() == PlayerProfile.FightsState.LOADING ? "..." : "—"),
                 known ? GuiTheme.TEXT : GuiTheme.MUTED);
@@ -659,13 +659,13 @@ public class PlayerFinderScreen extends Screen {
         return y + height + CARD_GAP;
     }
 
-    private int renderFights(DrawContext context, int left, int y, int width, int inner) {
+    private int renderFights(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         if (profile.recentFights().isEmpty()) {
             return y;
         }
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.recent", shownFights().size()),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.recent", shownFights().size()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
@@ -680,14 +680,14 @@ public class PlayerFinderScreen extends Screen {
             if (fight.hasDetail()) {
                 headline.append("  ·  ").append(fight.ownSideCount()).append(" v ").append(fight.enemySideCount());
             }
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(headline.toString(), inner - 62), textX, textY, GuiTheme.TEXT);
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(headline.toString(), inner - 62), textX, textY, GuiTheme.TEXT);
 
             String score = fight.hasDetail()
                     ? fight.kills() + "K / " + fight.deaths() + "D / " + fight.assists() + "A"
                     : "...";
-            context.drawTextWithShadow(this.textRenderer, score,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(score), textY,
+            context.text(this.font, score,
+                    left + width - CARD_PADDING - this.font.width(score), textY,
                     fight.hasDetail() && fight.kills() >= fight.deaths() ? GuiTheme.GOOD : GuiTheme.MUTED);
 
             StringBuilder detail = new StringBuilder(
@@ -698,12 +698,12 @@ public class PlayerFinderScreen extends Screen {
             if (fight.enemyTown() != null) {
                 detail.append(" vs ").append(fight.enemyTown());
             }
-            context.drawTextWithShadow(this.textRenderer,
-                    this.textRenderer.trimToWidth(detail.toString(), inner - 40), textX, textY + ROW_HEIGHT,
+            context.text(this.font,
+                    this.font.plainSubstrByWidth(detail.toString(), inner - 40), textX, textY + ROW_HEIGHT,
                     fight.victory() ? GuiTheme.GOOD : GuiTheme.BAD);
 
-            context.drawTextWithShadow(this.textRenderer, fight.date(),
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(fight.date()), textY + ROW_HEIGHT,
+            context.text(this.font, fight.date(),
+                    left + width - CARD_PADDING - this.font.width(fight.date()), textY + ROW_HEIGHT,
                     GuiTheme.MUTED);
 
             y += height + CARD_GAP;
@@ -730,22 +730,22 @@ public class PlayerFinderScreen extends Screen {
      * <p>No wins here: Loka's battle records name no winner, so the career win rate stays on the
      * card above, where it comes from EldritchBot and covers both formats together.
      */
-    private int renderFormatSplit(DrawContext context, int left, int y, int width, int inner) {
+    private int renderFormatSplit(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         BattleIndex index = BetterLokaClient.battleIndex();
         BattleIndex.PlayerRecord record = index.of(profile.uuid());
         BattleIndex.Progress progress = index.progress();
         BattleIndex.Bucket rivi = record.riviTotal();
         BattleIndex.Bucket conquest = record.conquestTotal();
 
-        context.drawTextWithShadow(this.textRenderer, splitHeader(rivi, conquest, progress),
+        context.text(this.font, splitHeader(rivi, conquest, progress),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (rivi.isEmpty() && conquest.isEmpty()) {
             int height = CARD_PADDING * 2 + ROW_HEIGHT;
             GuiTheme.panel(context, left, y, width, height);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(progress.sweeping()
+            context.text(this.font,
+                    Component.translatable(progress.sweeping()
                             ? "betterloka.finder.indexing_wait" : "betterloka.finder.no_battles"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + height + CARD_GAP;
@@ -755,17 +755,17 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /** How many battles the split is over, and how much of the archive it has been taken from. */
-    private Text splitHeader(BattleIndex.Bucket rivi, BattleIndex.Bucket conquest,
+    private Component splitHeader(BattleIndex.Bucket rivi, BattleIndex.Bucket conquest,
                              BattleIndex.Progress progress) {
         int fights = rivi.fights() + conquest.fights();
         if (progress.sweeping() && !progress.complete()) {
-            return Text.translatable("betterloka.finder.split_indexing", fights, progress.percent());
+            return Component.translatable("betterloka.finder.split_indexing", fights, progress.percent());
         }
-        return Text.translatable("betterloka.finder.split_all", fights);
+        return Component.translatable("betterloka.finder.split_all", fights);
     }
 
     /** The two-column card: Rivi on the left, Conquest on the right. */
-    private int renderSplitCard(DrawContext context, int left, int y, int width, int inner,
+    private int renderSplitCard(GuiGraphicsExtractor context, int left, int y, int width, int inner,
                                 BattleIndex.Bucket rivi, BattleIndex.Bucket conquest) {
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 5;
         GuiTheme.panel(context, left, y, width, height);
@@ -773,11 +773,11 @@ public class PlayerFinderScreen extends Screen {
         int textY = y + CARD_PADDING;
         int column = (inner - 10) / 2;
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.rivi", rivi.fights()).copy().formatted(Formatting.BOLD),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.rivi", rivi.fights()).copy().withStyle(ChatFormatting.BOLD),
                 textX, textY, GuiTheme.ACCENT);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.conquest", conquest.fights()).copy().formatted(Formatting.BOLD),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.conquest", conquest.fights()).copy().withStyle(ChatFormatting.BOLD),
                 textX + column + 10, textY, GuiTheme.TEXT);
 
         splitRow(context, textX, textY + ROW_HEIGHT, column, "betterloka.finder.stat.kills",
@@ -790,10 +790,10 @@ public class PlayerFinderScreen extends Screen {
                 value(rivi.isEmpty(), rivi.fights()), value(conquest.isEmpty(), conquest.fights()),
                 GuiTheme.TEXT);
 
-        GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 4, column,
+        GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 4, column,
                 label("betterloka.finder.stat.kd"), rivi.isEmpty() ? "—" : rivi.killDeathText(),
                 rivi.isEmpty() ? GuiTheme.MUTED : GuiTheme.ratioColor(rivi.killDeathRatio()));
-        GuiTheme.statRow(context, this.textRenderer, textX + column + 10, textY + ROW_HEIGHT * 4, column,
+        GuiTheme.statRow(context, this.font, textX + column + 10, textY + ROW_HEIGHT * 4, column,
                 label("betterloka.finder.stat.kd"), conquest.isEmpty() ? "—" : conquest.killDeathText(),
                 conquest.isEmpty() ? GuiTheme.MUTED : GuiTheme.ratioColor(conquest.killDeathRatio()));
 
@@ -805,10 +805,10 @@ public class PlayerFinderScreen extends Screen {
         return empty ? "—" : String.valueOf(number);
     }
 
-    private void splitRow(DrawContext context, int x, int y, int column, String key,
+    private void splitRow(GuiGraphicsExtractor context, int x, int y, int column, String key,
                           String leftValue, String rightValue, int color) {
-        GuiTheme.statRow(context, this.textRenderer, x, y, column, label(key), leftValue, color);
-        GuiTheme.statRow(context, this.textRenderer, x + column + 10, y, column, label(key), rightValue, color);
+        GuiTheme.statRow(context, this.font, x, y, column, label(key), leftValue, color);
+        GuiTheme.statRow(context, this.font, x + column + 10, y, column, label(key), rightValue, color);
     }
 
     /**
@@ -817,7 +817,7 @@ public class PlayerFinderScreen extends Screen {
      * <p>Same cap as everywhere else: nine fights are all it publishes, so a busy month shows the
      * nine most recent of it and the header says so.
      */
-    private int renderMonth(DrawContext context, int left, int top, int width) {
+    private int renderMonth(GuiGraphicsExtractor context, int left, int top, int width) {
         int inner = width - CARD_PADDING * 2;
         int y = top;
 
@@ -829,15 +829,15 @@ public class PlayerFinderScreen extends Screen {
         BattleIndex.Bucket conquest = record.conquest(month);
         BattleIndex.Bucket totals = rivi.plus(conquest);
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.month_of", monthName()), left, y + 2, GuiTheme.MUTED);
+        context.text(this.font,
+                Component.translatable("betterloka.finder.month_of", monthName()), left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (totals.isEmpty()) {
             int height = CARD_PADDING * 2 + ROW_HEIGHT;
             GuiTheme.panel(context, left, y, width, height);
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(progress.sweeping() && !progress.complete()
+            context.text(this.font,
+                    Component.translatable(progress.sweeping() && !progress.complete()
                             ? "betterloka.finder.indexing_wait" : "betterloka.finder.no_month_fights"),
                     left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
             return y + height + CARD_GAP;
@@ -863,8 +863,8 @@ public class PlayerFinderScreen extends Screen {
         if (sample.isEmpty()) {
             return y;
         }
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.month_detail", sample.fights()),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.month_detail", sample.fights()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
@@ -891,16 +891,16 @@ public class PlayerFinderScreen extends Screen {
      * them, so the header says how many fights it is over rather than letting the list read as a
      * complete tally.
      */
-    private int renderNemesis(DrawContext context, int left, int top, int width, int inner) {
+    private int renderNemesis(GuiGraphicsExtractor context, int left, int top, int width, int inner) {
         int y = top;
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.nemesis_of", monthName()),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.nemesis_of", monthName()),
                 left, y + 2, GuiTheme.MUTED);
         y += ROW_HEIGHT + 3;
 
         if (nemesis.nemesisOf().isEmpty()) {
             return card(context, left, y, width, 1, (x, rowY) ->
-                    context.drawTextWithShadow(this.textRenderer,
+                    context.text(this.font,
                             label(nemesisLoading ? "betterloka.finder.loading"
                                     : "betterloka.finder.nemesis_none"), x, rowY, GuiTheme.MUTED));
         }
@@ -911,14 +911,14 @@ public class PlayerFinderScreen extends Screen {
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
         for (NemesisIndex.Tally tally : nemesis.nemesisOf()) {
-            GuiTheme.statRow(context, this.textRenderer, textX, textY, inner, tally.name(),
-                    Text.translatable("betterloka.finder.nemesis_kills", tally.kills()).getString(),
+            GuiTheme.statRow(context, this.font, textX, textY, inner, tally.name(),
+                    Component.translatable("betterloka.finder.nemesis_kills", tally.kills()).getString(),
                     GuiTheme.GOOD);
             textY += ROW_HEIGHT;
         }
         // How deep the month was read. Without it the list reads as the whole month, and it is not.
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.finder.nemesis_source", nemesis.fightsRead()),
+        context.text(this.font,
+                Component.translatable("betterloka.finder.nemesis_source", nemesis.fightsRead()),
                 textX, textY, GuiTheme.MUTED);
         return y + height + CARD_GAP;
     }
@@ -935,10 +935,10 @@ public class PlayerFinderScreen extends Screen {
      * past season's final table, so that line says it is loading until the index is built and then
      * fills in behind the card.
      */
-    private int renderRankedCards(DrawContext context, int left, int y, int width, int inner) {
+    private int renderRankedCards(GuiGraphicsExtractor context, int left, int y, int width, int inner) {
         if (arenaCurrent.isEmpty()) {
             return card(context, left, y, width, 1, (x, rowY) ->
-                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                    GuiTheme.statRow(context, this.font, x, rowY, inner,
                             label("betterloka.finder.ranked"),
                             label(arenaLoading ? "betterloka.finder.loading" : "betterloka.finder.unranked"),
                             GuiTheme.MUTED));
@@ -959,12 +959,12 @@ public class PlayerFinderScreen extends Screen {
             int textX = left + CARD_PADDING;
             int textY = y + CARD_PADDING;
 
-            context.drawTextWithShadow(this.textRenderer,
-                    Text.translatable(standing.ladder().translationKey()).copy().formatted(Formatting.BOLD),
+            context.text(this.font,
+                    Component.translatable(standing.ladder().translationKey()).copy().withStyle(ChatFormatting.BOLD),
                     textX, textY, GuiTheme.ACCENT);
             String position = "#" + current.position();
-            context.drawTextWithShadow(this.textRenderer, position,
-                    left + width - CARD_PADDING - this.textRenderer.getWidth(position), textY, GuiTheme.MUTED);
+            context.text(this.font, position,
+                    left + width - CARD_PADDING - this.font.width(position), textY, GuiTheme.MUTED);
 
             twoColumns(context, textX, textY + ROW_HEIGHT, inner,
                     label("betterloka.finder.duels"), String.valueOf(current.duels()), GuiTheme.TEXT,
@@ -974,7 +974,7 @@ public class PlayerFinderScreen extends Screen {
                     label("betterloka.finder.stat.losses"), String.valueOf(current.losses()), GuiTheme.BAD);
 
             // The rank goes in its own row: it is coloured by tier, which a shared column would lose.
-            GuiTheme.statRow(context, this.textRenderer, textX, textY + ROW_HEIGHT * 3, inner,
+            GuiTheme.statRow(context, this.font, textX, textY + ROW_HEIGHT * 3, inner,
                     label("betterloka.finder.rank"),
                     current.rank() == null ? "—" : current.rank().label(),
                     current.rank() == null ? GuiTheme.MUTED : current.rank().color());
@@ -982,21 +982,21 @@ public class PlayerFinderScreen extends Screen {
 
             y = card(context, left, y, width, 1, (x, rowY) -> {
                 if (best == null) {
-                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                    GuiTheme.statRow(context, this.font, x, rowY, inner,
                             label("betterloka.finder.best_rank"),
                             label(arenaHistoryLoading ? "betterloka.finder.loading" : "betterloka.finder.unranked"),
                             GuiTheme.MUTED);
                     return;
                 }
-                GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
-                        Text.translatable("betterloka.finder.best_rank_season", best.season()).getString(),
+                GuiTheme.statRow(context, this.font, x, rowY, inner,
+                        Component.translatable("betterloka.finder.best_rank_season", best.season()).getString(),
                         best.entry().rank().label(), best.entry().rank().color());
             });
         }
 
         if (!any) {
             return card(context, left, y, width, 1, (x, rowY) ->
-                    GuiTheme.statRow(context, this.textRenderer, x, rowY, inner,
+                    GuiTheme.statRow(context, this.font, x, rowY, inner,
                             label("betterloka.finder.ranked"), label("betterloka.finder.unranked"),
                             GuiTheme.MUTED));
         }
@@ -1013,7 +1013,7 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /** Draws a card of {@code rows} rows and returns the y just past it. */
-    private int card(DrawContext context, int left, int y, int width, int rows, CardBody body) {
+    private int card(GuiGraphicsExtractor context, int left, int y, int width, int rows, CardBody body) {
         int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
         GuiTheme.panel(context, left, y, width, height);
         body.draw(left + CARD_PADDING, y + CARD_PADDING);
@@ -1026,21 +1026,21 @@ public class PlayerFinderScreen extends Screen {
     }
 
     /** Two label/value pairs side by side, each right-aligned in its half. */
-    private void twoColumns(DrawContext context, int x, int y, int inner,
+    private void twoColumns(GuiGraphicsExtractor context, int x, int y, int inner,
                             String leftLabel, String leftValue, int leftColor,
                             String rightLabel, String rightValue, int rightColor) {
         int columnWidth = (inner - 10) / 2;
-        GuiTheme.statRow(context, this.textRenderer, x, y, columnWidth, leftLabel, leftValue, leftColor);
-        GuiTheme.statRow(context, this.textRenderer, x + columnWidth + 10, y, columnWidth,
+        GuiTheme.statRow(context, this.font, x, y, columnWidth, leftLabel, leftValue, leftColor);
+        GuiTheme.statRow(context, this.font, x + columnWidth + 10, y, columnWidth,
                 rightLabel, rightValue, rightColor);
     }
 
     private static String label(String key) {
-        return Text.translatable(key).getString();
+        return Component.translatable(key).getString();
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

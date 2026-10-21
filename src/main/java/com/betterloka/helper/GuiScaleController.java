@@ -3,10 +3,10 @@ package com.betterloka.helper;
 import com.betterloka.BetterLoka;
 import com.betterloka.config.BetterLokaConfig;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.option.SimpleOption;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.OptionInstance;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 
 /**
  * Two GUI scales: one for the inventory, one for everything else.
@@ -49,16 +49,16 @@ public final class GuiScaleController {
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
-    private void tick(MinecraftClient client) {
+    private void tick(Minecraft client) {
         if (client == null || client.getWindow() == null) {
             return;
         }
         // Out of a world, or switched off: hand the player their own setting back.
-        if (!config.guiScaleEnabled() || client.world == null) {
+        if (!config.guiScaleEnabled() || client.level == null) {
             restore(client);
             return;
         }
-        apply(client, wanted(client.currentScreen));
+        apply(client, wanted(client.gui.screen()));
     }
 
     /** Which of the two scales a screen calls for. */
@@ -73,7 +73,7 @@ public final class GuiScaleController {
      * anvil are all the same problem, which is hitting the right slot.
      */
     public static boolean isInventory(Screen screen) {
-        return screen instanceof HandledScreen<?>;
+        return screen instanceof AbstractContainerScreen<?>;
     }
 
     /**
@@ -83,32 +83,32 @@ public final class GuiScaleController {
      * framebuffer and re-inits the open screen, so calling it on a tick where nothing changed would
      * be a visible stutter sixty times a second.
      */
-    private void apply(MinecraftClient client, int scale) {
+    private void apply(Minecraft client, int scale) {
         int target = clamp(client, scale);
-        SimpleOption<Integer> option = client.options.getGuiScale();
+        OptionInstance<Integer> option = client.options.guiScale();
         if (borrowedFrom < 0) {
-            borrowedFrom = option.getValue();
+            borrowedFrom = option.get();
         }
-        if (applied == target && option.getValue() == target) {
+        if (applied == target && option.get() == target) {
             return;
         }
         applied = target;
-        option.setValue(target);
-        client.onResolutionChanged();
+        option.set(target);
+        client.resizeGui();
     }
 
     /** Puts the player's own scale back, once. */
-    private void restore(MinecraftClient client) {
+    private void restore(Minecraft client) {
         if (borrowedFrom < 0) {
             return;
         }
-        SimpleOption<Integer> option = client.options.getGuiScale();
+        OptionInstance<Integer> option = client.options.guiScale();
         int own = borrowedFrom;
         borrowedFrom = -1;
         applied = -1;
-        if (option.getValue() != own) {
-            option.setValue(own);
-            client.onResolutionChanged();
+        if (option.get() != own) {
+            option.set(own);
+            client.resizeGui();
             BetterLoka.LOGGER.debug("[betterloka] gui scale handed back to {}", own);
         }
     }
@@ -119,11 +119,11 @@ public final class GuiScaleController {
      * <p>Minecraft's own option does the same: on a small display scale 4 is not offered, and
      * setting it anyway leaves the GUI larger than the screen with no way back to the options menu.
      */
-    private static int clamp(MinecraftClient client, int scale) {
+    private static int clamp(Minecraft client, int scale) {
         if (scale <= AUTO) {
             return AUTO;
         }
-        int highest = client.getWindow().calculateScaleFactor(MAX_SCALE, client.forcesUnicodeFont());
+        int highest = client.getWindow().calculateScale(MAX_SCALE, client.isEnforceUnicode());
         return Math.max(1, Math.min(scale, Math.max(1, highest)));
     }
 

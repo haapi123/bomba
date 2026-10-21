@@ -2,21 +2,21 @@ package com.betterloka;
 
 import com.betterloka.gui.LokaGrinderScreen;
 import com.betterloka.gui.LokaMapScreen;
-import com.betterloka.map.Continent;
-import com.betterloka.map.MapTerritory;
 import com.betterloka.gui.PlayerFinderScreen;
 import com.betterloka.gui.TownFinderScreen;
+import com.betterloka.map.Continent;
+import com.betterloka.map.MapTerritory;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.Element;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.world.CreateWorldScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.MouseInput;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.world.gen.WorldPresets;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,18 +40,18 @@ public final class DevShots {
         step(20, () -> {
             BetterLokaClient.grindTimers().shulker().start();
             BetterLokaClient.grindTimers().glowstone().start();
-            client().setScreen(null);
+            client().gui.setScreen(null);
         });
         shot(20, "grinder-hud");
-        step(5, () -> client().setScreen(new LokaGrinderScreen(null)));
+        step(5, () -> client().gui.setScreen(new LokaGrinderScreen(null)));
         shot(20, "grinder-shulker");
-        step(5, () -> click(client().currentScreen, "Glowstone"));
+        step(5, () -> click(client().gui.screen(), "Glowstone"));
         shot(20, "grinder-glowstone");
 
-        step(5, () -> client().setScreen(new PlayerFinderScreen(null)));
+        step(5, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
         step(5, () -> {
-            type(client().currentScreen, "haapi");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), "Search");
         });
         step(400, () -> { });
         step(5, () -> scroll(-4000));
@@ -59,16 +59,16 @@ public final class DevShots {
         step(200, () -> { });
         shot(20, "player-finder-names");
 
-        step(5, () -> client().setScreen(new TownFinderScreen(null)));
+        step(5, () -> client().gui.setScreen(new TownFinderScreen(null)));
         step(5, () -> {
-            type(client().currentScreen, "Hilo");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "Hilo");
+            click(client().gui.screen(), "Search");
         });
         step(300, () -> { });
         shot(20, "town-finder-founded");
 
         // The tutorial toast owns the top right and would sit over the map's card.
-        step(5, () -> client().getToastManager().clear());
+        step(5, () -> client().gui.toastManager().clear());
         // How long the map takes to have something to draw, now that the data is not fetched on
         // opening it. Measured across the open itself, not from a warm cache read.
         step(5, () -> {
@@ -76,7 +76,7 @@ public final class DevShots {
             // first render, so anything that needs its geometry would report a false negative.
             int held = BetterLokaClient.mapData().snapshot(Continent.KALROS).territories().size();
             long before = System.nanoTime();
-            client().setScreen(new LokaMapScreen(null));
+            client().gui.setScreen(new LokaMapScreen(null));
             BetterLoka.LOGGER.info("SHOT map opened in {} ms with {} territories already in hand",
                     String.format("%.2f", (System.nanoTime() - before) / 1_000_000.0), held);
         });
@@ -124,14 +124,14 @@ public final class DevShots {
         step(5, () -> LokaMapScreen.devLinearHitTest = true);
         step(60, () -> { });
         step(5, () -> BetterLoka.LOGGER.info("SHOT fps dragging, linear hit test: {}",
-                client().getCurrentFps()));
+                client().getFps()));
         step(5, () -> LokaMapScreen.devLinearHitTest = false);
         step(60, () -> { });
         step(5, () -> BetterLoka.LOGGER.info("SHOT fps dragging, indexed hit test: {}",
-                client().getCurrentFps()));
+                client().getFps()));
 
         // Tyralnia's seat on Ascalon: the hex this was reported on.
-        step(5, () -> click(client().currentScreen, "Ascalon"));
+        step(5, () -> click(client().gui.screen(), "Ascalon"));
         step(1200, () -> { });
         step(5, () -> bringUnderCursor(t -> t.seat() && "Tyralnia".equals(t.owner())));
         step(20, () -> { });
@@ -160,11 +160,11 @@ public final class DevShots {
             }
         });
 
-        step(5, () -> click(client().currentScreen, "Balak"));
+        step(5, () -> click(client().gui.screen(), "Balak"));
         step(1200, () -> { });
         shot(20, "map-balak");
 
-        step(5, () -> click(client().currentScreen, "Rivina"));
+        step(5, () -> click(client().gui.screen(), "Rivina"));
         step(1200, () -> { });
         shot(20, "map-rivina");
 
@@ -183,7 +183,7 @@ public final class DevShots {
         // the whole continent framed first, or its own fading "Copied" would be the only thing the
         // two screenshots differ by — which is exactly what happened the first time.
         step(5, () -> dismissBubble());
-        step(5, () -> click(client().currentScreen, "Fit continent"));
+        step(5, () -> click(client().gui.screen(), "Fit continent"));
         step(60, () -> { });
         shot(20, "capture-before");
         step(5, () -> simulateCapture());
@@ -193,20 +193,20 @@ public final class DevShots {
         // Nothing is usually declared on Loka, so the screenshot is taken over battles already
         // fought — real names, real turnouts, drawn by the same code.
         step(5, () -> com.betterloka.gui.FightManagerScreen.devShowRecentBattles = true);
-        step(5, () -> client().setScreen(new com.betterloka.gui.FightManagerScreen(null)));
+        step(5, () -> client().gui.setScreen(new com.betterloka.gui.FightManagerScreen(null)));
         step(600, () -> { });
         shot(20, "fight-manager");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
-            client().scheduleStop();
+            client().stop();
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
     }
 
-    private static MinecraftClient client() {
-        return MinecraftClient.getInstance();
+    private static Minecraft client() {
+        return Minecraft.getInstance();
     }
 
     private void step(int wait, Runnable action) {
@@ -215,8 +215,8 @@ public final class DevShots {
     }
 
     private void shot(int wait, String name) {
-        step(wait, () -> ScreenshotRecorder.saveScreenshot(client().runDirectory, name + ".png",
-                client().getFramebuffer(),
+        step(wait, () -> Screenshot.grab(client().gameDirectory, name + ".png",
+                client().gameRenderer.mainRenderTarget(),
                 1,
                 message -> BetterLoka.LOGGER.info("SHOT {} -> {}", name, message.getString())));
     }
@@ -238,28 +238,28 @@ public final class DevShots {
     }
 
     private void createWorld() {
-        MinecraftClient client = client();
-        Screen old = client.currentScreen;
-        CreateWorldScreen.show(client, () -> client.setScreen(old));
-        if (!(client.currentScreen instanceof CreateWorldScreen create)) {
+        Minecraft client = client();
+        Screen old = client.gui.screen();
+        CreateWorldScreen.openFresh(client, () -> client.gui.setScreen(old));
+        if (!(client.gui.screen() instanceof CreateWorldScreen create)) {
             BetterLoka.LOGGER.error("SHOT could not open the world creator");
             return;
         }
-        var creator = create.getWorldCreator();
-        creator.setWorldType(new net.minecraft.client.gui.screen.world.WorldCreator.WorldType(
-                creator.getGeneratorOptionsHolder().getCombinedRegistryManager()
-                        .getOrThrow(net.minecraft.registry.RegistryKeys.WORLD_PRESET)
+        var creator = create.getUiState();
+        creator.setWorldType(new net.minecraft.client.gui.screens.worldselection.WorldCreationUiState.WorldTypeEntry(
+                creator.getSettings().worldgenLoadContext()
+                        .lookupOrThrow(net.minecraft.core.registries.Registries.WORLD_PRESET)
                         .getOrThrow(WorldPresets.FLAT)));
         creator.setSeed("1");
         creator.setGenerateStructures(false);
-        click(client.currentScreen, "Create New World");
+        click(client.gui.screen(), "Create New World");
     }
 
-    private static void forEachChild(Screen screen, Consumer<Element> action) {
+    private static void forEachChild(Screen screen, Consumer<GuiEventListener> action) {
         if (screen == null) {
             return;
         }
-        for (Element element : screen.children()) {
+        for (GuiEventListener element : screen.children()) {
             action.accept(element);
         }
     }
@@ -267,22 +267,22 @@ public final class DevShots {
     private static void click(Screen screen, String label) {
         // Collected first: pressing a tab button rebuilds the screen's widget list, and doing that
         // while iterating it throws.
-        List<ButtonWidget> matches = new ArrayList<>();
+        List<Button> matches = new ArrayList<>();
         forEachChild(screen, element -> {
-            if (element instanceof ButtonWidget button
+            if (element instanceof Button button
                     && button.getMessage().getString().contains(label)) {
                 matches.add(button);
             }
         });
-        for (ButtonWidget button : matches) {
+        for (Button button : matches) {
             button.onPress(null);
         }
     }
 
     private static void type(Screen screen, String text) {
         forEachChild(screen, element -> {
-            if (element instanceof TextFieldWidget field) {
-                field.setText(text);
+            if (element instanceof EditBox field) {
+                field.setValue(text);
             }
         });
     }
@@ -290,15 +290,15 @@ public final class DevShots {
     /**
      * Drags the map until a chosen territory lies under the pointer.
      *
-     * <p>The obvious way round is to move the pointer, and it cannot be done here: GLFW documents
-     * {@code glfwSetCursorPos} as failing silently without input focus, and a headless X server
+     * <p>The obvious way round is to move the pointer, and it cannot be done here: the windowing
+     * layer will not warp the pointer into a window without input focus, and a headless X server
      * gives the window none — so every shot taken that way photographed whatever happened to sit
      * under the middle of the window, including three that looked convincing. Dragging goes through
      * the screen's own press, drag and release, so what is photographed is the real thing.
      */
     private static void bringUnderCursor(java.util.function.Predicate<MapTerritory> match) {
-        MinecraftClient client = client();
-        if (!(client.currentScreen instanceof LokaMapScreen map)) {
+        Minecraft client = client();
+        if (!(client.gui.screen() instanceof LokaMapScreen map)) {
             return;
         }
         int[] point = map.devPointAt(match);
@@ -306,32 +306,32 @@ public final class DevShots {
             BetterLoka.LOGGER.warn("SHOT no territory matched");
             return;
         }
-        double cursorX = client.mouse.getScaledX(client.getWindow());
-        double cursorY = client.mouse.getScaledY(client.getWindow());
-        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
-        map.mouseDragged(new Click(cursorX, cursorY, new MouseInput(0, 0)),
+        double cursorX = client.mouseHandler.getScaledXPos(client.getWindow());
+        double cursorY = client.mouseHandler.getScaledYPos(client.getWindow());
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
+        map.mouseDragged(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(0, 0)),
                 cursorX - point[0], cursorY - point[1]);
-        map.mouseReleased(new Click(cursorX, cursorY, new MouseInput(0, 0)));
+        map.mouseReleased(new MouseButtonEvent(cursorX, cursorY, new MouseButtonInfo(0, 0)));
     }
 
     private static void dismissBubble() {
-        if (client().currentScreen instanceof LokaMapScreen map) {
-            map.keyPressed(new net.minecraft.client.input.KeyInput(
-                    org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0));
+        if (client().gui.screen() instanceof LokaMapScreen map) {
+            map.keyPressed(new net.minecraft.client.input.KeyEvent(
+                    com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE, 0, 0));
         }
     }
 
     private static void rightClickMiddle() {
-        if (client().currentScreen instanceof LokaMapScreen map) {
-            double x = client().mouse.getScaledX(client().getWindow());
-            double y = client().mouse.getScaledY(client().getWindow());
-            map.mouseClicked(new Click(x, y, new MouseInput(1, 0)), false);
+        if (client().gui.screen() instanceof LokaMapScreen map) {
+            double x = client().mouseHandler.getScaledXPos(client().getWindow());
+            double y = client().mouseHandler.getScaledYPos(client().getWindow());
+            map.mouseClicked(new MouseButtonEvent(x, y, new MouseButtonInfo(1, 0)), false);
         }
     }
 
     /** Presses the bubble's Copy button and reads the clipboard back. */
     private static void checkClipboard() {
-        if (!(client().currentScreen instanceof LokaMapScreen map)) {
+        if (!(client().gui.screen() instanceof LokaMapScreen map)) {
             return;
         }
         int[] point = map.devCopyButton();
@@ -339,8 +339,8 @@ public final class DevShots {
             BetterLoka.LOGGER.warn("SHOT no coordinate bubble to copy from");
             return;
         }
-        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
-        BetterLoka.LOGGER.info("SHOT clipboard now holds: '{}'", client().keyboard.getClipboard());
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
+        BetterLoka.LOGGER.info("SHOT clipboard now holds: '{}'", client().keyboardHandler.getClipboard());
     }
 
     /** Hands the store a captured territory and reports what it noticed. */
@@ -368,15 +368,15 @@ public final class DevShots {
     }
 
     private static void clickZoom(boolean in) {
-        if (!(client().currentScreen instanceof LokaMapScreen map)) {
+        if (!(client().gui.screen() instanceof LokaMapScreen map)) {
             return;
         }
         int[] point = in ? map.devZoomInButton() : map.devZoomOutButton();
-        map.mouseClicked(new Click(point[0], point[1], new MouseInput(0, 0)), false);
+        map.mouseClicked(new MouseButtonEvent(point[0], point[1], new MouseButtonInfo(0, 0)), false);
     }
 
     private static void scroll(int amount) {
-        Screen screen = client().currentScreen;
+        Screen screen = client().gui.screen();
         if (screen != null) {
             screen.mouseScrolled(screen.width / 2.0, screen.height / 2.0, 0, amount);
         }

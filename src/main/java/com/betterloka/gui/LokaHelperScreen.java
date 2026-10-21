@@ -3,12 +3,12 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.helper.GuiScaleController;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 /**
  * The odds and ends that make playing Loka easier.
@@ -28,12 +28,12 @@ public class LokaHelperScreen extends Screen {
 
     private final Screen parent;
 
-    private ButtonWidget toggleButton;
-    private ButtonWidget inventoryButton;
-    private ButtonWidget hotbarButton;
+    private Button toggleButton;
+    private Button inventoryButton;
+    private Button hotbarButton;
 
     public LokaHelperScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.loka_helper"));
+        super(Component.translatable("betterloka.module.loka_helper"));
         this.parent = parent;
     }
 
@@ -55,31 +55,31 @@ public class LokaHelperScreen extends Screen {
         int width = contentWidth();
         int y = CONTENT_TOP + ROW_HEIGHT + CARD_PADDING;
 
-        toggleButton = ButtonWidget.builder(toggleLabel(), button -> {
+        toggleButton = Button.builder(toggleLabel(), button -> {
                     config().setGuiScaleEnabled(!config().guiScaleEnabled());
                     refreshLabels();
                 })
-                .dimensions(left, y, width, BUTTON_HEIGHT).build();
-        addDrawableChild(toggleButton);
+                .bounds(left, y, width, BUTTON_HEIGHT).build();
+        addRenderableWidget(toggleButton);
         y += BUTTON_HEIGHT + CARD_GAP;
 
         int half = (width - 4) / 2;
-        inventoryButton = ButtonWidget.builder(inventoryLabel(), button -> {
+        inventoryButton = Button.builder(inventoryLabel(), button -> {
                     config().setInventoryGuiScale(GuiScaleController.next(config().inventoryGuiScale()));
                     refreshLabels();
                 })
-                .dimensions(left, y, half, BUTTON_HEIGHT).build();
-        addDrawableChild(inventoryButton);
+                .bounds(left, y, half, BUTTON_HEIGHT).build();
+        addRenderableWidget(inventoryButton);
 
-        hotbarButton = ButtonWidget.builder(hotbarLabel(), button -> {
+        hotbarButton = Button.builder(hotbarLabel(), button -> {
                     config().setHotbarGuiScale(GuiScaleController.next(config().hotbarGuiScale()));
                     refreshLabels();
                 })
-                .dimensions(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build();
-        addDrawableChild(hotbarButton);
+                .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build();
+        addRenderableWidget(hotbarButton);
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
     }
 
     /** Rebuilt in place rather than through {@code clearAndInit}, so a press does not rebuild all. */
@@ -92,49 +92,49 @@ public class LokaHelperScreen extends Screen {
         hotbarButton.active = on;
     }
 
-    private Text toggleLabel() {
+    private Component toggleLabel() {
         boolean on = config().guiScaleEnabled();
-        return Text.translatable("betterloka.helper.gui_scale_toggle",
-                Text.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.GRAY));
+        return Component.translatable("betterloka.helper.gui_scale_toggle",
+                Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
-    private Text inventoryLabel() {
-        return Text.translatable("betterloka.helper.inventory_scale",
+    private Component inventoryLabel() {
+        return Component.translatable("betterloka.helper.inventory_scale",
                 GuiScaleController.label(config().inventoryGuiScale()));
     }
 
-    private Text hotbarLabel() {
-        return Text.translatable("betterloka.helper.hotbar_scale",
+    private Component hotbarLabel() {
+        return Component.translatable("betterloka.helper.hotbar_scale",
                 GuiScaleController.label(config().hotbarGuiScale()));
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
         boolean on = config().guiScaleEnabled();
         inventoryButton.active = on;
         hotbarButton.active = on;
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.helper.gui_scale"), left, CONTENT_TOP, GuiTheme.MUTED);
+        context.text(this.font,
+                Component.translatable("betterloka.helper.gui_scale"), left, CONTENT_TOP, GuiTheme.MUTED);
 
         // Below the controls it describes, not above them.
         int y = CONTENT_TOP + ROW_HEIGHT + CARD_PADDING + (BUTTON_HEIGHT + CARD_GAP) * 2;
         GuiTheme.panel(context, left, y, width, CARD_PADDING * 2 + ROW_HEIGHT);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable(on ? "betterloka.helper.gui_scale_hint"
+        context.text(this.font,
+                Component.translatable(on ? "betterloka.helper.gui_scale_hint"
                         : "betterloka.helper.gui_scale_off"),
                 left + CARD_PADDING, y + CARD_PADDING, GuiTheme.MUTED);
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

@@ -1,10 +1,10 @@
 package com.betterloka.gui;
 
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 import java.util.function.Function;
 
@@ -17,7 +17,7 @@ public class BetterLokaMenuScreen extends Screen {
     private final Screen parent;
 
     public BetterLokaMenuScreen(Screen parent) {
-        super(Text.translatable("betterloka.menu.title"));
+        super(Component.translatable("betterloka.menu.title"));
         this.parent = parent;
     }
 
@@ -36,8 +36,8 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.loka_map", LokaMapScreen::new);
         addModule(x, y, "betterloka.module.loka_helper", LokaHelperScreen::new);
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.DONE, button -> close())
-                .dimensions(x, this.height - 30, BUTTON_WIDTH, BUTTON_HEIGHT).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> onClose())
+                .bounds(x, this.height - 30, BUTTON_WIDTH, BUTTON_HEIGHT).build());
     }
 
     /**
@@ -46,25 +46,25 @@ public class BetterLokaMenuScreen extends Screen {
      * @return the y for the next button.
      */
     private int addModule(int x, int y, String translationKey, Function<Screen, Screen> open) {
-        Text label = Text.translatable(translationKey);
-        addDrawableChild(ButtonWidget.builder(label, button -> this.client.setScreen(
+        Component label = Component.translatable(translationKey);
+        addRenderableWidget(Button.builder(label, button -> this.minecraft.gui.setScreen(
                         open != null ? open.apply(this) : new ModulePlaceholderScreen(this, label)))
-                .dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(x, y, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         return y + BUTTON_SPACING;
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
         int titleY = Math.max(6, this.height / 2 - 103 - 26);
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, titleY, GuiTheme.TEXT);
-        context.drawCenteredTextWithShadow(this.textRenderer, Text.translatable("betterloka.menu.subtitle"),
+        context.centeredText(this.font, this.title, this.width / 2, titleY, GuiTheme.TEXT);
+        context.centeredText(this.font, Component.translatable("betterloka.menu.subtitle"),
                 this.width / 2, titleY + 12, GuiTheme.MUTED);
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }

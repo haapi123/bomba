@@ -32,8 +32,12 @@ public final class LruCache<K, V> {
         this.maxEntries = Math.max(1, maxEntries);
         this.ttlMillis = ttlMillis;
         this.entries = new LinkedHashMap<>(16, 0.75f, true) {
+            // Qualified on purpose. In a subclass of LinkedHashMap a bare Entry can resolve to the
+            // map's own nested two-parameter Entry instead of ours from the enclosing class. JDK
+            // 25's compiler does exactly that when building with --release, which is how Gradle
+            // builds; on JDK 21, or without --release, it picks ours. Qualifying ends the question.
             @Override
-            protected boolean removeEldestEntry(Map.Entry<K, Entry<V>> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<K, LruCache.Entry<V>> eldest) {
                 return size() > LruCache.this.maxEntries;
             }
         };

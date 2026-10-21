@@ -2,10 +2,10 @@ package com.betterloka.map;
 
 import com.betterloka.BetterLoka;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 import java.util.Locale;
@@ -43,13 +43,13 @@ public final class WaypointHud {
     }
 
     public void register() {
-        HudElementRegistry.addLast(Identifier.of(BetterLoka.MOD_ID, "waypoints"), this::render);
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "waypoints"), this::render);
     }
 
-    private void render(DrawContext context, net.minecraft.client.render.RenderTickCounter tick) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.options.hudHidden
-                || client.currentScreen != null) {
+    private void render(GuiGraphicsExtractor context, net.minecraft.client.DeltaTracker tick) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.player == null || client.gui.hud.isHidden()
+                || client.gui.screen() != null) {
             return;
         }
 
@@ -60,20 +60,20 @@ public final class WaypointHud {
 
         double playerX = client.player.getX();
         double playerZ = client.player.getZ();
-        float yaw = client.player.getYaw();
+        float yaw = client.player.getYRot();
 
         int y = TOP_OFFSET;
         for (Waypoint waypoint : waypoints) {
             if (!sameWorld(client, waypoint)) {
                 continue;
             }
-            Text line = Text.literal(String.format(Locale.ROOT, "%s %s  %.0fm / %dch",
+            Component line = Component.literal(String.format(Locale.ROOT, "%s %s  %.0fm / %dch",
                     arrow(waypoint, playerX, playerZ, yaw), waypoint.label(),
                     waypoint.distanceTo(playerX, playerZ), waypoint.chunksTo(playerX, playerZ)));
 
-            int width = client.textRenderer.getWidth(line);
-            int x = context.getScaledWindowWidth() - width - MARGIN;
-            context.drawTextWithShadow(client.textRenderer, line, x, y, 0xFF000000 | waypoint.color());
+            int width = client.font.width(line);
+            int x = context.guiWidth() - width - MARGIN;
+            context.text(client.font, line, x, y, 0xFF000000 | waypoint.color());
             y += LINE_HEIGHT;
         }
     }
@@ -86,11 +86,11 @@ public final class WaypointHud {
      * something else the waypoint is shown rather than hidden: a marker in the wrong place is a
      * smaller failure than one that never appears.
      */
-    private static boolean sameWorld(MinecraftClient client, Waypoint waypoint) {
-        if (client.world == null) {
+    private static boolean sameWorld(Minecraft client, Waypoint waypoint) {
+        if (client.level == null) {
             return true;
         }
-        String here = client.world.getRegistryKey().getValue().getPath();
+        String here = client.level.dimension().identifier().getPath();
         for (Continent continent : Continent.values()) {
             if (here.equalsIgnoreCase(continent.world())) {
                 return waypoint.world().equalsIgnoreCase(here);

@@ -4,11 +4,11 @@ import com.betterloka.gui.FightManagerScreen;
 import com.betterloka.gui.LokaMarketScreen;
 import com.betterloka.gui.PlayerFinderScreen;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Element;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.screens.Screen;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -51,7 +51,7 @@ public final class DevDiagnostics {
         step(1, () -> fps("baseline, no screen open"));
 
         // A clean Fight Manager refresh, before the Market has queued anything.
-        step(2, () -> client().setScreen(new FightManagerScreen(null)));
+        step(2, () -> client().gui.setScreen(new FightManagerScreen(null)));
         step(1, this::startTimer);
         step(2, () -> { });
         step(1, () -> fightState("2 ticks after opening"));
@@ -60,10 +60,10 @@ public final class DevDiagnostics {
         step(1, () -> fps("fight manager, idle"));
 
         // A search, which is the whole Market now.
-        step(2, () -> client().setScreen(new LokaMarketScreen(null)));
+        step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
         step(2, () -> {
-            type(client().currentScreen, "Diamond Sword");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "Diamond Sword");
+            click(client().gui.screen(), "Search");
         });
         step(1, this::startTimer);
         step(20, () -> { });
@@ -75,7 +75,7 @@ public final class DevDiagnostics {
 
         // A refresh submitted straight after the Market has been used, which is where the two
         // screens used to collide.
-        step(2, () -> client().setScreen(new FightManagerScreen(null)));
+        step(2, () -> client().gui.setScreen(new FightManagerScreen(null)));
         step(1, this::startTimer);
         step(2, () -> { });
         step(1, () -> fightState("2 ticks after opening, after using the Market"));
@@ -93,14 +93,14 @@ public final class DevDiagnostics {
         // Scenario A twenty times: search, then move the view before the answer comes back.
         for (int round = 1; round <= 20; round++) {
             int number = round;
-            step(2, () -> client().setScreen(new LokaMarketScreen(null)));
+            step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
             step(2, () -> {
-                type(client().currentScreen, "Diamond Sword");
-                click(client().currentScreen, "Search");
+                type(client().gui.screen(), "Diamond Sword");
+                click(client().gui.screen(), "Search");
             });
             // Deliberately no wait: changing the order before the answer lands is the same
             // shape as the reported trigger — the view moves under an in-flight request.
-            step(1, () -> click(client().currentScreen, "Oldest"));
+            step(1, () -> click(client().gui.screen(), "Oldest"));
             step(60, () -> { });
             step(1, () -> {
                 marketState("scenario A round " + number);
@@ -117,36 +117,36 @@ public final class DevDiagnostics {
 
         // Each order photographed with real offers on it, and the profile without the alts
         // section, so the screens are checked rather than assumed.
-        step(2, () -> client().setScreen(new LokaMarketScreen(null)));
+        step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
         step(2, () -> {
-            type(client().currentScreen, "Diamond Sword");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "Diamond Sword");
+            click(client().gui.screen(), "Search");
         });
         step(120, () -> { });
         shot(20, "market-cheapest");
-        step(2, () -> click(client().currentScreen, "Dearest"));
+        step(2, () -> click(client().gui.screen(), "Dearest"));
         step(20, () -> { });
         shot(20, "market-dearest");
-        step(2, () -> click(client().currentScreen, "Newest"));
+        step(2, () -> click(client().gui.screen(), "Newest"));
         step(20, () -> { });
         shot(20, "market-newest");
-        step(2, () -> click(client().currentScreen, "Oldest"));
+        step(2, () -> click(client().gui.screen(), "Oldest"));
         step(20, () -> { });
         shot(20, "market-oldest");
         step(1, () -> marketState("after cycling every order"));
-        step(2, () -> client().setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
         step(2, () -> {
-            type(client().currentScreen, "haapi");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), "Search");
         });
         step(200, () -> { });
         step(1, () -> battleIndex("just after a search"));
         step(400, () -> { });
-        step(2, () -> click(client().currentScreen, "Nemesis"));
+        step(2, () -> click(client().gui.screen(), "Nemesis"));
         step(60, () -> { });
         shot(20, "player-finder-nemesis");
-        step(2, () -> click(client().currentScreen, "Profile"));
-        step(2, () -> client().setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
+        step(2, () -> click(client().gui.screen(), "Profile"));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
         step(20, () -> { });
         shot(20, "loka-helper");
         // Set outright rather than toggled: the config persists between runs, so a toggle would
@@ -157,26 +157,26 @@ public final class DevDiagnostics {
             // caps at 2, so larger values both clamp to the same number and prove nothing.
             BetterLokaClient.config().setInventoryGuiScale(2);
             BetterLokaClient.config().setHotbarGuiScale(1);
-            client().setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
         });
         step(20, () -> { });
         shot(20, "loka-helper-on");
         // The point of the feature: the scale has to actually move when a container opens, and
         // come back when it shuts.
-        step(2, () -> client().setScreen(null));
+        step(2, () -> client().gui.setScreen(null));
         step(20, () -> guiScale("no screen open (hotbar)"));
         step(2, () -> openInventory());
         step(20, () -> guiScale("inventory open"));
         shot(10, "gui-scale-inventory");
-        step(2, () -> client().setScreen(null));
+        step(2, () -> client().gui.setScreen(null));
         step(20, () -> guiScale("inventory closed again"));
-        step(2, () -> client().setScreen(new com.betterloka.gui.TownLoggerScreen(null)));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.TownLoggerScreen(null)));
         step(60, () -> { });
         shot(20, "town-logger");
-        step(2, () -> client().setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
         step(2, () -> {
-            type(client().currentScreen, "haapi");
-            click(client().currentScreen, "Search");
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), "Search");
         });
         step(600, () -> { });
         step(1, () -> battleIndex("30 s later"));
@@ -187,7 +187,7 @@ public final class DevDiagnostics {
         step(5, () -> scroll(4000));
         step(5, () -> scroll(-14));
         shot(20, "player-finder-split");
-        step(2, () -> click(client().currentScreen, "Month"));
+        step(2, () -> click(client().gui.screen(), "Month"));
         step(40, () -> { });
         shot(20, "player-finder-month");
         // A Balak hex that carries a bonus, which is the point of this round's map change.
@@ -196,10 +196,10 @@ public final class DevDiagnostics {
         // whole point of the level fix — that a GUI pixel is several real ones — is not exercised.
         step(2, () -> {
             BetterLokaClient.config().setGuiScaleEnabled(false);
-            client().options.getGuiScale().setValue(3);
-            client().onResolutionChanged();
+            client().options.guiScale().set(3);
+            client().resizeGui();
         });
-        step(2, () -> client().setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(5, () -> selectContinent("Balak"));
         step(60, () -> { });
         step(5, () -> bringUnderCursor(com.betterloka.map.MapTerritory::hasBonus));
@@ -227,7 +227,7 @@ public final class DevDiagnostics {
         // Kalros framed whole is the widest a detail layer ever has to cover, and so the case the
         // tile budget exists for.
         step(5, () -> selectContinent("Kalros"));
-        step(10, () -> click(client().currentScreen, "Fit continent"));
+        step(10, () -> click(client().gui.screen(), "Fit continent"));
         step(120, () -> { });
         step(1, () -> terrainState("Kalros, whole continent"));
         shot(20, "map-kalros-whole");
@@ -256,14 +256,14 @@ public final class DevDiagnostics {
         step(20, () -> { });
         shot(20, "map-balak-bonus");
 
-        step(2, () -> client().setScreen(null));
+        step(2, () -> client().gui.setScreen(null));
         step(60, () -> { });
         step(1, () -> fps("no screen open, after everything"));
         step(1, () -> log("end"));
 
         step(5, () -> {
             BetterLoka.LOGGER.info("DIAG done");
-            client().scheduleStop();
+            client().stop();
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -309,7 +309,7 @@ public final class DevDiagnostics {
 
     /** Presses the map's download button, which is painted rather than a widget. */
     private static void pressDownload() {
-        if (client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map) {
+        if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
             map.devPressDownload();
         }
     }
@@ -322,7 +322,7 @@ public final class DevDiagnostics {
                 label, p.continent() == null ? "-" : p.continent().displayName(),
                 p.done(), p.total(), Math.round(p.fraction() * 100), p.fetched(),
                 p.bytes() / 1024, p.running());
-        if (client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map) {
+        if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
             BetterLoka.LOGGER.info("DIAG download note {}: hovered=\"{}\" idle=\"{}\"",
                     label, map.devDownloadNote(true), map.devDownloadNote(false));
         }
@@ -330,7 +330,7 @@ public final class DevDiagnostics {
 
     /** Presses the map's + button a few times. */
     private static void zoomIn(int times) {
-        if (!(client().currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+        if (!(client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map)) {
             return;
         }
         for (int i = 0; i < times; i++) {
@@ -346,36 +346,36 @@ public final class DevDiagnostics {
      * the thing being claimed, which is what happens between frames while tiles are arriving.
      */
     private static void panAcross(int pixels) {
-        MinecraftClient client = client();
-        if (!(client.currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+        Minecraft client = client();
+        if (!(client.gui.screen() instanceof com.betterloka.gui.LokaMapScreen map)) {
             return;
         }
-        double x = client.getWindow().getScaledWidth() / 2.0;
-        double y = client.getWindow().getScaledHeight() / 2.0;
-        var input = new net.minecraft.client.input.MouseInput(0, 0);
-        map.mouseClicked(new net.minecraft.client.gui.Click(x, y, input), false);
+        double x = client.getWindow().getGuiScaledWidth() / 2.0;
+        double y = client.getWindow().getGuiScaledHeight() / 2.0;
+        var input = new net.minecraft.client.input.MouseButtonInfo(0, 0);
+        map.mouseClicked(new net.minecraft.client.input.MouseButtonEvent(x, y, input), false);
         for (int moved = 4; moved <= pixels; moved += 4) {
-            map.mouseDragged(new net.minecraft.client.gui.Click(x + moved, y, input), 4, 0);
+            map.mouseDragged(new net.minecraft.client.input.MouseButtonEvent(x + moved, y, input), 4, 0);
         }
-        map.mouseReleased(new net.minecraft.client.gui.Click(x + pixels, y, input));
+        map.mouseReleased(new net.minecraft.client.input.MouseButtonEvent(x + pixels, y, input));
         BetterLoka.LOGGER.info("DIAG panned {} px across the map", pixels);
     }
 
     /** Switches the map to a named continent by pressing its button. */
     private static void selectContinent(String name) {
-        click(client().currentScreen, name);
+        click(client().gui.screen(), name);
     }
 
     /**
      * Drags the map until a hex the predicate accepts sits under the pointer.
      *
-     * <p>The card describes what is hovered, and the pointer cannot be moved: GLFW documents
-     * {@code glfwSetCursorPos} as failing silently without input focus, which a headless X server
+     * <p>The card describes what is hovered, and the pointer cannot be moved: the windowing layer
+     * will not warp the pointer into a window without input focus, which a headless X server
      * never grants. So the map is moved instead, through the screen's own press, drag and release.
      */
     private static void bringUnderCursor(java.util.function.Predicate<com.betterloka.map.MapTerritory> match) {
-        MinecraftClient client = client();
-        if (!(client.currentScreen instanceof com.betterloka.gui.LokaMapScreen map)) {
+        Minecraft client = client();
+        if (!(client.gui.screen() instanceof com.betterloka.gui.LokaMapScreen map)) {
             return;
         }
         int[] point = map.devPointAt(match);
@@ -383,15 +383,15 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG no territory matched");
             return;
         }
-        double cursorX = client.mouse.getScaledX(client.getWindow());
-        double cursorY = client.mouse.getScaledY(client.getWindow());
-        map.mouseClicked(new net.minecraft.client.gui.Click(point[0], point[1],
-                new net.minecraft.client.input.MouseInput(0, 0)), false);
-        map.mouseDragged(new net.minecraft.client.gui.Click(cursorX, cursorY,
-                new net.minecraft.client.input.MouseInput(0, 0)),
+        double cursorX = client.mouseHandler.getScaledXPos(client.getWindow());
+        double cursorY = client.mouseHandler.getScaledYPos(client.getWindow());
+        map.mouseClicked(new net.minecraft.client.input.MouseButtonEvent(point[0], point[1],
+                new net.minecraft.client.input.MouseButtonInfo(0, 0)), false);
+        map.mouseDragged(new net.minecraft.client.input.MouseButtonEvent(cursorX, cursorY,
+                new net.minecraft.client.input.MouseButtonInfo(0, 0)),
                 cursorX - point[0], cursorY - point[1]);
-        map.mouseReleased(new net.minecraft.client.gui.Click(cursorX, cursorY,
-                new net.minecraft.client.input.MouseInput(0, 0)));
+        map.mouseReleased(new net.minecraft.client.input.MouseButtonEvent(cursorX, cursorY,
+                new net.minecraft.client.input.MouseButtonInfo(0, 0)));
         BetterLoka.LOGGER.info("DIAG dragged a bonus hex under the pointer");
     }
 
@@ -406,26 +406,26 @@ public final class DevDiagnostics {
         BetterLoka.LOGGER.info(
                 "DIAG gui scale {}: option={} screen={} | wanted inv={} hotbar={} | window {}x{}"
                         + " supports up to {}",
-                label, client().options.getGuiScale().getValue(),
-                client().currentScreen == null ? "none"
-                        : client().currentScreen.getClass().getSimpleName(),
+                label, client().options.guiScale().get(),
+                client().gui.screen() == null ? "none"
+                        : client().gui.screen().getClass().getSimpleName(),
                 BetterLokaClient.config().inventoryGuiScale(),
                 BetterLokaClient.config().hotbarGuiScale(),
-                window.getWidth(), window.getHeight(),
-                window.calculateScaleFactor(4, client().forcesUnicodeFont()));
+                window.getScreenWidth(), window.getScreenHeight(),
+                window.calculateScale(4, client().isEnforceUnicode()));
     }
 
     /** Opens the player's own inventory, which is the screen the inventory scale is for. */
     private static void openInventory() {
         if (client().player != null) {
-            client().setScreen(new net.minecraft.client.gui.screen.ingame.InventoryScreen(
+            client().gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(
                     client().player));
         }
     }
 
     /** Which terrain zoom the map is drawing, and whether its tiles have arrived. */
     private static void terrainState(String label) {
-        Screen screen = client().currentScreen;
+        Screen screen = client().gui.screen();
         if (!(screen instanceof com.betterloka.gui.LokaMapScreen)) {
             BetterLoka.LOGGER.info("DIAG terrain {}: map not open", label);
             return;
@@ -441,7 +441,7 @@ public final class DevDiagnostics {
                         + " at {} blocks/px, was level {} | detail {} | base {}",
                 label, String.format(java.util.Locale.ROOT, "%.3f", blocks),
                 String.format(java.util.Locale.ROOT, "%.3f", real),
-                client().getWindow().getScaleFactor(), level,
+                client().getWindow().getGuiScale(), level,
                 com.betterloka.map.MapTerrain.blocksPerTile(level) / 128.0, wasLevel,
                 terrain.stateOf(level),
                 terrain.stateOf(com.betterloka.map.MapTerrain.BASE_LEVEL));
@@ -466,7 +466,7 @@ public final class DevDiagnostics {
 
     /** What the Market screen actually holds, as opposed to what it happens to be drawing. */
     private void marketState(String label) {
-        Screen screen = client().currentScreen;
+        Screen screen = client().gui.screen();
         if (!(screen instanceof LokaMarketScreen market)) {
             BetterLoka.LOGGER.info("DIAG {}: market screen not open (is {})", label,
                     screen == null ? "null" : screen.getClass().getSimpleName());
@@ -493,7 +493,7 @@ public final class DevDiagnostics {
     }
 
     private void fightState(String label) {
-        Screen screen = client().currentScreen;
+        Screen screen = client().gui.screen();
         if (!(screen instanceof FightManagerScreen fights)) {
             BetterLoka.LOGGER.info("DIAG {}: fight manager not open", label);
             return;
@@ -558,7 +558,7 @@ public final class DevDiagnostics {
     }
 
     private static void fps(String label) {
-        BetterLoka.LOGGER.info("DIAG fps {}: {}", label, client().getCurrentFps());
+        BetterLoka.LOGGER.info("DIAG fps {}: {}", label, client().getFps());
     }
 
     private static Object field(Object target, String name) {
@@ -640,41 +640,41 @@ public final class DevDiagnostics {
     }
 
     private void shot(int wait, String name) {
-        step(wait, () -> net.minecraft.client.util.ScreenshotRecorder.saveScreenshot(
-                client().runDirectory, name + ".png", client().getFramebuffer(), 1,
+        step(wait, () -> net.minecraft.client.Screenshot.grab(
+                client().gameDirectory, name + ".png", client().gameRenderer.mainRenderTarget(), 1,
                 message -> BetterLoka.LOGGER.info("DIAG shot {} -> {}", name, message.getString())));
     }
 
     /** Scrolls the open screen, for a profile whose interesting part is below the fold. */
     private static void scroll(int amount) {
-        Screen screen = client().currentScreen;
+        Screen screen = client().gui.screen();
         if (screen != null) {
-            screen.mouseScrolled(client().getWindow().getScaledWidth() / 2.0,
-                    client().getWindow().getScaledHeight() / 2.0, 0, amount);
+            screen.mouseScrolled(client().getWindow().getGuiScaledWidth() / 2.0,
+                    client().getWindow().getGuiScaledHeight() / 2.0, 0, amount);
         }
     }
 
-    private static MinecraftClient client() {
-        return MinecraftClient.getInstance();
+    private static Minecraft client() {
+        return Minecraft.getInstance();
     }
 
     private void createWorld() {
-        MinecraftClient client = client();
-        Screen old = client.currentScreen;
-        net.minecraft.client.gui.screen.world.CreateWorldScreen.show(client, () -> client.setScreen(old));
-        if (!(client.currentScreen
-                instanceof net.minecraft.client.gui.screen.world.CreateWorldScreen create)) {
+        Minecraft client = client();
+        Screen old = client.gui.screen();
+        net.minecraft.client.gui.screens.worldselection.CreateWorldScreen.openFresh(client, () -> client.gui.setScreen(old));
+        if (!(client.gui.screen()
+                instanceof net.minecraft.client.gui.screens.worldselection.CreateWorldScreen create)) {
             BetterLoka.LOGGER.error("DIAG could not open the world creator");
             return;
         }
-        var creator = create.getWorldCreator();
-        creator.setWorldType(new net.minecraft.client.gui.screen.world.WorldCreator.WorldType(
-                creator.getGeneratorOptionsHolder().getCombinedRegistryManager()
-                        .getOrThrow(net.minecraft.registry.RegistryKeys.WORLD_PRESET)
-                        .getOrThrow(net.minecraft.world.gen.WorldPresets.FLAT)));
+        var creator = create.getUiState();
+        creator.setWorldType(new net.minecraft.client.gui.screens.worldselection.WorldCreationUiState.WorldTypeEntry(
+                creator.getSettings().worldgenLoadContext()
+                        .lookupOrThrow(net.minecraft.core.registries.Registries.WORLD_PRESET)
+                        .getOrThrow(net.minecraft.world.level.levelgen.presets.WorldPresets.FLAT)));
         creator.setSeed("1");
         creator.setGenerateStructures(false);
-        click(client.currentScreen, "Create New World");
+        click(client.gui.screen(), "Create New World");
     }
 
     private static void click(Screen screen, String label) {
@@ -682,14 +682,14 @@ public final class DevDiagnostics {
             return;
         }
         // Collected first: pressing a tab button rebuilds the screen's widget list.
-        List<ButtonWidget> matches = new ArrayList<>();
-        for (Element element : screen.children()) {
-            if (element instanceof ButtonWidget button
+        List<Button> matches = new ArrayList<>();
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof Button button
                     && button.getMessage().getString().contains(label)) {
                 matches.add(button);
             }
         }
-        for (ButtonWidget button : matches) {
+        for (Button button : matches) {
             button.onPress(null);
         }
     }
@@ -698,9 +698,9 @@ public final class DevDiagnostics {
         if (screen == null) {
             return;
         }
-        for (Element element : screen.children()) {
-            if (element instanceof TextFieldWidget field) {
-                field.setText(text);
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof EditBox field) {
+                field.setValue(text);
             }
         }
     }

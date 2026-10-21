@@ -3,13 +3,13 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.grind.GrindTimer;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.screen.ScreenTexts;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 
 /**
  * Timers for the things worth grinding on Loka.
@@ -52,7 +52,7 @@ public class LokaGrinderScreen extends Screen {
     private int boxY;
 
     public LokaGrinderScreen(Screen parent) {
-        super(Text.translatable("betterloka.module.loka_grinder"));
+        super(Component.translatable("betterloka.module.loka_grinder"));
         this.parent = parent;
     }
 
@@ -74,35 +74,35 @@ public class LokaGrinderScreen extends Screen {
         for (Tab value : Tab.values()) {
             Tab target = value;
             int thisWidth = value == Tab.GLOWSTONE ? left + width - x : half;
-            addDrawableChild(ButtonWidget.builder(tabLabel(value), button -> selectTab(target))
-                    .dimensions(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
+                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
             x += half + 4;
         }
 
         int controlY = VIEWPORT_TOP + CARD_PADDING * 2 + ROW_HEIGHT * 6 + CARD_GAP;
         if (tab == Tab.SHULKER) {
-            addDrawableChild(ButtonWidget.builder(autoStartLabel(), button -> {
+            addRenderableWidget(Button.builder(autoStartLabel(), button -> {
                         BetterLokaClient.config().setShulkerAutoStart(
                                 !BetterLokaClient.config().shulkerAutoStart());
                         button.setMessage(autoStartLabel());
                     })
-                    .dimensions(left, controlY, width, TAB_ROW_HEIGHT).build());
+                    .bounds(left, controlY, width, TAB_ROW_HEIGHT).build());
         } else {
             int third = (width - 8) / 3;
-            addDrawableChild(ButtonWidget.builder(Text.literal("-" + GLOWSTONE_STEP + "m"),
+            addRenderableWidget(Button.builder(Component.literal("-" + GLOWSTONE_STEP + "m"),
                             button -> changeGlowstone(-GLOWSTONE_STEP))
-                    .dimensions(left, controlY, third, TAB_ROW_HEIGHT).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("+" + GLOWSTONE_STEP + "m"),
+                    .bounds(left, controlY, third, TAB_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(Component.literal("+" + GLOWSTONE_STEP + "m"),
                             button -> changeGlowstone(GLOWSTONE_STEP))
-                    .dimensions(left + third + 4, controlY, third, TAB_ROW_HEIGHT).build());
-            addDrawableChild(ButtonWidget.builder(Text.translatable("betterloka.grind.reset"),
+                    .bounds(left + third + 4, controlY, third, TAB_ROW_HEIGHT).build());
+            addRenderableWidget(Button.builder(Component.translatable("betterloka.grind.reset"),
                             button -> glowstone().stop())
-                    .dimensions(left + (third + 4) * 2, controlY, width - (third + 4) * 2,
+                    .bounds(left + (third + 4) * 2, controlY, width - (third + 4) * 2,
                             TAB_ROW_HEIGHT).build());
         }
 
         // The on-screen countdown is per-timer, so it is switched from the tab it belongs to.
-        addDrawableChild(ButtonWidget.builder(hudLabel(), button -> {
+        addRenderableWidget(Button.builder(hudLabel(), button -> {
                     BetterLokaConfig config = BetterLokaClient.config();
                     if (tab == Tab.SHULKER) {
                         config.setShulkerHudEnabled(!config.shulkerHudEnabled());
@@ -111,26 +111,26 @@ public class LokaGrinderScreen extends Screen {
                     }
                     button.setMessage(hudLabel());
                 })
-                .dimensions(left, controlY + TAB_ROW_HEIGHT + 4, width, TAB_ROW_HEIGHT).build());
+                .bounds(left, controlY + TAB_ROW_HEIGHT + 4, width, TAB_ROW_HEIGHT).build());
 
-        addDrawableChild(ButtonWidget.builder(ScreenTexts.BACK, button -> close())
-                .dimensions(this.width / 2 - 100, this.height - 30, 200, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
     }
 
-    private static Text autoStartLabel() {
+    private static Component autoStartLabel() {
         boolean on = BetterLokaClient.config().shulkerAutoStart();
-        return Text.translatable("betterloka.grind.shulker.auto")
-                .append(Text.translatable(on ? "betterloka.on" : "betterloka.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.RED));
+        return Component.translatable("betterloka.grind.shulker.auto")
+                .append(Component.translatable(on ? "betterloka.on" : "betterloka.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED));
     }
 
-    private Text hudLabel() {
+    private Component hudLabel() {
         boolean on = tab == Tab.SHULKER
                 ? BetterLokaClient.config().shulkerHudEnabled()
                 : BetterLokaClient.config().glowstoneHudEnabled();
-        return Text.translatable("betterloka.grind.hud.toggle")
-                .append(Text.translatable(on ? "betterloka.on" : "betterloka.off")
-                        .formatted(on ? Formatting.GREEN : Formatting.RED));
+        return Component.translatable("betterloka.grind.hud.toggle")
+                .append(Component.translatable(on ? "betterloka.on" : "betterloka.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED));
     }
 
     /** Changes the glowstone length and keeps the timer in step with it. */
@@ -138,12 +138,12 @@ public class LokaGrinderScreen extends Screen {
         BetterLokaConfig config = BetterLokaClient.config();
         config.setGlowstoneMinutes(config.glowstoneMinutes() + delta);
         glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
-        clearAndInit();
+        rebuildWidgets();
     }
 
-    private Text tabLabel(Tab value) {
-        Text label = Text.translatable(value.key);
-        return value == tab ? label.copy().formatted(Formatting.YELLOW) : label;
+    private Component tabLabel(Tab value) {
+        Component label = Component.translatable(value.key);
+        return value == tab ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
     private void selectTab(Tab target) {
@@ -151,7 +151,7 @@ public class LokaGrinderScreen extends Screen {
             return;
         }
         tab = target;
-        clearAndInit();
+        rebuildWidgets();
     }
 
     private static GrindTimer shulker() {
@@ -167,7 +167,7 @@ public class LokaGrinderScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         if (click.x() >= boxX && click.x() < boxX + BOX_SIZE
                 && click.y() >= boxY && click.y() < boxY + BOX_SIZE) {
             GrindTimer timer = active();
@@ -182,9 +182,9 @@ public class LokaGrinderScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, GuiTheme.TEXT);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -196,7 +196,7 @@ public class LokaGrinderScreen extends Screen {
     }
 
     /** One card, whichever timer the tab is showing — they differ only in their labels. */
-    private void renderTimer(DrawContext context, int left, int y, int width, int mouseX, int mouseY,
+    private void renderTimer(GuiGraphicsExtractor context, int left, int y, int width, int mouseX, int mouseY,
                              GrindTimer timer, String titleKey, String hintKey) {
         int inner = width - CARD_PADDING * 2;
         int height = CARD_PADDING * 2 + ROW_HEIGHT * 6;
@@ -205,8 +205,8 @@ public class LokaGrinderScreen extends Screen {
         int textX = left + CARD_PADDING;
         int textY = y + CARD_PADDING;
 
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable(titleKey).copy().formatted(Formatting.BOLD),
+        context.text(this.font,
+                Component.translatable(titleKey).copy().withStyle(ChatFormatting.BOLD),
                 textX, textY, GuiTheme.ACCENT);
 
         // The square the player clicks to start it, in the corner they asked for.
@@ -226,30 +226,30 @@ public class LokaGrinderScreen extends Screen {
                 : timer.durationText();
         int remainingColor = timer.finished() ? GuiTheme.GOOD
                 : (timer.running() ? GuiTheme.TEXT : GuiTheme.MUTED);
-        context.drawTextWithShadow(this.textRenderer, remaining, textX, textY + ROW_HEIGHT, remainingColor);
+        context.text(this.font, remaining, textX, textY + ROW_HEIGHT, remainingColor);
 
-        Text status;
+        Component status;
         if (timer.finished()) {
-            status = Text.translatable("betterloka.grind.ready");
+            status = Component.translatable("betterloka.grind.ready");
         } else if (timer.running()) {
-            status = Text.translatable("betterloka.grind.counting");
+            status = Component.translatable("betterloka.grind.counting");
         } else {
-            status = Text.translatable("betterloka.grind.idle");
+            status = Component.translatable("betterloka.grind.idle");
         }
-        context.drawTextWithShadow(this.textRenderer,
-                this.textRenderer.trimToWidth(status.getString(), inner - 40),
-                textX + this.textRenderer.getWidth(remaining) + 8, textY + ROW_HEIGHT,
+        context.text(this.font,
+                this.font.plainSubstrByWidth(status.getString(), inner - 40),
+                textX + this.font.width(remaining) + 8, textY + ROW_HEIGHT,
                 timer.finished() ? GuiTheme.GOOD : GuiTheme.MUTED);
 
         GuiTheme.progressBar(context, textX, textY + ROW_HEIGHT * 2 + 2, inner, 5, timer.progress());
 
-        context.drawTextWithShadow(this.textRenderer, Text.translatable(hintKey),
+        context.text(this.font, Component.translatable(hintKey),
                 textX, textY + ROW_HEIGHT * 3, GuiTheme.MUTED);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.shulker.hint2"),
+        context.text(this.font,
+                Component.translatable("betterloka.grind.shulker.hint2"),
                 textX, textY + ROW_HEIGHT * 4, GuiTheme.MUTED);
-        context.drawTextWithShadow(this.textRenderer,
-                Text.translatable("betterloka.grind.keybind.hint",
+        context.text(this.font,
+                Component.translatable("betterloka.grind.keybind.hint",
                         keyName(tab == Tab.SHULKER
                                 ? BetterLokaClient.shulkerTimerKey()
                                 : BetterLokaClient.glowstoneTimerKey())),
@@ -257,12 +257,12 @@ public class LokaGrinderScreen extends Screen {
     }
 
     /** The key as it is actually bound, so rebinding it in Options is reflected here. */
-    private static Text keyName(net.minecraft.client.option.KeyBinding key) {
-        return key == null ? Text.translatable("key.keyboard.unknown") : key.getBoundKeyLocalizedText();
+    private static Component keyName(net.minecraft.client.KeyMapping key) {
+        return key == null ? Component.translatable("key.keyboard.unknown") : key.getTranslatedKeyMessage();
     }
 
     @Override
-    public void close() {
-        this.client.setScreen(parent);
+    public void onClose() {
+        this.minecraft.gui.setScreen(parent);
     }
 }
