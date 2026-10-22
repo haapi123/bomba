@@ -186,8 +186,19 @@ public final class MapStyle {
     /** A full-width button, for the one inside the coordinate bubble. */
     public static void wideButton(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
                                   int width, Component label, boolean hovered, boolean confirmed) {
-        int fill = confirmed ? 0xE0204A2A : hovered ? BUTTON_FILL_HOVER : BUTTON_FILL;
-        int border = confirmed ? 0xFF5FD37A : hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
+        wideButton(context, textRenderer, x, y, width, label, hovered, confirmed, false);
+    }
+
+    /**
+     * The same, with a red state for a button that is about to do something that cannot be undone —
+     * the second press of a delete.
+     */
+    public static void wideButton(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
+                                  int width, Component label, boolean hovered, boolean confirmed,
+                                  boolean danger) {
+        int fill = danger ? 0xE04A2024 : confirmed ? 0xE0204A2A : hovered ? BUTTON_FILL_HOVER : BUTTON_FILL;
+        int border = danger ? 0xFFE06C75 : confirmed ? 0xFF5FD37A
+                : hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
         context.fill(x, y, x + width, y + PIN_BUTTON_HEIGHT, fill);
         context.fill(x, y, x + width, y + 1, border);
         context.fill(x, y + PIN_BUTTON_HEIGHT - 1, x + width, y + PIN_BUTTON_HEIGHT, border);

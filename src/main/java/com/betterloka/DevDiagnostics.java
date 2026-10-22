@@ -48,6 +48,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("waypoints".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            waypointInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
 
         step(1, () -> heldPerContinent());
         step(1, () -> bonusesOnBalak());
@@ -799,6 +804,78 @@ public final class DevDiagnostics {
         step(5, () -> mapCheck("left click on another hex -> selected, light out"));
         step(2, () -> client().gui.setScreen(null));
         step(20, () -> BetterLoka.LOGGER.info("DIAG map input checks done"));
+    }
+
+    /**
+     * The waypoint list, driven through real clicks: opened from the map's bar, a waypoint added
+     * from the selection and two from the right-click bubble, then copied and deleted on the list.
+     */
+    private void waypointInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        int right = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT;
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+            BetterLokaClient.map().clear();
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(100, () -> { });
+        step(2, () -> realClick("Ascalon", left));
+        step(40, () -> mapScreen().devSearch("Forest 65"));
+        step(40, () -> waypointsState("Forest 65 selected on the map"));
+        step(2, () -> realClick("Waypoint List", left));
+        step(10, () -> waypointsState("list opened from the bar"));
+        shot(5, "waypoints-empty");
+        step(2, () -> realClick("Add waypoint", left));
+        step(5, () -> waypointsState("pressed Add waypoint: Forest 65"));
+        step(2, () -> realClick("Back", left));
+        step(10, () -> waypointsState("back on the map"));
+        step(2, () -> realClickAt(new int[] {client().getWindow().getGuiScaledWidth() / 2 + 40,
+                client().getWindow().getGuiScaledHeight() / 2 - 30}, right));
+        step(5, () -> realClickAt(mapScreen().devPinWaypointButton(), left));
+        step(5, () -> waypointsState("bubble Waypoint pressed"));
+        shot(3, "map-pin-waypoint");
+        step(2, () -> realClickAt(mapScreen().devPinWaypointButton(), left));
+        step(5, () -> waypointsState("bubble Waypoint pressed again -> no duplicate"));
+        step(2, () -> realClick("Kalros", left));
+        step(60, () -> realClickAt(new int[] {client().getWindow().getGuiScaledWidth() / 2,
+                client().getWindow().getGuiScaledHeight() / 2}, right));
+        step(5, () -> realClickAt(mapScreen().devPinWaypointButton(), left));
+        step(5, () -> waypointsState("a Kalros waypoint added"));
+        step(2, () -> realClick("Waypoint List", left));
+        step(10, () -> waypointsState("list with waypoints"));
+        shot(5, "waypoints-list");
+        step(2, () -> realClickAt(listAction(0), left));
+        step(3, () -> waypointsState("Copy pressed on the first card"));
+        shot(2, "waypoints-copied");
+        step(2, () -> realClickAt(listAction(1), left));
+        step(3, () -> waypointsState("Delete pressed once -> armed, nothing deleted"));
+        shot(2, "waypoints-confirm");
+        step(2, () -> realClickAt(listAction(1), left));
+        step(5, () -> waypointsState("Delete pressed again -> deleted"));
+        shot(5, "waypoints-after-delete");
+        step(2, () -> client().gui.setScreen(null));
+        step(20, () -> BetterLoka.LOGGER.info("DIAG waypoint checks done"));
+    }
+
+    private static int[] listAction(int index) {
+        if (client().gui.screen() instanceof com.betterloka.gui.WaypointListScreen list
+                && list.devActions().size() > index) {
+            return list.devActions().get(index);
+        }
+        return null;
+    }
+
+    private static void waypointsState(String label) {
+        var waypoints = com.betterloka.map.MapService.forListing(BetterLokaClient.map().waypoints());
+        StringBuilder names = new StringBuilder();
+        for (var waypoint : waypoints) {
+            names.append(" [").append(waypoint.label()).append(" @ ").append(waypoint.world())
+                    .append(' ').append(waypoint.coordinates()).append(']');
+        }
+        BetterLoka.LOGGER.info("DIAG waypoints {}: screen={} count={}{} clipboard='{}'", label,
+                client().gui.screen() == null ? "none" : client().gui.screen().getClass().getSimpleName(),
+                waypoints.size(), names, client().keyboardHandler.getClipboard());
     }
 
     private static com.betterloka.gui.LokaMapScreen mapScreen() {

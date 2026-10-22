@@ -86,7 +86,7 @@ public final class WaypointHud {
      * something else the waypoint is shown rather than hidden: a marker in the wrong place is a
      * smaller failure than one that never appears.
      */
-    private static boolean sameWorld(Minecraft client, Waypoint waypoint) {
+    public static boolean sameWorld(Minecraft client, Waypoint waypoint) {
         if (client.level == null) {
             return true;
         }

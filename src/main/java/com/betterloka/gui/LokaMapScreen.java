@@ -122,6 +122,8 @@ public class LokaMapScreen extends Screen {
     private int pinScreenY;
     private long pinnedAt;
     private long copiedAt;
+    /** Whether this bubble's spot has been made a waypoint, so a second press cannot add it twice. */
+    private boolean pinWaypointAdded;
 
     // Where the map was drawn this frame, so a click can be turned back into world coordinates.
     private int mapX;
@@ -164,7 +166,7 @@ public class LokaMapScreen extends Screen {
     private static final long SEARCH_MISS_MILLIS = 4000;
 
     private EditBox searchField;
-    private Button waypointButton;
+    private Button listButton;
     private MapSearch search;
     private MapDataStore.Snapshot searchBuiltFrom;
     private Found found;
@@ -220,10 +222,9 @@ public class LokaMapScreen extends Screen {
         // itself the way Loka's own does it, rather than in a panel eating half the height.
         int bottomY = this.height - 26;
         int quarter = (width - 12) / 4;
-        waypointButton = addRenderableWidget(Button.builder(waypointLabel(), button -> {
-                    toggleWaypoint();
-                    button.setMessage(waypointLabel());
-                })
+        // Every waypoint, on every continent, is managed there. Adding one is the Waypoint button in
+        // the right-click bubble, or the Add button the list offers for what is selected here.
+        listButton = addRenderableWidget(Button.builder(listLabel(), button -> openWaypointList())
                 .bounds(left, bottomY, quarter, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.map.copy"),
                         button -> copyCoordinates())
@@ -256,12 +257,17 @@ public class LokaMapScreen extends Screen {
         return value == continent ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
-    private Component waypointLabel() {
-        if (selected == null) {
-            return Component.translatable("betterloka.map.waypoint");
+    private Component listLabel() {
+        int count = BetterLokaClient.map().waypoints().size();
+        return count == 0 ? Component.translatable("betterloka.map.waypoint_list")
+                : Component.translatable("betterloka.map.waypoint_list_count", count);
+    }
+
+    /** Opens the list, offering whatever is selected here as the waypoint its Add button makes. */
+    private void openWaypointList() {
+        if (this.minecraft != null) {
+            this.minecraft.gui.setScreen(new WaypointListScreen(this, selected == null ? null : at(selected)));
         }
-        boolean set = BetterLokaClient.map().isSet(continent.world(), selected.label());
-        return Component.translatable(set ? "betterloka.map.waypoint_off" : "betterloka.map.waypoint");
     }
 
     private void select(Continent target) {
@@ -491,11 +497,15 @@ public class LokaMapScreen extends Screen {
         if (insideMap(click.x(), click.y()) && getFocused() == searchField) {
             setFocused(null);
         }
-        // A left click anywhere dismisses the coordinate bubble, including the click that lands on
-        // its own Copy button — which is handled first so the copy still happens.
+        // A left click anywhere dismisses the coordinate bubble, except one on its own Copy or
+        // Waypoint button — those are handled first, and the bubble stays to say they worked.
         if (pinned) {
-            if (overCopyButton(click.x(), click.y())) {
+            if (overPinButton(click.x(), click.y(), 0)) {
                 copyPinned();
+                return true;
+            }
+            if (overPinButton(click.x(), click.y(), 1)) {
+                addPinnedWaypoint();
                 return true;
             }
             closePin();
@@ -554,9 +564,6 @@ public class LokaMapScreen extends Screen {
                 // Picking something else puts the search's light out; picking what it lit keeps it.
                 if (selected == null || !litTerritories().contains(selected)) {
                     found = null;
-                }
-                if (waypointButton != null) {
-                    waypointButton.setMessage(waypointLabel());
                 }
             }
             return true;
@@ -1281,12 +1288,14 @@ public class LokaMapScreen extends Screen {
         pinScreenY = (int) Math.round(screenY);
         pinnedAt = System.currentTimeMillis();
         copiedAt = 0;
+        pinWaypointAdded = false;
         return true;
     }
 
     private void closePin() {
         pinned = false;
         copiedAt = 0;
+        pinWaypointAdded = false;
     }
 
     /** What lands in the clipboard: two numbers, ready for chat, a command, or a note. */
@@ -1302,12 +1311,44 @@ public class LokaMapScreen extends Screen {
         }
     }
 
+    /**
+     * Makes the spot a waypoint: named for the territory it is in, or for its coordinates out on
+     * open ground, and placed exactly where the right click was rather than at the hex's middle.
+     */
+    private void addPinnedWaypoint() {
+        if (pinWaypointAdded) {
+            return;
+        }
+        MapTerritory under = snapshot.index().at(pinWorldX, pinWorldZ);
+        String label = under != null ? under.label() : pinnedCoordinates();
+        BetterLokaClient.map().add(new Waypoint(label, continent.world(), pinWorldX, 64, pinWorldZ,
+                under != null ? under.fillColor() : MapStyle.PIN_MARK & 0xFFFFFF,
+                under != null ? under.icon() : null));
+        pinWaypointAdded = true;
+        // Long enough to read that it worked before the bubble goes.
+        pinnedAt = System.currentTimeMillis();
+        if (listButton != null) {
+            listButton.setMessage(listLabel());
+        }
+    }
+
+    private static final int PIN_BUTTON_GAP = 3;
+
+    /** Both buttons share one width, wide enough for either's longer wording. */
+    private int pinButtonWidth() {
+        int widest = 0;
+        for (String key : List.of("betterloka.map.copy_here", "betterloka.map.copied",
+                "betterloka.map.pin_waypoint", "betterloka.map.pin_waypoint_added")) {
+            widest = Math.max(widest, this.font.width(Component.translatable(key)));
+        }
+        return widest + MapStyle.PIN_BUTTON_PADDING * 2;
+    }
+
     private int pinBubbleWidth() {
         int text = this.font.width(pinnedCoordinates());
-        int button = this.font.width(
-                Component.translatable("betterloka.map.copy_here")) + MapStyle.PIN_BUTTON_PADDING * 2;
+        int buttons = pinButtonWidth() * 2 + PIN_BUTTON_GAP;
         return Math.max(MapStyle.PIN_MIN_WIDTH,
-                MapStyle.CARD_PADDING * 2 + Math.max(text, button));
+                MapStyle.CARD_PADDING * 2 + Math.max(text, buttons));
     }
 
     private int pinBubbleHeight() {
@@ -1334,14 +1375,28 @@ public class LokaMapScreen extends Screen {
                 Math.min(y, this.height - height - MapStyle.CARD_SCREEN_MARGIN));
     }
 
-    private boolean overCopyButton(double screenX, double screenY) {
+    /** The left edge of a bubble button: 0 is Copy, 1 is Waypoint. They split the row between them. */
+    private int pinButtonX(int index) {
+        int inner = pinBubbleWidth() - MapStyle.CARD_PADDING * 2;
+        int each = (inner - PIN_BUTTON_GAP) / 2;
+        return pinBubbleX() + MapStyle.CARD_PADDING + index * (each + PIN_BUTTON_GAP);
+    }
+
+    private int pinButtonEach() {
+        return (pinBubbleWidth() - MapStyle.CARD_PADDING * 2 - PIN_BUTTON_GAP) / 2;
+    }
+
+    private int pinButtonY() {
+        return pinBubbleY() + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3;
+    }
+
+    private boolean overPinButton(double screenX, double screenY, int index) {
         if (!pinned) {
             return false;
         }
-        int x = pinBubbleX() + MapStyle.CARD_PADDING;
-        int y = pinBubbleY() + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3;
-        int width = pinBubbleWidth() - MapStyle.CARD_PADDING * 2;
-        return screenX >= x && screenX < x + width
+        int x = pinButtonX(index);
+        int y = pinButtonY();
+        return screenX >= x && screenX < x + pinButtonEach()
                 && screenY >= y && screenY < y + MapStyle.PIN_BUTTON_HEIGHT;
     }
 
@@ -1367,12 +1422,13 @@ public class LokaMapScreen extends Screen {
 
         boolean copied = copiedAt > 0
                 && System.currentTimeMillis() - copiedAt < MapStyle.COPIED_NOTICE_MILLIS;
-        MapStyle.wideButton(context, this.font,
-                x + MapStyle.CARD_PADDING,
-                y + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3,
-                width - MapStyle.CARD_PADDING * 2,
+        MapStyle.wideButton(context, this.font, pinButtonX(0), pinButtonY(), pinButtonEach(),
                 Component.translatable(copied ? "betterloka.map.copied" : "betterloka.map.copy_here"),
-                overCopyButton(mouseX, mouseY), copied);
+                overPinButton(mouseX, mouseY, 0), copied);
+        MapStyle.wideButton(context, this.font, pinButtonX(1), pinButtonY(), pinButtonEach(),
+                Component.translatable(pinWaypointAdded
+                        ? "betterloka.map.pin_waypoint_added" : "betterloka.map.pin_waypoint"),
+                !pinWaypointAdded && overPinButton(mouseX, mouseY, 1), pinWaypointAdded);
     }
 
     @Override
@@ -1431,9 +1487,6 @@ public class LokaMapScreen extends Screen {
         selectedNumber = selected == null ? null : selected.number();
         closePin();
         flyTo(hit);
-        if (waypointButton != null) {
-            waypointButton.setMessage(waypointLabel());
-        }
     }
 
     /** Glides the view to frame a result: a hex filling a good part of the window, a town all of it. */
@@ -1730,12 +1783,20 @@ public class LokaMapScreen extends Screen {
 
     /** Development only: the middle of the coordinate bubble's Copy button, if it is showing. */
     public int[] devCopyButton() {
+        return devPinButton(0);
+    }
+
+    /** Development only: the middle of the coordinate bubble's Waypoint button, if it is showing. */
+    public int[] devPinWaypointButton() {
+        return devPinButton(1);
+    }
+
+    private int[] devPinButton(int index) {
         if (!pinned) {
             return null;
         }
-        return new int[] {pinBubbleX() + pinBubbleWidth() / 2,
-                pinBubbleY() + MapStyle.CARD_PADDING + MapStyle.CARD_ROW_HEIGHT + 3
-                        + MapStyle.PIN_BUTTON_HEIGHT / 2};
+        return new int[] {pinButtonX(index) + pinButtonEach() / 2,
+                pinButtonY() + MapStyle.PIN_BUTTON_HEIGHT / 2};
     }
 
     /** Development only: the middle of the zoom-out button. */
@@ -1745,13 +1806,6 @@ public class LokaMapScreen extends Screen {
     }
 
     // --- actions ---
-
-    private void toggleWaypoint() {
-        if (selected == null) {
-            return;
-        }
-        BetterLokaClient.map().toggle(at(selected));
-    }
 
     private void copyCoordinates() {
         if (selected == null || this.minecraft == null) {

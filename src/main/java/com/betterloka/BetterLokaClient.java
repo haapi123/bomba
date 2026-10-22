@@ -183,7 +183,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if ("1".equals(System.getenv("BETTERLOKA_DIAG")) || "map".equals(System.getenv("BETTERLOKA_DIAG"))) {
+        if (java.util.Set.of("1", "map", "waypoints").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
