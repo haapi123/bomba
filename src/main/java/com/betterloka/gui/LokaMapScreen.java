@@ -1,6 +1,8 @@
 package com.betterloka.gui;
 
 import com.betterloka.BetterLokaClient;
+import com.betterloka.api.model.ScheduledFight;
+import com.betterloka.fights.FightWatch;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapDataStore;
 import com.betterloka.map.MapHighlight;
@@ -22,6 +24,9 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -181,6 +186,46 @@ public class LokaMapScreen extends Screen {
     private MapDataStore.Snapshot suggestedFrom;
     private MapSearch.Hit suggestion;
 
+    // --- fights ---
+
+    /** The fights list and one fight's details, over the right of the map. */
+    private final FightsPanel fightsPanel = new FightsPanel(new FightsPanel.Host() {
+        @Override
+        public void showOnMap(ScheduledFight fight) {
+            focusFight(fight);
+        }
+
+        @Override
+        public MapTerritory mapTerritory(ScheduledFight fight) {
+            return territoryOf(fight);
+        }
+    });
+
+    /** The red wash the territories being fought over blink with. */
+    private final MapHighlight fightHighlight = new MapHighlight("map_fights");
+
+    /** A fight to fly to once its continent's territories are in. */
+    private String pendingFightId;
+
+    private final List<Button> tabButtons = new ArrayList<>();
+
+    /** Where the Fights button is this frame. */
+    private int fightsButtonX;
+    private int fightsButtonY;
+    private int fightsButtonWidth;
+
+    /** Where the new-fight banner is this frame, and which fight it is about. */
+    private int[] bannerBounds;
+    private ScheduledFight bannerFight;
+
+    /** How long a fight declared while the map is open is announced across the top. */
+    private static final long BANNER_MILLIS = 12_000;
+
+    /** How fast the fought-over territories blink: one beat in this many seconds. */
+    private static final double FIGHT_BLINK_SECONDS = 1.1;
+
+    private static final ItemStack FIGHT_MARKER = new ItemStack(Items.IRON_SWORD);
+
     public LokaMapScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_map"));
         this.parent = parent;
@@ -210,11 +255,12 @@ public class LokaMapScreen extends Screen {
         int count = Continent.values().length;
         int tabWidth = (width - 4 * (count - 1)) / count;
         int x = left;
+        tabButtons.clear();
         for (int i = 0; i < count; i++) {
             Continent target = Continent.values()[i];
             int thisWidth = i == count - 1 ? left + width - x : tabWidth;
-            addRenderableWidget(Button.builder(tabLabel(target), button -> select(target))
-                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+            tabButtons.add(addRenderableWidget(Button.builder(tabLabel(target), button -> select(target))
+                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build()));
             x += tabWidth + 4;
         }
 
@@ -252,9 +298,18 @@ public class LokaMapScreen extends Screen {
         addWidget(searchField);
     }
 
+    /** The continent's name, and a crossed-swords count of the fights on it. */
     private Component tabLabel(Continent value) {
-        Component label = Component.literal(value.displayName());
-        return value == continent ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
+        MutableComponent label = Component.literal(value.displayName());
+        if (value == continent) {
+            label = label.withStyle(ChatFormatting.YELLOW);
+        }
+        int fights = BetterLokaClient.fights().on(value.world()).size();
+        if (fights > 0) {
+            label = Component.empty().append(label)
+                    .append(Component.literal(" (" + fights + ")").withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
+        }
+        return label;
     }
 
     private Component listLabel() {
@@ -483,6 +538,26 @@ public class LokaMapScreen extends Screen {
         if (searchField.isVisible() && searchField.isMouseOver(click.x(), click.y())) {
             return super.mouseClicked(click, doubled);
         }
+        // So do the fights: their button, their panel and the banner announcing a new one.
+        if (overFightsButton(click.x(), click.y())) {
+            if (click.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+                fightsPanel.toggle();
+            }
+            return true;
+        }
+        if (fightsPanel.contains(click.x(), click.y())) {
+            if (click.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+                fightsPanel.mouseClicked(click.x(), click.y());
+            }
+            return true;
+        }
+        if (bannerBounds != null && bannerFight != null && click.button() == InputConstants.MOUSE_BUTTON_LEFT
+                && click.x() >= bannerBounds[0] && click.x() < bannerBounds[0] + bannerBounds[2]
+                && click.y() >= bannerBounds[1] && click.y() < bannerBounds[1] + bannerBounds[3]) {
+            fightsPanel.showDetail(bannerFight);
+            focusFight(bannerFight);
+            return true;
+        }
         // Minecraft 26.3 numbers the mouse buttons from one — left 1, middle 2, right 3 — where the
         // windowing library before it counted from nought. Testing for 1 as "right" is what turned
         // every left click into a right one: it pinned a coordinate instead of reaching the tabs,
@@ -543,6 +618,9 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (!dragging && fightsPanel.mouseDragged(click.y())) {
+            return true;
+        }
         if (dragging) {
             view.moveTo(dragStartX - (click.x() - dragOriginX) * blocksPerPixel,
                     dragStartZ - (click.y() - dragOriginY) * blocksPerPixel);
@@ -553,6 +631,7 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
+        fightsPanel.mouseReleased();
         if (dragging) {
             dragging = false;
             rememberView();
@@ -561,6 +640,12 @@ public class LokaMapScreen extends Screen {
                     && Math.abs(click.y() - dragOriginY) <= DRAG_SLOP) {
                 selected = territoryAt(click.x(), click.y());
                 selectedNumber = selected == null ? null : selected.number();
+                // A territory being fought over opens on its fight.
+                ScheduledFight fight = selected == null ? null
+                        : BetterLokaClient.fights().at(continent.world(), selected.number());
+                if (fight != null) {
+                    fightsPanel.showDetail(fight);
+                }
                 // Picking something else puts the search's light out; picking what it lit keeps it.
                 if (selected == null || !litTerritories().contains(selected)) {
                     found = null;
@@ -573,6 +658,9 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        if (fightsPanel.mouseScrolled(mouseX, mouseY, vertical)) {
+            return true;
+        }
         if (!insideMap(mouseX, mouseY) || vertical == 0) {
             return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
         }
@@ -605,6 +693,9 @@ public class LokaMapScreen extends Screen {
         return snapshot.index().at(worldX, worldZ);
     }
 
+    /** Development only: no hover card, for a photograph taken where the pointer cannot be moved. */
+    public static boolean devNoHover;
+
     /** Development only: forces the pre-index hit test, so the two can be timed side by side. */
     public static boolean devLinearHitTest;
 
@@ -627,6 +718,15 @@ public class LokaMapScreen extends Screen {
         layoutMap();
         GuiTheme.panel(context, contentLeft(), MAP_TOP - 4, contentWidth(), mapHeight + 8);
 
+        // The fights are asked for every fifteen seconds while the map is open, so one declared
+        // now is on it within a quarter of a minute; the tabs say where they are.
+        long now = System.currentTimeMillis();
+        BetterLokaClient.fights().poll(now);
+        Continent[] continents = Continent.values();
+        for (int i = 0; i < tabButtons.size() && i < continents.length; i++) {
+            tabButtons.get(i).setMessage(tabLabel(continents[i]));
+        }
+
         // One read per frame: the store may swap the snapshot under us at any moment, and half a
         // frame drawn from each would tear.
         snapshot = BetterLokaClient.mapData().snapshot(continent);
@@ -645,14 +745,29 @@ public class LokaMapScreen extends Screen {
         // In this order: move the zoom on, then fix the origin the frame is drawn against.
         advanceZoom();
         takeOrigin();
-        hovered = dragging || overSearch(mouseX, mouseY) ? null : territoryAt(mouseX, mouseY);
+        if (pendingFightId != null) {
+            applyPendingFight();
+        }
+        placeFightsUi();
+        hovered = dragging || devNoHover || overSearch(mouseX, mouseY) || overFightsUi(mouseX, mouseY)
+                ? null : territoryAt(mouseX, mouseY);
         drawMap(context, mouseX, mouseY);
+        // Over the map's own markers, the swords included.
+        context.nextStratum();
         drawSearch(context, mouseX, mouseY, delta);
+        drawFightsUi(context, now, mouseX, mouseY);
 
         // Outside the map's scissor: the card may reach past the panel, and should.
         // While the bubble is up it is what the pointer is about; two panels over one spot is
         // just noise.
         MapTerritory describing = pinned ? null : hovered != null ? hovered : selected;
+        // The fight's own details in the panel already say all the pinned card would, and more.
+        if (describing == selected && hovered == null && selected != null && fightsPanel.isOpen()) {
+            ScheduledFight fight = BetterLokaClient.fights().at(continent.world(), selected.number());
+            if (fight != null && fight.id() != null && fight.id().equals(fightsPanel.detailId())) {
+                describing = null;
+            }
+        }
         if (describing != null) {
             drawInfoCard(context, describing, mouseX, mouseY, hovered != null);
         }
@@ -678,6 +793,8 @@ public class LokaMapScreen extends Screen {
         // Over the ground and under the markers, like the claims it lights up.
         List<MapTerritory> lit = litTerritories();
         drawHighlight(context, lit);
+        List<MapTerritory> fought = foughtTerritories();
+        drawFightHighlight(context, fought);
 
         // The claims ride on the same fraction of a pixel the ground does, so the outlines stay
         // welded to the coast through a drag instead of stepping off it and back on. Placed against
@@ -704,6 +821,11 @@ public class LokaMapScreen extends Screen {
         for (MapTerritory territory : territories()) {
             if (!offScreen(territory)) {
                 drawIcon(context, territory);
+            }
+        }
+        for (MapTerritory territory : fought) {
+            if (!offScreen(territory)) {
+                drawFightMarker(context, territory);
             }
         }
         devIconNanos = System.nanoTime() - devAfterBorders;
@@ -1064,6 +1186,20 @@ public class LokaMapScreen extends Screen {
         List<CardLine> lines = new ArrayList<>();
         lines.add(CardLine.header(Component.literal(territory.label()).withStyle(ChatFormatting.BOLD)));
 
+        ScheduledFight fight = BetterLokaClient.fights().at(continent.world(), territory.number());
+        if (fight != null) {
+            long now = System.currentTimeMillis();
+            lines.add(CardLine.owner(Component.literal(FightsPanel.attackerName(fight) + " vs "
+                    + (fight.defended() ? FightsPanel.defenderName(fight)
+                    : Component.translatable("betterloka.fights.neutral").getString())), FightsPanel.ATTACKER));
+            lines.add(CardLine.row(Component.translatable("betterloka.fights.card_when"),
+                    Component.literal(FightsPanel.status(fight, now)), FightsPanel.statusColor(fight, now)));
+            lines.add(CardLine.row(Component.translatable("betterloka.fights.card_warping"),
+                    Component.literal(FightsPanel.turnout(fight)), GuiTheme.TEXT));
+            lines.add(CardLine.small(Component.translatable("betterloka.fights.card_click")));
+            lines.add(CardLine.separator());
+        }
+
         if (territory.neutral()) {
             lines.add(CardLine.owner(Component.translatable("betterloka.map.unclaimed"),
                     GuiTheme.MUTED));
@@ -1214,8 +1350,13 @@ public class LokaMapScreen extends Screen {
                 y = mouseY - MapStyle.CARD_CURSOR_OFFSET - height;
             }
         } else {
-            x = mapX + 4;
+            // Beside the zoom buttons rather than over them.
+            x = mapX + MapStyle.ZOOM_BUTTON_MARGIN * 2 + MapStyle.ZOOM_BUTTON_SIZE;
             y = mapY + mapHeight - height - 4;
+        }
+        // Beside the fights panel rather than over it: the panel is what was being read.
+        if (followCursor && fightsPanel.isOpen() && x + width > fightsPanel.x() && x < this.width) {
+            x = Math.min(x, mouseX - MapStyle.CARD_CURSOR_OFFSET - width);
         }
         x = Math.max(MapStyle.CARD_SCREEN_MARGIN,
                 Math.min(x, this.width - width - MapStyle.CARD_SCREEN_MARGIN));
@@ -1825,6 +1966,239 @@ public class LokaMapScreen extends Screen {
     public void removed() {
         // Closed by any route — the map key, a teleport, a disconnect — the texture goes with it.
         highlight.clear();
+        fightHighlight.clear();
         super.removed();
+    }
+
+    // --- fights ---
+
+    /** The territory a fight is over, as the map draws it, on whichever continent it is. */
+    private MapTerritory territoryOf(ScheduledFight fight) {
+        Continent where = Continent.ofWorld(fight.world());
+        String number = fight.territoryNumber();
+        if (where == null || number == null) {
+            return null;
+        }
+        List<MapTerritory> list = where == continent ? territories()
+                : BetterLokaClient.mapData().snapshot(where).territories();
+        for (MapTerritory territory : list) {
+            if (number.equals(territory.number())) {
+                return territory;
+            }
+        }
+        return null;
+    }
+
+    /** Flies to a fight's territory, switching to its continent first if it is on another. */
+    private void focusFight(ScheduledFight fight) {
+        Continent where = Continent.ofWorld(fight.world());
+        if (where == null) {
+            return;
+        }
+        if (where != continent) {
+            select(where);
+        }
+        pendingFightId = fight.id();
+    }
+
+    /** The flight a fight asked for, once its continent's territories are on screen. */
+    private void applyPendingFight() {
+        ScheduledFight fight = BetterLokaClient.fights().byId(pendingFightId);
+        if (fight == null) {
+            pendingFightId = null;
+            return;
+        }
+        MapTerritory territory = territoryOf(fight);
+        if (territory == null) {
+            return;
+        }
+        pendingFightId = null;
+        found = null;
+        selectedNumber = territory.number();
+        selected = territory;
+        flyTo(new MapSearch.Hit(MapSearch.Kind.TERRITORY, territory.label(), territory, List.of(territory),
+                territory.centerX(), territory.centerZ()));
+    }
+
+    /** The territories on this continent with a fight on them. */
+    private List<MapTerritory> foughtTerritories() {
+        List<MapTerritory> out = new ArrayList<>();
+        for (ScheduledFight fight : BetterLokaClient.fights().on(continent.world())) {
+            MapTerritory territory = territoryOf(fight);
+            if (territory != null && !out.contains(territory)) {
+                out.add(territory);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The red that blinks over a territory being fought over, so the fights are the first thing
+     * seen on opening the map. One texture for all of them, like the search's light.
+     */
+    private void drawFightHighlight(GuiGraphicsExtractor context, List<MapTerritory> fought) {
+        if (fought.isEmpty()) {
+            fightHighlight.clear();
+            return;
+        }
+        fightHighlight.ensure(fought, view.targetZoom());
+        if (!fightHighlight.ready()) {
+            return;
+        }
+        float scale = (float) (fightHighlight.blocksPerTexel() / blocksPerPixel);
+        if (scale <= 0 || !Float.isFinite(scale)) {
+            return;
+        }
+        double beat = (System.currentTimeMillis() % 100_000L) / 1000.0 / FIGHT_BLINK_SECONDS;
+        double strength = 0.25 + 0.75 * (0.5 + 0.5 * Math.cos(beat * 2 * Math.PI));
+        int tint = (int) Math.round(255 * strength) << 24 | 0xFF2B2B;
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate((float) screenXExact(fightHighlight.left()), (float) screenYExact(fightHighlight.top()));
+        matrices.scale(scale, scale);
+        context.blit(RenderPipelines.GUI_TEXTURED, fightHighlight.id(), 0, 0, 0f, 0f,
+                fightHighlight.width(), fightHighlight.height(), fightHighlight.width(), fightHighlight.height(),
+                fightHighlight.width(), fightHighlight.height(), tint);
+        matrices.popMatrix();
+    }
+
+    /** A sword over the territory's marker, and how long until the fight when there is room to say. */
+    private void drawFightMarker(GuiGraphicsExtractor context, MapTerritory territory) {
+        ScheduledFight fight = BetterLokaClient.fights().at(continent.world(), territory.number());
+        if (fight == null) {
+            return;
+        }
+        int centreX = screenXOf(territory.centerX());
+        int centreY = screenYOf(territory.centerZ());
+        double onScreenWidth = (territory.maxX() - territory.minX()) / blocksPerPixel;
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate(centreX - 6, centreY - MapStyle.ICON_SIZE / 2f - 13);
+        matrices.scale(0.75f, 0.75f);
+        context.item(FIGHT_MARKER, 0, 0);
+        matrices.popMatrix();
+        if (onScreenWidth >= 30) {
+            long now = System.currentTimeMillis();
+            String text = FightsPanel.shortStatus(fight, now);
+            int width = this.font.width(text) + 4;
+            int y = centreY + MapStyle.ICON_SIZE / 2 + (territory.hasConquestPoints() ? 11 : 2);
+            context.fill(centreX - width / 2, y - 1, centreX - width / 2 + width, y + 9, 0xC0000000);
+            context.text(this.font, text, centreX - width / 2 + 2, y, FightsPanel.statusColor(fight, now));
+        }
+    }
+
+    /** Where the Fights button and panel go this frame: the right of the map, under the search. */
+    private void placeFightsUi() {
+        Component label = fightsButtonLabel();
+        fightsButtonWidth = this.font.width(label) + 22;
+        fightsButtonX = searchField.getX() - fightsButtonWidth - 4;
+        fightsButtonY = mapY + SEARCH_INSET;
+        int panelWidth = (int) Math.max(170, Math.min(240, mapWidth * 0.42));
+        int panelY = mapY + SEARCH_INSET + SEARCH_HEIGHT + 16;
+        fightsPanel.place(mapX + mapWidth - panelWidth - SEARCH_INSET, panelY, panelWidth,
+                mapY + mapHeight - SEARCH_INSET - panelY);
+    }
+
+    private Component fightsButtonLabel() {
+        int count = BetterLokaClient.fights().fights().size();
+        return Component.translatable("betterloka.fights.button", count);
+    }
+
+    private boolean overFightsButton(double screenX, double screenY) {
+        return mapWidth > 0 && screenX >= fightsButtonX && screenX < fightsButtonX + fightsButtonWidth
+                && screenY >= fightsButtonY && screenY < fightsButtonY + SEARCH_HEIGHT;
+    }
+
+    /** Whether the pointer is on the fights' button, panel or banner, where the map should not react. */
+    private boolean overFightsUi(double screenX, double screenY) {
+        return overFightsButton(screenX, screenY) || fightsPanel.contains(screenX, screenY)
+                || bannerBounds != null && screenX >= bannerBounds[0] && screenX < bannerBounds[0] + bannerBounds[2]
+                && screenY >= bannerBounds[1] && screenY < bannerBounds[1] + bannerBounds[3];
+    }
+
+    private void drawFightsUi(GuiGraphicsExtractor context, long now, int mouseX, int mouseY) {
+        FightWatch watch = BetterLokaClient.fights();
+        boolean any = !watch.fights().isEmpty();
+        boolean over = overFightsButton(mouseX, mouseY);
+        FilterMenu.button(context, fightsButtonX, fightsButtonY, fightsButtonWidth, SEARCH_HEIGHT,
+                over || fightsPanel.isOpen());
+        if (any) {
+            // The button's edge beats with the territories, so it is found as fast as they are.
+            double beat = (now % 100_000L) / 1000.0 / FIGHT_BLINK_SECONDS;
+            int alpha = (int) Math.round(255 * (0.4 + 0.6 * (0.5 + 0.5 * Math.cos(beat * 2 * Math.PI))));
+            FilterMenu.outline(context, fightsButtonX, fightsButtonY, fightsButtonWidth, SEARCH_HEIGHT,
+                    alpha << 24 | 0xFF4040);
+        }
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate(fightsButtonX + 3, fightsButtonY + 2);
+        matrices.scale(0.75f, 0.75f);
+        context.item(FIGHT_MARKER, 0, 0);
+        matrices.popMatrix();
+        context.text(this.font, fightsButtonLabel(), fightsButtonX + 17, fightsButtonY + 4,
+                any ? 0xFFFF7070 : GuiTheme.TEXT);
+
+        fightsPanel.render(context, this.font, watch, now, mouseX, mouseY);
+        drawFightBanner(context, watch, now, mouseX, mouseY);
+    }
+
+    /** A fight declared while the map is open is announced across its top for a few seconds. */
+    private void drawFightBanner(GuiGraphicsExtractor context, FightWatch watch, long now, int mouseX, int mouseY) {
+        bannerBounds = null;
+        bannerFight = null;
+        ScheduledFight newest = null;
+        long newestAt = 0;
+        for (ScheduledFight fight : watch.fights()) {
+            long seen = watch.firstSeen(fight);
+            if (seen > 0 && now - seen < BANNER_MILLIS && seen > newestAt) {
+                newest = fight;
+                newestAt = seen;
+            }
+        }
+        if (newest == null) {
+            return;
+        }
+        Component text = Component.translatable("betterloka.fights.banner",
+                FightsPanel.attackerName(newest), newest.defended() ? FightsPanel.defenderName(newest)
+                        : Component.translatable("betterloka.fights.neutral").getString(),
+                FightsPanel.where(newest, territoryOf(newest)));
+        int right = fightsPanel.isOpen() ? fightsPanel.x() - SEARCH_INSET : mapX + mapWidth - SEARCH_INSET;
+        int left = mapX + MapStyle.ZOOM_BUTTON_MARGIN * 2 + MapStyle.ZOOM_BUTTON_SIZE;
+        int available = Math.max(60, right - left);
+        String shown = this.font.plainSubstrByWidth(text.getString(), available - 12);
+        int width = this.font.width(shown) + 12;
+        int x = left + (available - width) / 2;
+        int y = mapY + SEARCH_INSET + SEARCH_HEIGHT + 18;
+        boolean over = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + 16;
+        MapStyle.card(context, x, y, width, 16, over ? 0xFFFF9090 : 0xFFFF4040);
+        context.text(this.font, shown, x + 6, y + 4, 0xFFFFD0D0);
+        bannerBounds = new int[]{x, y, width, 16};
+        bannerFight = newest;
+    }
+
+    // --- fights, for the dev harness ---
+
+    public int[] devFightsButton() {
+        return new int[]{fightsButtonX + fightsButtonWidth / 2, fightsButtonY + SEARCH_HEIGHT / 2};
+    }
+
+    public int[] devFightCard(int i) {
+        return fightsPanel.devCard(i);
+    }
+
+    public String devFightsState() {
+        FightWatch watch = BetterLokaClient.fights();
+        return "fights=" + watch.fights().size() + " updated=" + watch.updatedAt() + " failed=" + watch.failed()
+                + " panelOpen=" + fightsPanel.isOpen() + " detail=" + fightsPanel.detailId()
+                + " continent=" + continent + " selected=" + selectedNumber + " fought=" + foughtTerritories().size();
+    }
+
+    /** Opens a fight as clicking its card would. */
+    public void devOpenFight(String id) {
+        ScheduledFight fight = BetterLokaClient.fights().byId(id);
+        if (fight != null) {
+            fightsPanel.showDetail(fight);
+            focusFight(fight);
+        }
     }
 }

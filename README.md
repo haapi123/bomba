@@ -17,7 +17,6 @@ never talks to the game server and sends nothing about you anywhere.
 | **Loka Market** | Working |
 | **Town Finder** | Working |
 | **Town Logger** | Working |
-| **Fight Manager** | Working |
 | **Loka Grinder** | Working |
 | Loka Helper | Planned |
 
@@ -385,6 +384,36 @@ The map opens on the centre Loka publishes rather than the middle of the territo
 not cosmetic either: the geometric centre of Kalros is bare sea floor with no tiles at all, against
 40 of 169 at Loka's own centre.
 
+### Fights
+
+![Fights on the map](docs/map-fights.png)
+
+The fights Loka has on its books are on the map — the list the Fight Manager used to be. The
+territory being fought over **blinks red**, with a sword on it and a countdown to the start, and the
+continent tabs carry how many fights each has, so on opening the map it is plain where the fighting
+is. **Fights** over the map's top right shows or hides the list.
+
+Each fight in the list says who is fighting whom, their towns, where, whether reinforcements may be
+called, when it starts and how many are warping in on each side. Clicking one flies the map to it
+and opens its details; so does clicking a territory that is blinking.
+
+![A fight's details](docs/map-fight-details.png)
+
+The details: the two sides, each with its alliance, town and strength and **everybody warping in by
+name**; whether **reinforcements** are on; **when it starts** — a countdown and the clock time, in
+your own time zone — and when it was declared; and the ground itself: its **mutator**, its
+**bonus**, what it produces and what it is worth.
+
+The start time is worked out, because Loka publishes none until a fight begins. It does not need to:
+a fight goes off a fixed time after it is declared, and the declaration is in the record's id, a
+MongoDB ObjectId. Read off two hundred fights over ten days of `/battlezones`, that time is fifteen
+minutes for neutral ground, thirty for a held territory on Rivina and an hour for a held territory
+anywhere else.
+
+It is live: while the map is open the fights are asked for every fifteen seconds — one small request
+— so a fight declared now is on the map within a quarter of a minute, announced across its top, and
+the warping counts and names fill in as people sign up. Nothing is fetched while the map is shut.
+
 ## Discord bot
 
 [`bot/`](bot/README.md) is a separate program that watches for towns falling and **pings a Discord
@@ -443,25 +472,6 @@ java -jar bot/build/libs/betterloka-bot-<version>.jar --check "Hilo"
 ```
 
 See [bot/README.md](bot/README.md) for the webhook and bot-token setup.
-
-## Fight Manager
-
-![Fight Manager](docs/fight-manager.png)
-
-Every battle Loka has on its books — declared and waiting, or already under way:
-
-- **Who is fighting whom**, town and alliance on each side
-- **Where** — continent and territory number
-- **How many are signed up** on each side
-- Whether **reinforcements** can be called
-- **When it can go off**
-
-That last one is derived, because Loka publishes no start time: the field stays zero until a fight
-actually begins. What decides it is the defending town's **vulnerability window**, so that is what is
-shown — the eight hours it is attackable for. Not a countdown: the hour comes without a time zone, so
-"starts in 3h" would be wrong for most people reading it where the window itself is exactly right.
-
-Battles under way sort first and carry an orange spine.
 
 ## Town Logger
 

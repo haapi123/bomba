@@ -16,7 +16,8 @@ import java.util.List;
  * change or the zoom has moved far enough that its edge would look soft or thin.
  */
 public final class MapHighlight {
-    private static final Identifier ID = Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, "map_highlight");
+    private final Identifier id;
+    private final String label;
 
     /** The most texels along either side, so a town spread across a continent stays a small upload. */
     private static final int MAX_TEXELS = 1024;
@@ -39,8 +40,19 @@ public final class MapHighlight {
     private double paintedFor;
     private long claims;
 
+    /** The search's light. */
+    public MapHighlight() {
+        this("map_highlight");
+    }
+
+    /** A light of its own, under its own texture, so two can be up at once. */
+    public MapHighlight(String name) {
+        this.id = Identifier.fromNamespaceAndPath(BetterLoka.MOD_ID, name);
+        this.label = "betterloka/" + name;
+    }
+
     public Identifier id() {
-        return ID;
+        return id;
     }
 
     public boolean ready() {
@@ -115,7 +127,7 @@ public final class MapHighlight {
             }
             // Registering under the id in use replaces and closes the old one.
             Minecraft.getInstance().getTextureManager()
-                    .register(ID, new MapTerrain.SmoothTexture("betterloka/map_highlight", image));
+                    .register(id, new MapTerrain.SmoothTexture(label, image));
             uploaded = true;
             left = originX;
             top = originZ;
@@ -133,7 +145,7 @@ public final class MapHighlight {
     /** Drops the texture, for a cleared search or a closed map. */
     public void clear() {
         if (uploaded) {
-            Minecraft.getInstance().getTextureManager().release(ID);
+            Minecraft.getInstance().getTextureManager().release(id);
         }
         uploaded = false;
         paintedFor = 0;

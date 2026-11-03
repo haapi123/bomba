@@ -8,6 +8,7 @@ import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.ObjectIds;
 import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.api.model.Territory;
+import com.betterloka.api.model.TerritoryDetails;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -275,6 +276,11 @@ public final class LokaApi {
             }
         }
         return territories;
+    }
+
+    /** One territory's full record: its mutator, buff, reinforcements and what it produces. */
+    public TerritoryDetails fetchTerritory(String territoryId) throws ApiException {
+        return TerritoryDetails.fromJson(getObject(BASE_URL + "/territories/" + encode(territoryId), true));
     }
 
     /**

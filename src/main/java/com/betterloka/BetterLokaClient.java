@@ -6,6 +6,7 @@ import com.betterloka.api.HttpTransport;
 import com.betterloka.api.LabyApi;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
+import com.betterloka.fights.FightWatch;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
@@ -93,6 +94,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static ShrineTracker shrines;
     private static ShrineIcons shrineIcons;
     private static BetterLokaConfig config;
+    private static FightWatch fights;
 
     @Override
     public void onInitializeClient() {
@@ -126,6 +128,20 @@ public class BetterLokaClient implements ClientModInitializer {
         nameHistory = new NameHistoryService(new LabyApi(transport), transport,
                 configDir().resolve("name-history.json"));
         map = new MapService(configDir().resolve("waypoints.json"));
+        // The declared fights, for the map: asked for only while the map is open, every fifteen
+        // seconds, so a fight placed while somebody is looking is on it within a quarter of a minute.
+        fights = new FightWatch(new FightWatch.Source() {
+            @Override
+            public java.util.List<com.betterloka.api.model.ScheduledFight> fights() throws com.betterloka.api.ApiException {
+                return loka.fetchScheduledFights();
+            }
+
+            @Override
+            public com.betterloka.api.model.TerritoryDetails territory(String territoryId)
+                    throws com.betterloka.api.ApiException {
+                return loka.fetchTerritory(territoryId);
+            }
+        }, loka.executor());
         // The map's own data lives on its own, refreshed in the background, so opening the screen
         // is instant and a capture shows up whether or not anybody was looking.
         mapData = new MapDataStore(new DynmapApi(transport), configDir().resolve("mapcache"),
@@ -196,7 +212,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -347,6 +363,11 @@ public class BetterLokaClient implements ClientModInitializer {
     /** The whole-continent map download, which the map screen starts and reports on. */
     public static com.betterloka.map.TerrainDownload terrainDownload() {
         return terrainDownload;
+    }
+
+    /** The declared fights, which the map polls while it is open. */
+    public static FightWatch fights() {
+        return fights;
     }
 
     public static TownCache towns() {

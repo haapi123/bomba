@@ -1,6 +1,5 @@
 package com.betterloka;
 
-import com.betterloka.gui.FightManagerScreen;
 import com.betterloka.gui.LokaMarketScreen;
 import com.betterloka.gui.PlayerFinderScreen;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -58,6 +57,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("fights".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            fightsInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("market".equals(System.getenv("BETTERLOKA_DIAG"))) {
             marketInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -75,14 +79,14 @@ public final class DevDiagnostics {
         step(40, () -> { });
         step(1, () -> fps("baseline, no screen open"));
 
-        // A clean Fight Manager refresh, before the Market has queued anything.
-        step(2, () -> client().gui.setScreen(new FightManagerScreen(null)));
+        // A clean fights refresh on the map, before the Market has queued anything.
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(1, this::startTimer);
         step(2, () -> { });
         step(1, () -> fightState("2 ticks after opening"));
         step(60, () -> { });
         step(1, () -> fightState("3 s after opening (control)"));
-        step(1, () -> fps("fight manager, idle"));
+        step(1, () -> fps("map with fights, idle"));
 
         // A search, which is the whole Market now.
         step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
@@ -100,7 +104,7 @@ public final class DevDiagnostics {
 
         // A refresh submitted straight after the Market has been used, which is where the two
         // screens used to collide.
-        step(2, () -> client().gui.setScreen(new FightManagerScreen(null)));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
         step(1, this::startTimer);
         step(2, () -> { });
         step(1, () -> fightState("2 ticks after opening, after using the Market"));
@@ -577,12 +581,11 @@ public final class DevDiagnostics {
 
     private void fightState(String label) {
         Screen screen = client().gui.screen();
-        if (!(screen instanceof FightManagerScreen fights)) {
-            BetterLoka.LOGGER.info("DIAG {}: fight manager not open", label);
+        if (!(screen instanceof com.betterloka.gui.LokaMapScreen map)) {
+            BetterLoka.LOGGER.info("DIAG {}: map not open", label);
             return;
         }
-        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: slot={}", label, sinceTimerMillis(),
-                slot(field(fights, "slot")));
+        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: {}", label, sinceTimerMillis(), map.devFightsState());
     }
 
     /** How much work is sitting in each shared pool — the queue a new screen has to get through. */
@@ -1012,6 +1015,65 @@ public final class DevDiagnostics {
         step(20, () -> BetterLoka.LOGGER.info("DIAG translator checks done"));
     }
 
+    // --- the fights, on the map ---
+
+    private void fightsInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
+        shot(10, "fights-menu");
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devNoHover = true;
+            client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null));
+        });
+        step(100, () -> fightState("map open 5 s"));
+        shot(5, "fights-list");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightCard(0), left);
+            }
+        });
+        step(80, () -> fightState("first fight opened"));
+        shot(5, "fights-detail");
+        step(2, () -> scroll(-10));
+        shot(5, "fights-detail-scrolled");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightsButton(), left);
+            }
+        });
+        step(20, () -> fightState("panel shut"));
+        shot(5, "fights-map-only");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightsButton(), left);
+            }
+        });
+        step(5, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightCard(1), left);
+            }
+        });
+        step(80, () -> fightState("second fight opened"));
+        shot(5, "fights-detail-2");
+        // The panel scrolled, by the wheel over it.
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                int[] card = map.devFightsButton();
+                map.mouseScrolled(card[0] + 20, card[1] + 120, 0, -6);
+            }
+        });
+        shot(5, "fights-detail-2-scrolled");
+        step(2, () -> client().gui.setScreen(null));
+        step(20, () -> {
+            BetterLoka.LOGGER.info("DIAG fights checks done");
+            client().stop();
+        });
+    }
+
     // --- the Market: square, stall, filter, profile, search ---
 
     private void marketInput() {
@@ -1125,7 +1187,10 @@ public final class DevDiagnostics {
         step(60, () -> marketScreenState("searched xp bottle"));
         shot(5, "market-search-xp");
         step(2, () -> client().gui.setScreen(null));
-        step(20, () -> BetterLoka.LOGGER.info("DIAG market checks done"));
+        step(20, () -> {
+            BetterLoka.LOGGER.info("DIAG market checks done");
+            client().stop();
+        });
     }
 
     private static void marketScreenState(String label) {

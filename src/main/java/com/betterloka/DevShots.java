@@ -191,12 +191,10 @@ public final class DevShots {
         step(20, () -> { });
         shot(20, "capture-after");
 
-        // Nothing is usually declared on Loka, so the screenshot is taken over battles already
-        // fought — real names, real turnouts, drawn by the same code.
-        step(5, () -> com.betterloka.gui.FightManagerScreen.devShowRecentBattles = true);
-        step(5, () -> client().gui.setScreen(new com.betterloka.gui.FightManagerScreen(null)));
-        step(600, () -> { });
-        shot(20, "fight-manager");
+        // The declared fights, listed over the map.
+        step(5, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null)));
+        step(200, () -> { });
+        shot(20, "map-fights");
 
         step(5, () -> {
             BetterLoka.LOGGER.info("SHOT done");
