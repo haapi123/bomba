@@ -54,7 +54,7 @@ public final class WaypointHud {
         }
 
         List<Waypoint> waypoints = map.waypoints();
-        if (waypoints.size() < LIST_FROM) {
+        if (waypoints.size() < LIST_FROM || com.betterloka.grind.ShrineTracker.inNether(client)) {
             return;
         }
 

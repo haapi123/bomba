@@ -11,6 +11,10 @@ import com.betterloka.data.TownCache;
 import com.betterloka.grind.GrindHud;
 import com.betterloka.grind.GrindTimer;
 import com.betterloka.grind.GrindTimers;
+import com.betterloka.grind.ShrineIcons;
+import com.betterloka.grind.ShrineTimers;
+import com.betterloka.grind.ShrineTracker;
+import com.betterloka.grind.ShrineWaypoints;
 import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.helper.GuiScaleController;
@@ -86,6 +90,8 @@ public class BetterLokaClient implements ClientModInitializer {
     private static MapTerrain mapTerrain;
     private static com.betterloka.map.TerrainDownload terrainDownload;
     private static GrindTimers grindTimers;
+    private static ShrineTracker shrines;
+    private static ShrineIcons shrineIcons;
     private static BetterLokaConfig config;
 
     @Override
@@ -143,6 +149,12 @@ public class BetterLokaClient implements ClientModInitializer {
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
         new ShulkerWatcher(grindTimers, config).register();
         new GrindHud(grindTimers, config).register();
+        // The Nether shrines: markers over each, the ground around each, and a fifteen minute
+        // timer started by the server's own "was purged!" line.
+        shrines = new ShrineTracker(new ShrineTimers(configDir().resolve("shrines.json")), config);
+        shrines.register();
+        shrineIcons = new ShrineIcons();
+        new ShrineWaypoints(shrines, shrineIcons, config).register();
         // The inventory and the hotbar get their own GUI scales. Off by default, and it hands the
         // player's own setting back on the way out of a world.
         new GuiScaleController(config).register();
@@ -183,7 +195,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -249,6 +261,14 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static GrindTimers grindTimers() {
         return grindTimers;
+    }
+
+    public static ShrineTracker shrines() {
+        return shrines;
+    }
+
+    public static ShrineIcons shrineIcons() {
+        return shrineIcons;
     }
 
     public static KeyMapping shulkerTimerKey() {

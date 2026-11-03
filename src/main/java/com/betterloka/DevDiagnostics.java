@@ -48,6 +48,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("shrines".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            shrineInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("waypoints".equals(System.getenv("BETTERLOKA_DIAG"))) {
             waypointInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -856,6 +861,114 @@ public final class DevDiagnostics {
         shot(5, "waypoints-after-delete");
         step(2, () -> client().gui.setScreen(null));
         step(20, () -> BetterLoka.LOGGER.info("DIAG waypoint checks done"));
+    }
+
+    /**
+     * The Nether shrines in a real Nether: markers seen from outside, a shrine's ground walked onto,
+     * purge lines sent by the server itself — one the location has to resolve, one that names its
+     * shrine, one nobody can place, one learned at a shrine — then the switches and the tab.
+     */
+    private void shrineInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        String nether = "execute in minecraft:the_nether run tp @a ";
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+            var config = BetterLokaClient.config();
+            config.setShrineWaypointsEnabled(true);
+            for (var kind : com.betterloka.grind.ShrineKind.values()) {
+                config.setShrineKindEnabled(kind, true);
+            }
+        });
+        step(2, () -> server("gamemode spectator @a"));
+        step(20, () -> shrineState("still in the overworld"));
+        // Outside every shrine, looking towards Ghast Shrine 1 with the others beyond it.
+        step(2, () -> server(nether + "1075 183 1172 60 8"));
+        step(200, () -> shrineState("in the Nether, outside every shrine"));
+        shot(5, "shrines-markers");
+        step(2, () -> server(nether + "1040 180 1192 60 8"));
+        step(10, () -> shrineState("on Ghast Shrine 1's ground"));
+        shot(2, "shrines-entered");
+        step(40, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
+        step(5, () -> shrineState("'Ghast Shrine was purged!' while on Ghast Shrine 1"));
+        shot(2, "shrines-purged");
+        step(2, () -> server("tellraw @a \"Magma Cube Shrine 2 was purged!\""));
+        step(5, () -> shrineState("'Magma Cube Shrine 2 was purged!' while on Ghast Shrine 1"));
+        step(2, () -> server(nether + "760 150 1050 0 0"));
+        step(1300, () -> server("tellraw @a \"Infernal Altar was purged!\""));
+        step(5, () -> shrineState("'Infernal Altar' far from any shrine, a minute after leaving one"));
+        step(2, () -> server(nether + "352 175 1174 0 0"));
+        step(20, () -> server("tellraw @a \"Infernal Altar was purged!\""));
+        step(5, () -> shrineState("'Infernal Altar' on Blaze Shrine 3 -> learned"));
+        step(2, () -> server(nether + "760 150 1050 0 0"));
+        step(1300, () -> server("tellraw @a \"Infernal Altar was purged!\""));
+        step(5, () -> shrineState("'Infernal Altar' again, far away -> the learned shrine"));
+        step(2, () -> server(nether + "1075 183 1172 60 8"));
+        step(60, () -> BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, false));
+        shot(5, "shrines-no-ghasts");
+        step(2, () -> {
+            BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, true);
+            BetterLokaClient.config().setShrineWaypointsEnabled(false);
+        });
+        shot(5, "shrines-all-off");
+        step(2, () -> BetterLokaClient.config().setShrineWaypointsEnabled(true));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaGrinderScreen(null)));
+        step(5, () -> realClick("Shrines", left));
+        step(10, () -> shrineState("Shrines Grinder tab open"));
+        shot(5, "shrines-tab");
+        step(2, () -> realClick("Ghasts", left));
+        step(5, () -> shrineState("clicked the Ghasts switch"));
+        step(2, () -> realClick("Ghasts", left));
+        step(5, () -> realClickAt(grinderAction(1), left));
+        step(5, () -> shrineState("clicked Start on Ghast Shrine 2"));
+        shot(5, "shrines-tab-started");
+        step(2, () -> client().gui.setScreen(null));
+        step(2, () -> server("execute in minecraft:overworld run tp @a 0 100 0"));
+        step(60, () -> shrineState("back in the overworld"));
+        shot(5, "shrines-overworld");
+        step(20, () -> BetterLoka.LOGGER.info("DIAG shrine checks done"));
+    }
+
+    private static void server(String command) {
+        var server = client().getSingleplayerServer();
+        if (server == null) {
+            BetterLoka.LOGGER.info("DIAG no integrated server for: {}", command);
+            return;
+        }
+        server.execute(() -> server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command));
+    }
+
+    private static int[] grinderAction(int index) {
+        if (client().gui.screen() instanceof com.betterloka.gui.LokaGrinderScreen grinder
+                && grinder.devActions().size() > index) {
+            return grinder.devActions().get(index);
+        }
+        return null;
+    }
+
+    private static void shrineState(String label) {
+        var shrines = BetterLokaClient.shrines();
+        long now = System.currentTimeMillis();
+        StringBuilder timers = new StringBuilder();
+        for (var shrine : com.betterloka.grind.Shrines.ALL) {
+            var state = shrines.timers().state(shrine, now);
+            if (state != com.betterloka.grind.ShrineTimers.State.UNKNOWN) {
+                timers.append(' ').append(shrine.id()).append('=').append(state)
+                        .append('(').append(com.betterloka.grind.ShrineTimers.clock(shrines.timers().remaining(shrine, now)))
+                        .append(')');
+            }
+        }
+        var config = BetterLokaClient.config();
+        var player = client().player;
+        BetterLoka.LOGGER.info("DIAG shrines {}: nether={} at={} inside={} timers:{} learned={} shown(all={} ghast={} blaze={} magma={})",
+                label, com.betterloka.grind.ShrineTracker.inNether(client()),
+                player == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f,%.0f,%.0f",
+                        player.getX(), player.getY(), player.getZ()),
+                shrines.inside() == null ? null : shrines.inside().label(), timers, shrines.timers().learned(),
+                config.shrineWaypointsEnabled(),
+                config.shrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST),
+                config.shrineKindEnabled(com.betterloka.grind.ShrineKind.BLAZE),
+                config.shrineKindEnabled(com.betterloka.grind.ShrineKind.MAGMA_CUBE));
     }
 
     private static int[] listAction(int index) {

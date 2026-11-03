@@ -54,7 +54,9 @@ public final class WaypointWorldRenderer {
             return;
         }
         var waypoints = map.waypoints();
-        if (waypoints.isEmpty()) {
+        // The map's waypoints are places on a continent; in the Nether the same numbers are
+        // somewhere else entirely, and the Nether has its own shrine markers.
+        if (waypoints.isEmpty() || com.betterloka.grind.ShrineTracker.inNether(client)) {
             return;
         }
 
@@ -94,9 +96,15 @@ public final class WaypointWorldRenderer {
         return true;
     }
 
-    private void draw(GuiGraphicsExtractor context, Minecraft client, Camera camera, Vec3 eye,
-                      Waypoint waypoint, int screenWidth, int screenHeight, double fov) {
-        Vector3f view = toViewSpace(camera, eye, waypoint);
+    /**
+     * Where a world point lands on the interface, as {x, y}: in front, projected and kept off the
+     * edges; behind, pinned low on the side it lies.
+     *
+     * <p>Shared with the Nether shrine markers, so every marker the mod draws sits the same way.
+     */
+    public static int[] project(Camera camera, Vec3 eye, double worldX, double worldY, double worldZ,
+                                int screenWidth, int screenHeight, double fov) {
+        Vector3f view = toViewSpace(camera, eye, worldX, worldY, worldZ);
 
         // Camera space looks down -Z, so anything at or past zero is behind the player.
         boolean behind = view.z >= -0.05f;
@@ -115,6 +123,15 @@ public final class WaypointWorldRenderer {
             x = Math.max(EDGE_MARGIN, Math.min(screenWidth - EDGE_MARGIN, x));
             y = Math.max(EDGE_MARGIN, Math.min(screenHeight - EDGE_MARGIN, y));
         }
+        return new int[] {x, y};
+    }
+
+    private void draw(GuiGraphicsExtractor context, Minecraft client, Camera camera, Vec3 eye,
+                      Waypoint waypoint, int screenWidth, int screenHeight, double fov) {
+        int[] at = project(camera, eye, waypoint.x(), waypoint.y() + LIFT, waypoint.z(),
+                screenWidth, screenHeight, fov);
+        int x = at[0];
+        int y = at[1];
 
         double distance = waypoint.distanceTo(eye.x, eye.z);
         Component label = Component.literal(waypoint.label());
@@ -138,19 +155,19 @@ public final class WaypointWorldRenderer {
                 x - client.font.width(below) / 2, y + ICON_SIZE / 2 + 2, 0xFFC8C8C8);
     }
 
-    /** The waypoint's offset from the eye, turned into the camera's own frame. */
-    private static Vector3f toViewSpace(Camera camera, Vec3 eye, Waypoint waypoint) {
+    /** A point's offset from the eye, turned into the camera's own frame. */
+    private static Vector3f toViewSpace(Camera camera, Vec3 eye, double worldX, double worldY, double worldZ) {
         Vector3f delta = new Vector3f(
-                (float) (waypoint.x() - eye.x),
-                (float) (waypoint.y() + LIFT - eye.y),
-                (float) (waypoint.z() - eye.z));
+                (float) (worldX - eye.x),
+                (float) (worldY - eye.y),
+                (float) (worldZ - eye.z));
         // getRotation turns camera-local into world, so its conjugate does the reverse.
         Quaternionf toCamera = new Quaternionf(camera.rotation()).conjugate();
         return toCamera.transform(delta);
     }
 
     /** Metres up close, kilometres once that stops being a useful number. */
-    static String range(double blocks) {
+    public static String range(double blocks) {
         if (blocks >= 1000) {
             return String.format(Locale.ROOT, "%.1fkm", blocks / 1000);
         }

@@ -3,6 +3,12 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.grind.GrindTimer;
+import com.betterloka.grind.Shrine;
+import com.betterloka.grind.ShrineKind;
+import com.betterloka.grind.ShrineTimers;
+import com.betterloka.grind.ShrineTracker;
+import com.betterloka.grind.Shrines;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -10,6 +16,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Timers for the things worth grinding on Loka.
@@ -20,7 +30,8 @@ import net.minecraft.network.chat.Component;
 public class LokaGrinderScreen extends Screen {
     private enum Tab {
         SHULKER("betterloka.grind.tab.shulker"),
-        GLOWSTONE("betterloka.grind.tab.glowstone");
+        GLOWSTONE("betterloka.grind.tab.glowstone"),
+        SHRINES("betterloka.grind.tab.shrines");
 
         private final String key;
 
@@ -30,6 +41,9 @@ public class LokaGrinderScreen extends Screen {
     }
 
     private static final int MAX_CONTENT_WIDTH = 320;
+
+    /** The shrine list carries coordinates and a button on every row, so it gets more room. */
+    private static final int SHRINES_MAX_WIDTH = 440;
     private static final int ROW_HEIGHT = 11;
     private static final int CARD_PADDING = 6;
     private static final int CARD_GAP = 6;
@@ -51,13 +65,37 @@ public class LokaGrinderScreen extends Screen {
     private int boxX;
     private int boxY;
 
+    // --- the Shrines Grinder tab ---
+
+    private static final int SHRINE_HEADER_HEIGHT = 16;
+    private static final int SHRINE_ROW_HEIGHT = 30;
+    private static final int SHRINE_ICON = 10;
+    private static final int SHRINE_BUTTON_WIDTH = 64;
+
+    private final ScrollPanel scrollPanel = new ScrollPanel();
+
+    /** One painted button, as drawn this frame, so a click can find it. */
+    private record Action(int x, int y, int width, Runnable run) {
+        boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + width
+                    && mouseY >= y && mouseY < y + MapStyle.PIN_BUTTON_HEIGHT;
+        }
+    }
+
+    private final List<Action> actions = new ArrayList<>();
+
     public LokaGrinderScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_grinder"));
         this.parent = parent;
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return Math.min(this.width - 40, tab == Tab.SHRINES ? SHRINES_MAX_WIDTH : MAX_CONTENT_WIDTH);
+    }
+
+    /** Where the shrine list starts: under the switches and the line saying where the player is. */
+    private static int shrineListTop() {
+        return VIEWPORT_TOP + TAB_ROW_HEIGHT + 4 + 14;
     }
 
     private int contentLeft() {
@@ -69,14 +107,21 @@ public class LokaGrinderScreen extends Screen {
         int left = contentLeft();
         int width = contentWidth();
 
-        int half = (width - 4) / 2;
+        int tabWidth = (width - 8) / 3;
         int x = left;
         for (Tab value : Tab.values()) {
             Tab target = value;
-            int thisWidth = value == Tab.GLOWSTONE ? left + width - x : half;
+            int thisWidth = value == Tab.SHRINES ? left + width - x : tabWidth;
             addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
                     .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
-            x += half + 4;
+            x += tabWidth + 4;
+        }
+
+        if (tab == Tab.SHRINES) {
+            initShrines(left, width);
+            addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
+                    .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
+            return;
         }
 
         int controlY = VIEWPORT_TOP + CARD_PADDING * 2 + ROW_HEIGHT * 6 + CARD_GAP;
@@ -117,6 +162,50 @@ public class LokaGrinderScreen extends Screen {
                 .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
     }
 
+    /**
+     * The switches for the shrine waypoints: all of them at once, then one per mob, so somebody
+     * going for Ghasts can see only the Ghast shrines.
+     */
+    private void initShrines(int left, int width) {
+        scrollPanel.setViewport(left, shrineListTop(), width,
+                Math.max(20, this.height - 36 - shrineListTop()));
+        int quarter = (width - 12) / 4;
+        addRenderableWidget(Button.builder(shrineMasterLabel(), button -> {
+                    BetterLokaConfig config = BetterLokaClient.config();
+                    config.setShrineWaypointsEnabled(!config.shrineWaypointsEnabled());
+                    rebuildWidgets();
+                })
+                .bounds(left, VIEWPORT_TOP, quarter, TAB_ROW_HEIGHT).build());
+        int x = left + quarter + 4;
+        for (ShrineKind kind : ShrineKind.values()) {
+            int thisWidth = kind == ShrineKind.MAGMA_CUBE ? left + width - x : quarter;
+            addRenderableWidget(Button.builder(shrineKindLabel(kind), button -> {
+                        BetterLokaConfig config = BetterLokaClient.config();
+                        config.setShrineKindEnabled(kind, !config.shrineKindEnabled(kind));
+                        button.setMessage(shrineKindLabel(kind));
+                    })
+                    .bounds(x, VIEWPORT_TOP, thisWidth, TAB_ROW_HEIGHT).build()).active =
+                    BetterLokaClient.config().shrineWaypointsEnabled();
+            x += quarter + 4;
+        }
+    }
+
+    private static Component onOff(boolean on) {
+        return Component.translatable(on ? "betterloka.on" : "betterloka.off")
+                .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED);
+    }
+
+    private static Component shrineMasterLabel() {
+        return Component.translatable("betterloka.shrine.toggle.all")
+                .append(onOff(BetterLokaClient.config().shrineWaypointsEnabled()));
+    }
+
+    private static Component shrineKindLabel(ShrineKind kind) {
+        return Component.translatable("betterloka.shrine.toggle.kind",
+                        Component.translatable("betterloka.shrine.kind." + kind.id()))
+                .append(onOff(BetterLokaClient.config().shrineKindEnabled(kind)));
+    }
+
     private static Component autoStartLabel() {
         boolean on = BetterLokaClient.config().shulkerAutoStart();
         return Component.translatable("betterloka.grind.shulker.auto")
@@ -151,6 +240,7 @@ public class LokaGrinderScreen extends Screen {
             return;
         }
         tab = target;
+        scrollPanel.reset();
         rebuildWidgets();
     }
 
@@ -167,7 +257,39 @@ public class LokaGrinderScreen extends Screen {
     }
 
     @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        return (tab == Tab.SHRINES && scrollPanel.mouseScrolled(mouseX, mouseY, verticalAmount))
+                || super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        return (tab == Tab.SHRINES && scrollPanel.mouseDragged(click.y()))
+                || super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent click) {
+        scrollPanel.mouseReleased();
+        return super.mouseReleased(click);
+    }
+
+    @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (tab == Tab.SHRINES) {
+            if (scrollPanel.mouseClicked(click.x(), click.y())) {
+                return true;
+            }
+            if (click.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+                for (Action action : List.copyOf(actions)) {
+                    if (action.contains(click.x(), click.y())) {
+                        action.run().run();
+                        return true;
+                    }
+                }
+            }
+            return super.mouseClicked(click, doubled);
+        }
         if (click.x() >= boxX && click.x() < boxX + BOX_SIZE
                 && click.y() >= boxY && click.y() < boxY + BOX_SIZE) {
             GrindTimer timer = active();
@@ -188,6 +310,11 @@ public class LokaGrinderScreen extends Screen {
 
         int left = contentLeft();
         int width = contentWidth();
+
+        if (tab == Tab.SHRINES) {
+            renderShrines(context, left, width, mouseX, mouseY);
+            return;
+        }
 
         renderTimer(context, left, VIEWPORT_TOP, width, mouseX, mouseY,
                 tab == Tab.SHULKER ? shulker() : glowstone(),
@@ -254,6 +381,118 @@ public class LokaGrinderScreen extends Screen {
                                 ? BetterLokaClient.shulkerTimerKey()
                                 : BetterLokaClient.glowstoneTimerKey())),
                 textX, textY + ROW_HEIGHT * 5, GuiTheme.MUTED);
+    }
+
+    // --- the Shrines Grinder tab ---
+
+    private static ShrineTracker shrines() {
+        return BetterLokaClient.shrines();
+    }
+
+    private void renderShrines(GuiGraphicsExtractor context, int left, int width, int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        boolean nether = ShrineTracker.inNether(this.minecraft);
+        Shrine inside = shrines().inside();
+
+        // Where the player is, which is what decides whether the markers are showing at all.
+        Component where = inside != null
+                ? Component.translatable("betterloka.shrine.status.inside", inside.label())
+                : Component.translatable(nether ? "betterloka.shrine.status.nether" : "betterloka.shrine.status.away");
+        context.text(this.font, where, left, shrineListTop() - 12,
+                inside != null ? GuiTheme.GOOD : nether ? GuiTheme.TEXT : GuiTheme.MUTED);
+
+        actions.clear();
+        context.enableScissor(left, scrollPanel.viewportTop(), left + width, scrollPanel.viewportBottom());
+        int start = scrollPanel.contentTop();
+        int y = start;
+        int rowWidth = scrollPanel.contentWidth();
+        for (ShrineKind kind : ShrineKind.values()) {
+            List<Shrine> ofKind = Shrines.ALL.stream().filter(s -> s.kind() == kind).toList();
+            BetterLokaClient.shrineIcons().draw(context, kind, left + 1, y + 3, SHRINE_ICON);
+            Component header = Component.translatable("betterloka.shrine.section",
+                    Component.translatable("betterloka.shrine.kind." + kind.id()), ofKind.size());
+            context.text(this.font, header, left + SHRINE_ICON + 6, y + 4, 0xFF000000 | kind.color());
+            if (!BetterLokaClient.config().shrineShown(kind)) {
+                Component hidden = Component.translatable("betterloka.shrine.hidden");
+                context.text(this.font, hidden, left + rowWidth - this.font.width(hidden), y + 4, GuiTheme.MUTED);
+            }
+            y += SHRINE_HEADER_HEIGHT;
+            for (Shrine shrine : ofKind) {
+                renderShrine(context, left, y, rowWidth, shrine, shrine.equals(inside), nether, now,
+                        mouseX, mouseY);
+                y += SHRINE_ROW_HEIGHT + 3;
+            }
+            y += 3;
+        }
+        Component hint = Component.translatable("betterloka.shrine.hint");
+        context.text(this.font, this.font.plainSubstrByWidth(hint.getString(), rowWidth), left, y + 2, GuiTheme.MUTED);
+        y += 14;
+        context.disableScissor();
+
+        scrollPanel.setContentHeight(y - start);
+        scrollPanel.render(context, mouseX, mouseY);
+    }
+
+    private void renderShrine(GuiGraphicsExtractor context, int left, int y, int width, Shrine shrine,
+                              boolean here, boolean nether, long now, int mouseX, int mouseY) {
+        GuiTheme.panel(context, left, y, width, SHRINE_ROW_HEIGHT);
+        context.fill(left, y, left + 2, y + SHRINE_ROW_HEIGHT, here ? GuiTheme.GOOD : 0xFF000000 | shrine.kind().color());
+        int textX = left + 7;
+        int right = left + width - 6;
+
+        // The shrine, and whether it is back.
+        Component name = Component.translatable("betterloka.shrine.number", shrine.number());
+        context.text(this.font, name, textX, y + 5, GuiTheme.TEXT);
+        if (here) {
+            context.text(this.font, Component.translatable("betterloka.shrine.marker_here"),
+                    textX + this.font.width(name) + 8, y + 5, GuiTheme.GOOD);
+        }
+        ShrineTimers.State state = shrines().timers().state(shrine, now);
+        Component status = shrines().status(shrine, now);
+        int statusColour = switch (state) {
+            case READY -> GuiTheme.GOOD;
+            case COOLDOWN -> GuiTheme.LIVE;
+            case UNKNOWN -> GuiTheme.MUTED;
+        };
+        context.text(this.font, status, right - this.font.width(status), y + 5, statusColour);
+
+        // Where it is, how far, and the button that starts or clears its timer by hand.
+        String coords = Component.translatable("betterloka.shrine.coords", shrine.x(),
+                shrine.hasY() ? String.valueOf(shrine.y()) : "?", shrine.z()).getString();
+        if (nether && this.minecraft != null && this.minecraft.player != null) {
+            coords += String.format(Locale.ROOT, "  ·  %.0f m",
+                    shrine.distanceTo(this.minecraft.player.getX(), this.minecraft.player.getZ()));
+        }
+        context.text(this.font, coords, textX, y + 17, GuiTheme.MUTED);
+
+        int buttonX = right - SHRINE_BUTTON_WIDTH;
+        int buttonY = y + SHRINE_ROW_HEIGHT - MapStyle.PIN_BUTTON_HEIGHT - 3;
+        boolean running = state == ShrineTimers.State.COOLDOWN;
+        boolean visible = buttonY >= scrollPanel.viewportTop()
+                && buttonY + MapStyle.PIN_BUTTON_HEIGHT <= scrollPanel.viewportBottom();
+        boolean hovered = visible && mouseX >= buttonX && mouseX < buttonX + SHRINE_BUTTON_WIDTH
+                && mouseY >= buttonY && mouseY < buttonY + MapStyle.PIN_BUTTON_HEIGHT;
+        MapStyle.wideButton(context, this.font, buttonX, buttonY, SHRINE_BUTTON_WIDTH,
+                Component.translatable(running ? "betterloka.shrine.reset" : "betterloka.shrine.start"),
+                hovered, false);
+        if (visible) {
+            actions.add(new Action(buttonX, buttonY, SHRINE_BUTTON_WIDTH, () -> {
+                if (running) {
+                    shrines().timers().clear(shrine);
+                } else {
+                    shrines().timers().purged(shrine, System.currentTimeMillis());
+                }
+            }));
+        }
+    }
+
+    /** Development only: the painted buttons as drawn last frame, as {x, y} of their middles. */
+    public List<int[]> devActions() {
+        List<int[]> points = new ArrayList<>();
+        for (Action action : actions) {
+            points.add(new int[] {action.x() + action.width() / 2, action.y() + MapStyle.PIN_BUTTON_HEIGHT / 2});
+        }
+        return points;
     }
 
     /** The key as it is actually bound, so rebinding it in Options is reflected here. */

@@ -1,6 +1,7 @@
 package com.betterloka.config;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.grind.ShrineKind;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -70,6 +71,12 @@ public final class BetterLokaConfig {
     /** GUI scale the rest of the time, which is what sizes the hotbar. */
     private int hotbarGuiScale = 3;
 
+    /** Draw the Nether shrine waypoints at all. Each kind has its own switch below as well. */
+    private boolean shrineWaypointsEnabled = true;
+    private boolean shrineGhastEnabled = true;
+    private boolean shrineBlazeEnabled = true;
+    private boolean shrineMagmaCubeEnabled = true;
+
 
     private transient Path file;
 
@@ -104,6 +111,38 @@ public final class BetterLokaConfig {
         } catch (IOException e) {
             BetterLoka.LOGGER.warn("Could not save the BetterLoka config", e);
         }
+    }
+
+    public boolean shrineWaypointsEnabled() {
+        return shrineWaypointsEnabled;
+    }
+
+    public void setShrineWaypointsEnabled(boolean shrineWaypointsEnabled) {
+        this.shrineWaypointsEnabled = shrineWaypointsEnabled;
+        save();
+    }
+
+    /** Whether one kind of shrine is shown, before the master switch is considered. */
+    public boolean shrineKindEnabled(ShrineKind kind) {
+        return switch (kind) {
+            case GHAST -> shrineGhastEnabled;
+            case BLAZE -> shrineBlazeEnabled;
+            case MAGMA_CUBE -> shrineMagmaCubeEnabled;
+        };
+    }
+
+    public void setShrineKindEnabled(ShrineKind kind, boolean enabled) {
+        switch (kind) {
+            case GHAST -> shrineGhastEnabled = enabled;
+            case BLAZE -> shrineBlazeEnabled = enabled;
+            case MAGMA_CUBE -> shrineMagmaCubeEnabled = enabled;
+        }
+        save();
+    }
+
+    /** Whether a kind's waypoints are drawn: its own switch and the master one both on. */
+    public boolean shrineShown(ShrineKind kind) {
+        return shrineWaypointsEnabled && shrineKindEnabled(kind);
     }
 
     public boolean showNameplateKd() {
