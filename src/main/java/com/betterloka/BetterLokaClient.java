@@ -151,7 +151,8 @@ public class BetterLokaClient implements ClientModInitializer {
         new GrindHud(grindTimers, config).register();
         // The Nether shrines: markers over each, the ground around each, and a fifteen minute
         // timer started by the server's own "was purged!" line.
-        shrines = new ShrineTracker(new ShrineTimers(configDir().resolve("shrines.json")), config);
+        shrines = new ShrineTracker(new ShrineTimers(configDir().resolve("shrines.json"),
+                () -> config.shrineCooldownMinutes() * 60_000L), config);
         shrines.register();
         shrineIcons = new ShrineIcons();
         new ShrineWaypoints(shrines, shrineIcons, config).register();

@@ -77,6 +77,12 @@ public final class BetterLokaConfig {
     private boolean shrineBlazeEnabled = true;
     private boolean shrineMagmaCubeEnabled = true;
 
+    /** Say in chat, in any world, when a shrine's cooldown has run out. */
+    private boolean shrineNotifications = true;
+
+    /** How long a purged shrine takes to come back, in minutes. */
+    private int shrineCooldownMinutes = 15;
+
 
     private transient Path file;
 
@@ -137,6 +143,27 @@ public final class BetterLokaConfig {
             case BLAZE -> shrineBlazeEnabled = enabled;
             case MAGMA_CUBE -> shrineMagmaCubeEnabled = enabled;
         }
+        save();
+    }
+
+    public boolean shrineNotifications() {
+        return shrineNotifications;
+    }
+
+    public void setShrineNotifications(boolean shrineNotifications) {
+        this.shrineNotifications = shrineNotifications;
+        save();
+    }
+
+    public static final int SHRINE_COOLDOWN_MIN = 1;
+    public static final int SHRINE_COOLDOWN_MAX = 180;
+
+    public int shrineCooldownMinutes() {
+        return Math.max(SHRINE_COOLDOWN_MIN, Math.min(SHRINE_COOLDOWN_MAX, shrineCooldownMinutes));
+    }
+
+    public void setShrineCooldownMinutes(int minutes) {
+        this.shrineCooldownMinutes = Math.max(SHRINE_COOLDOWN_MIN, Math.min(SHRINE_COOLDOWN_MAX, minutes));
         save();
     }
 

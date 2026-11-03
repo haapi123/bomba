@@ -85,9 +85,13 @@ public final class ShrineWaypoints {
         int width = context.guiWidth();
         int height = context.guiHeight();
 
+        // While a shrine is activated it is the only one that matters: the rest step aside until it
+        // is purged or left, and come back by themselves.
+        Shrine activated = tracker.activated();
         List<Marker> markers = new ArrayList<>();
         for (Shrine shrine : Shrines.ALL) {
-            if (config.shrineShown(shrine.kind())) {
+            boolean shown = activated != null ? shrine.equals(activated) : config.shrineShown(shrine.kind());
+            if (shown) {
                 markers.add(marker(client, camera, eye, fov, width, height, shrine, now));
             }
         }
@@ -127,20 +131,17 @@ public final class ShrineWaypoints {
                 width, height, fov);
         double distance = shrine.distanceTo(eye.x, eye.z);
 
-        // The number, then how far — or that the player is standing on it — then whether it is back.
-        boolean here = shrine.equals(tracker.inside());
+        // The number, then how far — or that it is activated — then the countdown if there is one.
+        // Green is a shrine to go to; orange one still coming back.
+        boolean activated = shrine.equals(tracker.activated());
+        boolean coolingDown = tracker.coolingDown(shrine, now);
         MutableComponent line = Component.literal("#" + shrine.number() + " · ")
-                .append(here ? Component.translatable("betterloka.shrine.marker_here")
+                .append(activated ? Component.translatable("betterloka.shrine.activated")
                         : Component.literal(WaypointWorldRenderer.range(distance)));
-        ShrineTimers.State state = tracker.timers().state(shrine, now);
-        if (state != ShrineTimers.State.UNKNOWN) {
+        if (coolingDown) {
             line.append(" · ").append(tracker.status(shrine, now));
         }
-        int colour = switch (state) {
-            case READY -> 0xFF7BD88F;
-            case COOLDOWN -> 0xFFFFB454;
-            case UNKNOWN -> 0xFFC8C8C8;
-        };
+        int colour = coolingDown ? 0xFFFFB454 : 0xFF5FE07A;
         return new Marker(shrine, at[0], at[1], distance, line, colour, client.font.width(line));
     }
 

@@ -886,12 +886,21 @@ public final class DevDiagnostics {
         step(2, () -> server(nether + "1075 183 1172 60 8"));
         step(200, () -> shrineState("in the Nether, outside every shrine"));
         shot(5, "shrines-markers");
+        // Onto Ghast Shrine 1 while it is ready: it activates and the other markers step aside.
         step(2, () -> server(nether + "1040 180 1192 60 8"));
         step(10, () -> shrineState("on Ghast Shrine 1's ground"));
-        shot(2, "shrines-entered");
+        shot(2, "shrines-activated");
+        // The fight's drops, as the inventory sees them, then the server's purge line.
+        step(2, () -> {
+            server("give @a minecraft:ghast_tear 3");
+            server("give @a minecraft:gunpowder 7");
+            server("give @a minecraft:cobblestone 5");
+        });
         step(40, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
         step(5, () -> shrineState("'Ghast Shrine was purged!' while on Ghast Shrine 1"));
         shot(2, "shrines-purged");
+        step(2, () -> server("give @a minecraft:ghast_tear 1"));
+        step(260, () -> shrineState("13 s after the purge: the run should be counted"));
         step(2, () -> server("tellraw @a \"Magma Cube Shrine 2 was purged!\""));
         step(5, () -> shrineState("'Magma Cube Shrine 2 was purged!' while on Ghast Shrine 1"));
         step(2, () -> server(nether + "760 150 1050 0 0"));
@@ -906,26 +915,31 @@ public final class DevDiagnostics {
         step(2, () -> server(nether + "1075 183 1172 60 8"));
         step(60, () -> BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, false));
         shot(5, "shrines-no-ghasts");
-        step(2, () -> {
-            BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, true);
-            BetterLokaClient.config().setShrineWaypointsEnabled(false);
-        });
-        shot(5, "shrines-all-off");
-        step(2, () -> BetterLokaClient.config().setShrineWaypointsEnabled(true));
+        step(2, () -> BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, true));
         step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaGrinderScreen(null)));
         step(5, () -> realClick("Shrines", left));
         step(10, () -> shrineState("Shrines Grinder tab open"));
         shot(5, "shrines-tab");
-        step(2, () -> realClick("Ghasts", left));
-        step(5, () -> shrineState("clicked the Ghasts switch"));
-        step(2, () -> realClick("Ghasts", left));
-        step(5, () -> realClickAt(grinderAction(1), left));
-        step(5, () -> shrineState("clicked Start on Ghast Shrine 2"));
+        // The Statistics button on Ghast Shrine 1's row, pressed like a person would.
+        step(2, () -> realClickAt(grinderAction(0), left));
+        step(10, () -> BetterLoka.LOGGER.info("DIAG shrines statistics screen: {}",
+                client().gui.screen() == null ? "none" : client().gui.screen().getClass().getSimpleName()));
+        shot(5, "shrines-stats");
+        step(2, () -> realClick("Back", left));
+        // A one minute timer, started by hand on Ghast Shrine 2, and the notice in the overworld.
+        step(5, () -> {
+            BetterLokaClient.config().setShrineCooldownMinutes(1);
+            // Lays the open screen out again, so its timer button shows the new length.
+            client().resizeGui();
+        });
+        step(5, () -> realClickAt(grinderAction(3), left));
+        step(5, () -> shrineState("Start on Ghast Shrine 2 with a 1 minute timer"));
         shot(5, "shrines-tab-started");
         step(2, () -> client().gui.setScreen(null));
         step(2, () -> server("execute in minecraft:overworld run tp @a 0 100 0"));
-        step(60, () -> shrineState("back in the overworld"));
-        shot(5, "shrines-overworld");
+        step(1260, () -> shrineState("a minute later, in the overworld"));
+        shot(5, "shrines-restart-chat");
+        step(2, () -> BetterLokaClient.config().setShrineCooldownMinutes(15));
         step(20, () -> BetterLoka.LOGGER.info("DIAG shrine checks done"));
     }
 
@@ -960,6 +974,10 @@ public final class DevDiagnostics {
         }
         var config = BetterLokaClient.config();
         var player = client().player;
+        var ghast1 = com.betterloka.grind.Shrines.byId("ghast-1");
+        var stats = shrines.timers().stats(ghast1);
+        BetterLoka.LOGGER.info("DIAG shrines {}: activated={} ghast-1 runs={} totals={}", label,
+                shrines.activated() == null ? null : shrines.activated().label(), stats.runs(), stats.totals());
         BetterLoka.LOGGER.info("DIAG shrines {}: nether={} at={} inside={} timers:{} learned={} shown(all={} ghast={} blaze={} magma={})",
                 label, com.betterloka.grind.ShrineTracker.inNether(client()),
                 player == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f,%.0f,%.0f",

@@ -8,10 +8,13 @@ package com.betterloka.grind;
  */
 public record Shrine(ShrineKind kind, int number, int x, Integer y, int z) {
     /**
-     * Half the side of a shrine's area. The area is twenty blocks square around the coordinates, and
+     * Half the side of a shrine's area. The area is thirty blocks square around the coordinates, and
      * the whole column counts: shrines are told apart by where they stand on the map, not by height.
+     *
+     * <p>At this size Ghast Shrine 1 and Magma Cube Shrine 1, twenty-one blocks apart, share a strip
+     * of ground; {@link Shrines#at} gives it to whichever is nearer.
      */
-    public static final int AREA_HALF = 10;
+    public static final int AREA_HALF = 15;
 
     /** A stable key for saved timers: {@code ghast-1}. */
     public String id() {

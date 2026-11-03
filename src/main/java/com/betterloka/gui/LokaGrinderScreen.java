@@ -70,7 +70,8 @@ public class LokaGrinderScreen extends Screen {
     private static final int SHRINE_HEADER_HEIGHT = 16;
     private static final int SHRINE_ROW_HEIGHT = 30;
     private static final int SHRINE_ICON = 10;
-    private static final int SHRINE_BUTTON_WIDTH = 64;
+    private static final int SHRINE_BUTTON_WIDTH = 54;
+    private static final int SHRINE_STATS_WIDTH = 70;
 
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
@@ -93,9 +94,9 @@ public class LokaGrinderScreen extends Screen {
         return Math.min(this.width - 40, tab == Tab.SHRINES ? SHRINES_MAX_WIDTH : MAX_CONTENT_WIDTH);
     }
 
-    /** Where the shrine list starts: under the switches and the line saying where the player is. */
+    /** Where the shrine list starts: under two rows of switches and the line saying where the player is. */
     private static int shrineListTop() {
-        return VIEWPORT_TOP + TAB_ROW_HEIGHT + 4 + 14;
+        return VIEWPORT_TOP + (TAB_ROW_HEIGHT + 4) * 2 + 14;
     }
 
     private int contentLeft() {
@@ -188,6 +189,40 @@ public class LokaGrinderScreen extends Screen {
                     BetterLokaClient.config().shrineWaypointsEnabled();
             x += quarter + 4;
         }
+
+        // Second row: the chat notice when a shrine restarts, and how long the cooldown is.
+        int rowY = VIEWPORT_TOP + TAB_ROW_HEIGHT + 4;
+        int half = (width - 4) / 2;
+        addRenderableWidget(Button.builder(shrineNotifyLabel(), button -> {
+                    BetterLokaConfig config = BetterLokaClient.config();
+                    config.setShrineNotifications(!config.shrineNotifications());
+                    button.setMessage(shrineNotifyLabel());
+                })
+                .bounds(left, rowY, half, TAB_ROW_HEIGHT).build());
+        int step = 24;
+        int timerX = left + half + 4;
+        int timerWidth = left + width - timerX;
+        addRenderableWidget(Button.builder(Component.literal("-1"), button -> changeCooldown(-1))
+                .bounds(timerX, rowY, step, TAB_ROW_HEIGHT).build());
+        Button value = Button.builder(Component.translatable("betterloka.shrine.timer",
+                        BetterLokaClient.config().shrineCooldownMinutes()), button -> { })
+                .bounds(timerX + step + 2, rowY, timerWidth - (step + 2) * 2, TAB_ROW_HEIGHT).build();
+        value.active = false;
+        addRenderableWidget(value);
+        addRenderableWidget(Button.builder(Component.literal("+1"), button -> changeCooldown(1))
+                .bounds(left + width - step, rowY, step, TAB_ROW_HEIGHT).build());
+    }
+
+    /** Changes the shrine cooldown by whole minutes; timers already running follow it. */
+    private void changeCooldown(int minutes) {
+        BetterLokaConfig config = BetterLokaClient.config();
+        config.setShrineCooldownMinutes(config.shrineCooldownMinutes() + minutes);
+        rebuildWidgets();
+    }
+
+    private static Component shrineNotifyLabel() {
+        return Component.translatable("betterloka.shrine.toggle.notify")
+                .append(onOff(BetterLokaClient.config().shrineNotifications()));
     }
 
     private static Component onOff(boolean on) {
@@ -440,20 +475,18 @@ public class LokaGrinderScreen extends Screen {
         int textX = left + 7;
         int right = left + width - 6;
 
-        // The shrine, and whether it is back.
+        // The shrine, and whether it is back: green Ready unless it is counting down.
         Component name = Component.translatable("betterloka.shrine.number", shrine.number());
         context.text(this.font, name, textX, y + 5, GuiTheme.TEXT);
-        if (here) {
-            context.text(this.font, Component.translatable("betterloka.shrine.marker_here"),
-                    textX + this.font.width(name) + 8, y + 5, GuiTheme.GOOD);
+        boolean activated = shrine.equals(shrines().activated());
+        if (activated || here) {
+            context.text(this.font, Component.translatable(activated
+                            ? "betterloka.shrine.activated" : "betterloka.shrine.marker_here"),
+                    textX + this.font.width(name) + 8, y + 5, activated ? GuiTheme.GOOD : GuiTheme.MUTED);
         }
         ShrineTimers.State state = shrines().timers().state(shrine, now);
         Component status = shrines().status(shrine, now);
-        int statusColour = switch (state) {
-            case READY -> GuiTheme.GOOD;
-            case COOLDOWN -> GuiTheme.LIVE;
-            case UNKNOWN -> GuiTheme.MUTED;
-        };
+        int statusColour = state == ShrineTimers.State.COOLDOWN ? GuiTheme.LIVE : GuiTheme.GOOD;
         context.text(this.font, status, right - this.font.width(status), y + 5, statusColour);
 
         // Where it is, how far, and the button that starts or clears its timer by hand.
@@ -466,16 +499,20 @@ public class LokaGrinderScreen extends Screen {
         context.text(this.font, coords, textX, y + 17, GuiTheme.MUTED);
 
         int buttonX = right - SHRINE_BUTTON_WIDTH;
+        int statsX = buttonX - 3 - SHRINE_STATS_WIDTH;
         int buttonY = y + SHRINE_ROW_HEIGHT - MapStyle.PIN_BUTTON_HEIGHT - 3;
         boolean running = state == ShrineTimers.State.COOLDOWN;
         boolean visible = buttonY >= scrollPanel.viewportTop()
                 && buttonY + MapStyle.PIN_BUTTON_HEIGHT <= scrollPanel.viewportBottom();
-        boolean hovered = visible && mouseX >= buttonX && mouseX < buttonX + SHRINE_BUTTON_WIDTH
-                && mouseY >= buttonY && mouseY < buttonY + MapStyle.PIN_BUTTON_HEIGHT;
+        MapStyle.wideButton(context, this.font, statsX, buttonY, SHRINE_STATS_WIDTH,
+                Component.translatable("betterloka.shrine.statistics"),
+                visible && over(mouseX, mouseY, statsX, buttonY, SHRINE_STATS_WIDTH), false);
         MapStyle.wideButton(context, this.font, buttonX, buttonY, SHRINE_BUTTON_WIDTH,
                 Component.translatable(running ? "betterloka.shrine.reset" : "betterloka.shrine.start"),
-                hovered, false);
+                visible && over(mouseX, mouseY, buttonX, buttonY, SHRINE_BUTTON_WIDTH), false);
         if (visible) {
+            actions.add(new Action(statsX, buttonY, SHRINE_STATS_WIDTH,
+                    () -> this.minecraft.gui.setScreen(new ShrineStatsScreen(this, shrine))));
             actions.add(new Action(buttonX, buttonY, SHRINE_BUTTON_WIDTH, () -> {
                 if (running) {
                     shrines().timers().clear(shrine);
@@ -484,6 +521,10 @@ public class LokaGrinderScreen extends Screen {
                 }
             }));
         }
+    }
+
+    private static boolean over(int mouseX, int mouseY, int x, int y, int width) {
+        return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + MapStyle.PIN_BUTTON_HEIGHT;
     }
 
     /** Development only: the painted buttons as drawn last frame, as {x, y} of their middles. */

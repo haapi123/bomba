@@ -40,27 +40,33 @@ class ShrinesTest {
     }
 
     @Test
-    void theAreaIsTwentyBlocksSquareAroundTheCoordinates() {
-        Shrine ghast1 = shrine("ghast-1");
-        assertTrue(ghast1.contains(1037.5, 1190.5));
-        assertTrue(ghast1.contains(1047.4, 1200.4), "ten blocks out on both axes is still inside");
-        assertFalse(ghast1.contains(1049, 1190.5), "twelve blocks out is not");
-        assertFalse(ghast1.contains(1037.5, 1179), "nor on the other axis");
-        assertEquals(ghast1, Shrines.at(1040, 1185));
+    void theAreaIsThirtyBlocksSquareAroundTheCoordinates() {
+        Shrine ghast2 = shrine("ghast-2");
+        assertTrue(ghast2.contains(527.5, 963.5));
+        assertTrue(ghast2.contains(542.4, 978.4), "fifteen blocks out on both axes is still inside");
+        assertFalse(ghast2.contains(544, 963.5), "seventeen blocks out is not");
+        assertFalse(ghast2.contains(527.5, 946), "nor on the other axis");
+        assertEquals(ghast2, Shrines.at(540, 950));
         assertNull(Shrines.at(0, 0));
     }
 
     @Test
-    void noTwoShrineAreasOverlap() {
+    void whereTwoAreasOverlapTheNearerShrineHasTheGround() {
+        // Ghast Shrine 1 and Magma Cube Shrine 1 are twenty-one blocks apart, so at thirty blocks
+        // square their areas share a strip. It is the only pair that does.
+        assertEquals(shrine("ghast-1"), Shrines.at(1030, 1195));
+        assertEquals(shrine("magma_cube-1"), Shrines.at(1025, 1199));
+        assertEquals(shrine("magma_cube-1"), Shrines.at(1022, 1200));
+        int pairs = 0;
         for (Shrine a : Shrines.ALL) {
             for (Shrine b : Shrines.ALL) {
-                if (a != b) {
-                    boolean overlap = Math.abs(a.x() - b.x()) <= Shrine.AREA_HALF * 2
-                            && Math.abs(a.z() - b.z()) <= Shrine.AREA_HALF * 2;
-                    assertFalse(overlap, a.label() + " overlaps " + b.label());
+                if (a != b && Math.abs(a.x() - b.x()) <= Shrine.AREA_HALF * 2
+                        && Math.abs(a.z() - b.z()) <= Shrine.AREA_HALF * 2) {
+                    pairs++;
                 }
             }
         }
+        assertEquals(2, pairs, "one overlapping pair, counted from each side");
     }
 
     // --- reading the purge message ---
@@ -165,6 +171,37 @@ class ShrinesTest {
         ShrineTimers reloaded = new ShrineTimers(dir.resolve("shrines.json"));
         assertEquals(ShrineTimers.State.UNKNOWN, reloaded.state(shrine("blaze-3"), 0));
         assertEquals("magma_cube-1", reloaded.learned().get(Shrines.key("Infernal Altar")));
+    }
+
+    @Test
+    void theCooldownIsTheSettingAndMovesTimersAlreadyRunning(@TempDir Path dir) {
+        long[] minutes = {15};
+        ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"), () -> minutes[0] * 60_000L);
+        Shrine blaze1 = shrine("blaze-1");
+        timers.purged(blaze1, 0);
+        assertEquals(15 * 60_000L, timers.remaining(blaze1, 0));
+        minutes[0] = 20;
+        assertEquals(20 * 60_000L, timers.remaining(blaze1, 0), "set to twenty, the running timer follows");
+        assertEquals(ShrineTimers.State.COOLDOWN, timers.state(blaze1, 16 * 60_000L));
+        minutes[0] = 5;
+        assertEquals(ShrineTimers.State.READY, timers.state(blaze1, 6 * 60_000L));
+    }
+
+    @Test
+    void runsAddUpPerShrineAndSurviveARestart(@TempDir Path dir) {
+        ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
+        Shrine ghast1 = shrine("ghast-1");
+        timers.recordRun(ghast1, Map.of("minecraft:ghast_tear", 3, "minecraft:gunpowder", 5), 1000);
+        timers.recordRun(ghast1, Map.of("minecraft:ghast_tear", 2), 2000);
+        ShrineLoot.Stats stats = new ShrineTimers(dir.resolve("shrines.json")).stats(ghast1);
+        assertEquals(2, stats.runs());
+        assertEquals(2000, stats.lastRunAt());
+        assertEquals(5L, stats.totals().get("minecraft:ghast_tear"));
+        assertEquals(5L, stats.totals().get("minecraft:gunpowder"));
+        assertEquals(Map.of("minecraft:ghast_tear", 2), stats.lastRun());
+        assertEquals(0, timers.stats(shrine("ghast-2")).runs(), "each shrine keeps its own");
+        timers.clearStats(ghast1);
+        assertEquals(0, timers.stats(ghast1).runs());
     }
 
     @Test
