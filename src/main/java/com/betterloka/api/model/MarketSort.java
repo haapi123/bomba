@@ -6,27 +6,26 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * The orders the Market's offers can be put in.
+ * The orders the Market's offers can be put in, as its Filter menu offers them.
  *
- * <p>Price is compared per unit rather than per listing, because a stack of sixty-four and a single
- * item are not otherwise comparable — the cheapest listing is often just the smallest one.
+ * <p>Price is compared per item rather than per offer, because a stack of sixty-four and a single
+ * item are not otherwise comparable — the cheapest offer is often just the smallest one.
  *
  * <p>Dates come from the listing's own id: Loka publishes no "listed at" field, but its ids are
  * MongoDB ObjectIds and those open with the document's creation time.
  */
 public enum MarketSort {
-    /** Cheapest per unit first — the usual reason to open the Market. */
-    CHEAPEST("betterloka.market.sort.cheapest",
-            Comparator.comparingDouble(MarketListing::pricePerUnit)),
-
-    DEAREST("betterloka.market.sort.dearest",
-            Comparator.comparingDouble(MarketListing::pricePerUnit).reversed()),
-
     NEWEST("betterloka.market.sort.newest", Comparator.comparing(
             MarketSort::listedAt, Comparator.nullsFirst(Comparator.naturalOrder())).reversed()),
 
     OLDEST("betterloka.market.sort.oldest", Comparator.comparing(
-            MarketSort::listedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+            MarketSort::listedAt, Comparator.nullsLast(Comparator.naturalOrder()))),
+
+    DEAREST("betterloka.market.sort.dearest",
+            Comparator.comparingDouble(MarketListing::itemPrice).reversed()),
+
+    CHEAPEST("betterloka.market.sort.cheapest",
+            Comparator.comparingDouble(MarketListing::itemPrice));
 
     private final String key;
     private final Comparator<MarketListing> comparator;
@@ -36,24 +35,19 @@ public enum MarketSort {
         this.comparator = comparator;
     }
 
-    /** The translation key for this order's name, as the button shows it. */
+    /** The translation key for this order's name, as the Filter menu shows it. */
     public String key() {
         return key;
     }
 
-    /**
-     * The translation key for this order spelled out, as the line above the results shows it.
-     *
-     * <p>Separate from the button's label because the header used to say "cheapest per unit first"
-     * whatever the order actually was, which is worse than saying nothing.
-     */
+    /** The translation key for this order spelled out, as the line above the results shows it. */
     public String orderKey() {
         return key.replace(".sort.", ".order.");
     }
 
-    /** The next order in the cycle, for a button that steps through them. */
-    public MarketSort next() {
-        return values()[(ordinal() + 1) % values().length];
+    /** Whether this order is by when the offer went up, rather than by price. */
+    public boolean byDate() {
+        return this == NEWEST || this == OLDEST;
     }
 
     /**
@@ -62,14 +56,22 @@ public enum MarketSort {
      */
     public List<MarketListing> sort(List<MarketListing> listings) {
         List<MarketListing> sorted = new ArrayList<>(listings);
-        // Price is the tie-break on the date orders: two offers put up in the same second are
-        // otherwise in whatever order the API returned them, which changes between refreshes.
-        sorted.sort(comparator.thenComparingDouble(MarketListing::pricePerUnit));
+        // Price is the tie-break on the date orders, and the date on the price ones: two offers put
+        // up in the same second are otherwise in whatever order the API returned them, which
+        // changes between refreshes.
+        Comparator<MarketListing> tieBreak = byDate()
+                ? Comparator.comparingDouble(MarketListing::itemPrice)
+                : NEWEST.comparator;
+        sorted.sort(comparator.thenComparing(tieBreak).thenComparing(MarketSort::idOf));
         return List.copyOf(sorted);
     }
 
     /** An id that is not an ObjectId has no date; those sort to the end either way. */
     private static Instant listedAt(MarketListing listing) {
         return listing.listedAt();
+    }
+
+    private static String idOf(MarketListing listing) {
+        return listing.id() == null ? "" : listing.id();
     }
 }

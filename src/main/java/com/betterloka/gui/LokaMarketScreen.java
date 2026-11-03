@@ -1,13 +1,14 @@
 package com.betterloka.gui;
 
-import com.betterloka.BetterLoka;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.api.MarketApi;
+import com.betterloka.api.MarketSweep;
 import com.betterloka.api.model.MarketListing;
 import com.betterloka.api.model.MarketSort;
 import com.betterloka.async.AsyncSlot;
 import com.betterloka.async.Debounce;
-import com.mojang.blaze3d.platform.InputConstants;
+import com.betterloka.market.MarketCategory;
+import com.betterloka.market.MarketIndex;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -21,94 +22,87 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
- * Looks one item type up on Loka's market and lists its offers.
+ * Loka Market: a market square with a stall for each kind of goods, and a search for one item.
  *
- * <p>Search is the whole screen. It used to have two more views — Deals swept the market for
- * listings under the going rate, and Special picked out named gear — and both are gone, along with
- * the fifty-eight-request sweep they needed. Opening the Market now costs one request.
+ * <p>The square is the whole market, fetched once in the background and kept a few minutes; a
+ * stall opens the list of what it sells. The search asks the API for one item type, which is one
+ * request and always current.
  */
 public class LokaMarketScreen extends Screen {
-    private static final int MAX_CONTENT_WIDTH = 400;
-    private static final int ROW_HEIGHT = 10;
-    private static final int CARD_PADDING = 5;
-    private static final int CARD_GAP = 4;
-
-    private static final int SORT_ROW_Y = 26;
-    private static final int SORT_ROW_HEIGHT = 16;
-    private static final int SEARCH_ROW_Y = SORT_ROW_Y + SORT_ROW_HEIGHT + 4;
-    private static final int SEARCH_ROW_HEIGHT = 18;
+    private static final int MAX_CONTENT_WIDTH = 460;
+    private static final int TAB_Y = 22;
+    private static final int TAB_HEIGHT = 16;
+    private static final int TAB_WIDTH = 110;
+    private static final int BAR_Y = TAB_Y + TAB_HEIGHT + 5;
+    private static final int BAR_HEIGHT = 18;
     private static final int SEARCH_BUTTON_WIDTH = 54;
-    private static final int VIEWPORT_TOP = SEARCH_ROW_Y + SEARCH_ROW_HEIGHT + 6;
-
-    /** Gap between the four sort buttons. */
-    private static final int SORT_GAP = 3;
-
-    /** How many type names to offer under the search field. */
+    private static final int REFRESH_WIDTH = 56;
     private static final int MAX_SUGGESTIONS = 6;
-
-    /** Gap between the three columns of a listing card. */
-    private static final int COLUMN_GAP = 8;
-
-    /** The enchantment column never gets narrower than this, however long the item name is. */
-    private static final int MIN_ENCHANT_WIDTH = 72;
-
-    /** How many enchantments to spell out before the rest are just counted. */
-    private static final int MAX_ENCHANT_ROWS = 5;
-
-    /** How long the field must stand still before a lookup goes out. */
+    private static final int ROW_HEIGHT = 10;
     private static final long DEBOUNCE_MILLIS = 250;
-
-    /** How long the same query counts as already answered, so a retype does not refetch. */
     private static final long DEDUPE_MILLIS = 2000;
+
+    private enum Tab {
+        SQUARE("betterloka.market.tab.square"),
+        SEARCH("betterloka.market.tab.search");
+
+        private final String key;
+
+        Tab(String key) {
+            this.key = key;
+        }
+    }
 
     /** What one search found: the type it settled on, and its offers. */
     private record Found(String type, List<MarketListing> listings) {
     }
 
     private final Screen parent;
-    private final ScrollPanel scrollPanel = new ScrollPanel();
+    private Tab tab;
 
+    // --- the square ---
+    private final MarketSquare square = new MarketSquare();
+    private MarketSweep sweep;
+    private int indexedVersion = -1;
+    private MarketIndex index = MarketIndex.empty();
+
+    // --- the search ---
     private EditBox queryField;
     private Button searchButton;
-
-    /**
-     * The search and its suggestions hold a slot each, so a late answer to one cannot be written
-     * into the other, and one that no longer matches the field is dropped before it is applied.
-     */
+    private String pendingQuery;
+    private final ListingList results = new ListingList();
+    private final FilterMenu filter = new FilterMenu(MarketSort.CHEAPEST, sort -> results.reset());
     private final AsyncSlot<Found> searchSlot = new AsyncSlot<>("market search", this::onClientThread);
     private final AsyncSlot<List<String>> suggestSlot =
             new AsyncSlot<>("market suggestions", this::onClientThread);
-
     private final Debounce suggestDebounce = new Debounce(DEBOUNCE_MILLIS, DEDUPE_MILLIS);
-
-    private MarketSort sort = MarketSort.CHEAPEST;
-    /** Ordered once per search or change of order, rather than on every frame. */
     private List<MarketListing> ordered = List.of();
     private Found orderedFrom;
     private MarketSort orderedBy;
-
-    /** Type names matching what has been typed, offered under the field. */
     private final List<int[]> suggestionBounds = new ArrayList<>();
+    /** What the field said when it was last searched, so the suggestions stay shut until it changes. */
+    private String searchedText;
+
     private int lastMouseX;
     private int lastMouseY;
 
-    /** Identity IDs of the rows actually drawn this frame, so only those are looked up. */
-    private final List<String> visibleOwners = new ArrayList<>();
-
     public LokaMarketScreen(Screen parent) {
-        super(Component.translatable("betterloka.module.loka_market"));
-        this.parent = parent;
+        this(parent, null);
     }
 
     /**
-     * Runs an action on the client thread, and only while this screen is still the open one.
-     *
-     * <p>Every slot replies through here, which is what keeps their state single-threaded: it is
-     * read from {@code render} on every frame and written only from this queue.
+     * @param search an item type to look up straight away, from an offer's "other offers" button,
+     *               or {@code null} to open on the square
      */
+    public LokaMarketScreen(Screen parent, String search) {
+        super(Component.translatable("betterloka.module.loka_market"));
+        this.parent = parent;
+        this.tab = search == null ? Tab.SQUARE : Tab.SEARCH;
+        this.pendingQuery = search;
+    }
+
     private void onClientThread(Runnable action) {
         Minecraft client = this.minecraft;
         if (client == null) {
@@ -122,85 +116,107 @@ public class LokaMarketScreen extends Screen {
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
     }
 
     private int contentLeft() {
         return (this.width - contentWidth()) / 2;
     }
 
-    private int viewportBottom() {
-        return this.height - 34;
+    private int contentBottom() {
+        return this.height - 30;
     }
 
     @Override
     protected void init() {
         int left = contentLeft();
         int width = contentWidth();
+        sweep = BetterLokaClient.market().sweep(false);
 
-        scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
-
-        // Four buttons rather than one that cycles: any order is one press away, and the one in
-        // force is the one picked out in yellow.
-        MarketSort[] orders = MarketSort.values();
-        int buttonWidth = (width - SORT_GAP * (orders.length - 1)) / orders.length;
-        int x = left;
-        for (int i = 0; i < orders.length; i++) {
-            MarketSort target = orders[i];
-            int thisWidth = i == orders.length - 1 ? left + width - x : buttonWidth;
-            addRenderableWidget(Button.builder(sortLabel(target), button -> selectSort(target))
-                    .bounds(x, SORT_ROW_Y, thisWidth, SORT_ROW_HEIGHT).build());
-            x += buttonWidth + SORT_GAP;
+        int tabsX = this.width / 2 - TAB_WIDTH - 2;
+        for (Tab value : Tab.values()) {
+            Tab target = value;
+            addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
+                    .bounds(tabsX + value.ordinal() * (TAB_WIDTH + 4), TAB_Y, TAB_WIDTH, TAB_HEIGHT).build());
         }
 
-        String previous = queryField != null ? queryField.getValue() : "";
-        queryField = new EditBox(this.font, left, SEARCH_ROW_Y,
-                width - SEARCH_BUTTON_WIDTH - 4, SEARCH_ROW_HEIGHT, Component.translatable("betterloka.market.field"));
-        queryField.setMaxLength(48);
-        queryField.setHint(Component.translatable("betterloka.market.placeholder").withStyle(ChatFormatting.DARK_GRAY));
-        queryField.setValue(previous);
-        addRenderableWidget(queryField);
-
-        searchButton = Button.builder(Component.translatable("betterloka.market.search"), button -> search())
-                .bounds(left + width - SEARCH_BUTTON_WIDTH, SEARCH_ROW_Y, SEARCH_BUTTON_WIDTH, SEARCH_ROW_HEIGHT)
-                .build();
-        addRenderableWidget(searchButton);
+        if (tab == Tab.SQUARE) {
+            square.place(left, BAR_Y + 14, width, contentBottom() - (BAR_Y + 14));
+            addRenderableWidget(Button.builder(Component.translatable("betterloka.market.refresh"), button -> refresh())
+                    .bounds(left + width - REFRESH_WIDTH, BAR_Y - 2, REFRESH_WIDTH, 14).build());
+        } else {
+            int filterWidth = FilterMenu.preferredWidth(this.font);
+            filter.place(left + width - filterWidth, BAR_Y, filterWidth);
+            String previous = queryField != null ? queryField.getValue() : "";
+            int fieldWidth = width - filterWidth - SEARCH_BUTTON_WIDTH - 8;
+            queryField = new EditBox(this.font, left, BAR_Y, fieldWidth, BAR_HEIGHT,
+                    Component.translatable("betterloka.market.field"));
+            queryField.setMaxLength(48);
+            queryField.setHint(Component.translatable("betterloka.market.placeholder")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+            queryField.setValue(previous);
+            addRenderableWidget(queryField);
+            searchButton = Button.builder(Component.translatable("betterloka.market.search"), button -> search())
+                    .bounds(left + fieldWidth + 4, BAR_Y, SEARCH_BUTTON_WIDTH, BAR_HEIGHT).build();
+            addRenderableWidget(searchButton);
+            results.setViewport(left, BAR_Y + BAR_HEIGHT + 16, width, contentBottom() - (BAR_Y + BAR_HEIGHT + 16));
+            setInitialFocus(queryField);
+            if (pendingQuery != null) {
+                queryField.setValue(MarketListing.pretty(pendingQuery));
+                searchedText = queryField.getValue().trim();
+                String exact = pendingQuery;
+                pendingQuery = null;
+                searchType(exact);
+            }
+        }
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
-
-        setInitialFocus(queryField);
+                .bounds(this.width / 2 - 100, this.height - 25, 200, 20).build());
     }
 
-    private Component sortLabel(MarketSort value) {
-        Component label = Component.translatable(value.key());
-        return value == sort ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
+    private Component tabLabel(Tab value) {
+        Component label = Component.translatable(value.key);
+        return value == tab ? label.copy().withStyle(ChatFormatting.YELLOW) : label;
     }
 
-    /**
-     * Changes the order.
-     *
-     * <p>Reorders what is already loaded rather than searching again: the offers are in hand, and
-     * the order they go in is arithmetic.
-     */
-    private void selectSort(MarketSort target) {
-        if (sort == target) {
-            return;
+    private void selectTab(Tab target) {
+        if (tab != target) {
+            tab = target;
+            filter.close();
+            rebuildWidgets();
         }
-        sort = target;
-        scrollPanel.reset();
-        rebuildWidgets();
     }
+
+    private void refresh() {
+        sweep = BetterLokaClient.market().sweep(true);
+        indexedVersion = -1;
+    }
+
+    /** The square's stalls, worked out again only when another page of the market has come in. */
+    private MarketIndex index() {
+        MarketSweep current = BetterLokaClient.market().currentSweep();
+        if (current != null && current != sweep) {
+            sweep = current;
+            indexedVersion = -1;
+        }
+        if (sweep != null && sweep.version() != indexedVersion) {
+            indexedVersion = sweep.version();
+            index = MarketIndex.of(sweep.listings());
+        }
+        return index;
+    }
+
+    // --- the search ---
 
     private void search() {
         String query = queryField.getValue().trim();
         if (query.isEmpty()) {
             return;
         }
+        searchedText = query;
         suggestSlot.cancel();
         suggestDebounce.accept(query, System.currentTimeMillis());
-        scrollPanel.reset();
-
+        results.reset();
         MarketApi market = BetterLokaClient.market();
         searchSlot.start(market.executor(), () -> {
             List<String> matches = market.matchTypes(query, 1);
@@ -212,155 +228,26 @@ public class LokaMarketScreen extends Screen {
         });
     }
 
-    /** The offers in the chosen order, worked out once per search or change of order. */
+    /** Looks up one exact type, as "other offers" from a profile asks. */
+    private void searchType(String type) {
+        results.reset();
+        MarketApi market = BetterLokaClient.market();
+        searchSlot.start(market.executor(), () -> new Found(type, market.fetchListings(type)));
+    }
+
     private List<MarketListing> ordered() {
         Found found = searchSlot.value();
         if (found == null) {
             return List.of();
         }
-        if (orderedFrom != found || orderedBy != sort) {
-            long start = System.nanoTime();
-            ordered = sort.sort(found.listings());
+        if (orderedFrom != found || orderedBy != filter.sort()) {
+            ordered = filter.sort().sort(found.listings());
             orderedFrom = found;
-            orderedBy = sort;
-            timing("sort " + sort, ordered.size(), start);
+            orderedBy = filter.sort();
         }
         return ordered;
     }
 
-    /** Where the time went, for tracing a slow screen. */
-    private static void timing(String phase, int items, long startNanos) {
-        if (BetterLoka.LOGGER.isDebugEnabled()) {
-            BetterLoka.LOGGER.debug("[betterloka] timing {} {} items {} ms", phase, items,
-                    (System.nanoTime() - startNanos) / 1_000_000);
-        }
-    }
-
-    @Override
-    public boolean keyPressed(KeyEvent input) {
-        if (input.isConfirmation() && queryField.isFocused()) {
-            search();
-            return true;
-        }
-        return super.keyPressed(input);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        return scrollPanel.mouseScrolled(mouseX, mouseY, verticalAmount)
-                || super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-    }
-
-    @Override
-    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        List<String> suggestions = suggestions();
-        for (int i = 0; i < suggestionBounds.size() && i < suggestions.size(); i++) {
-            int[] bounds = suggestionBounds.get(i);
-            if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
-                    && click.y() >= bounds[1] && click.y() < bounds[1] + bounds[3]) {
-                queryField.setValue(suggestions.get(i));
-                // Dropped, or the list would reopen on the very text just chosen.
-                suggestSlot.reset();
-                search();
-                return true;
-            }
-        }
-        return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
-    }
-
-    @Override
-    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        return scrollPanel.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
-    }
-
-    @Override
-    public boolean mouseReleased(MouseButtonEvent click) {
-        scrollPanel.mouseReleased();
-        return super.mouseReleased(click);
-    }
-
-    @Override
-    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
-        long frameStart = System.nanoTime();
-        super.extractRenderState(context, mouseX, mouseY, delta);
-        searchButton.active = !searchSlot.loading() && !queryField.getValue().trim().isEmpty();
-        lastMouseX = mouseX;
-        lastMouseY = mouseY;
-        refreshSuggestions();
-        visibleOwners.clear();
-
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
-
-        int left = contentLeft();
-        int width = contentWidth();
-
-        context.enableScissor(left, VIEWPORT_TOP, left + width, viewportBottom());
-        int y = scrollPanel.contentTop();
-        int cardWidth = scrollPanel.contentWidth();
-        int used;
-
-        if (searchSlot.loading()) {
-            context.text(this.font,
-                    Component.translatable("betterloka.market.searching"), left, y + 4, GuiTheme.MUTED);
-            used = 20;
-        } else if (searchSlot.failed()) {
-            // A failed search says so and offers the way out, rather than sitting on "loading" for
-            // a request that is never coming back.
-            context.text(this.font,
-                    Component.translatable("betterloka.market.unreachable").withStyle(ChatFormatting.RED),
-                    left, y + 4, GuiTheme.BAD);
-            context.text(this.font,
-                    Component.translatable("betterloka.market.retry_search"),
-                    left, y + 4 + ROW_HEIGHT + 2, GuiTheme.MUTED);
-            used = 20 + ROW_HEIGHT;
-        } else {
-            used = renderSearch(context, left, y, cardWidth) - y;
-        }
-        context.disableScissor();
-
-        scrollPanel.setContentHeight(used);
-        scrollPanel.render(context, mouseX, mouseY);
-
-        // Drawn after the content so the list sits over it rather than under.
-        renderSuggestions(context, left, width);
-
-        // Only the rows that were actually drawn: a screenful is about fifteen sellers.
-        if (!visibleOwners.isEmpty()) {
-            BetterLokaClient.market().requestSellerNames(visibleOwners);
-        }
-        timing("render", used, frameStart);
-    }
-
-    /** The offers, or why there are none. */
-    private int renderSearch(GuiGraphicsExtractor context, int left, int y, int width) {
-        Found found = searchSlot.value();
-        if (found == null) {
-            context.text(this.font,
-                    Component.translatable(searchSlot.state() == AsyncSlot.State.READY
-                            ? "betterloka.market.no_type" : "betterloka.market.hint",
-                            queryField.getValue().trim()),
-                    left, y + 4, GuiTheme.MUTED);
-            return y + 20;
-        }
-        if (found.listings().isEmpty()) {
-            context.text(this.font,
-                    Component.translatable("betterloka.market.no_offers", found.type()),
-                    left, y + 4, GuiTheme.MUTED);
-            return y + 20;
-        }
-        return renderListings(context, left, y, width, ordered(), found.type());
-    }
-
-    /** Whether a card at this y is inside the viewport, so off-screen rows cost nothing to skip. */
-    private boolean visible(int y, int height) {
-        return y + height >= scrollPanel.viewportTop() && y <= scrollPanel.viewportBottom();
-    }
-
-    /**
-     * Type names matching what has been typed so far.
-     *
-     * <p>Held back until typing stops, so "Diamond Sword" is one lookup rather than thirteen.
-     */
     private void refreshSuggestions() {
         String query = queryField.getValue().trim();
         if (query.length() < 2 || !queryField.isFocused()) {
@@ -378,36 +265,200 @@ public class LokaMarketScreen extends Screen {
         suggestSlot.start(market.executor(), () -> market.matchTypes(due, MAX_SUGGESTIONS));
     }
 
-    /**
-     * What the field currently offers, if anything landed.
-     *
-     * <p>A single suggestion that is already what the field says is not a suggestion, and the list
-     * floats over the results — so it would cover a row of offers to tell the reader nothing.
-     */
     private List<String> suggestions() {
+        if (queryField.getValue().trim().equals(searchedText)) {
+            return List.of();
+        }
         List<String> found = suggestSlot.valueOr(List.of());
-        if (found.size() == 1
-                && found.get(0).equalsIgnoreCase(queryField.getValue().trim().replace(' ', '_'))) {
+        if (found.size() == 1 && MarketListing.pretty(found.get(0)).equalsIgnoreCase(queryField.getValue().trim())) {
             return List.of();
         }
         return found;
     }
 
-    /** Draws the suggestion list over the content, and remembers where each row landed. */
-    private void renderSuggestions(GuiGraphicsExtractor context, int left, int width) {
+    // --- input ---
+
+    @Override
+    public boolean keyPressed(KeyEvent input) {
+        if (tab == Tab.SEARCH && input.isConfirmation() && queryField.isFocused()) {
+            search();
+            return true;
+        }
+        return super.keyPressed(input);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        return tab == Tab.SEARCH && results.mouseScrolled(mouseX, mouseY, verticalAmount)
+                || super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (tab == Tab.SQUARE) {
+            if (click.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
+                MarketCategory stall = square.stallAt(click.x(), click.y());
+                if (stall != null) {
+                    this.minecraft.gui.setScreen(new MarketStallScreen(this, stall));
+                    return true;
+                }
+            }
+            return super.mouseClicked(click, doubled);
+        }
+
+        if (filter.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
+        List<String> suggestions = suggestions();
+        for (int i = 0; i < suggestionBounds.size() && i < suggestions.size(); i++) {
+            int[] bounds = suggestionBounds.get(i);
+            if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
+                    && click.y() >= bounds[1] && click.y() < bounds[1] + bounds[3]) {
+                String type = suggestions.get(i);
+                queryField.setValue(MarketListing.pretty(type));
+                searchedText = queryField.getValue().trim();
+                suggestSlot.reset();
+                suggestDebounce.accept(queryField.getValue().trim(), System.currentTimeMillis());
+                searchType(type);
+                return true;
+            }
+        }
+        if (results.mouseClickedScrollbar(click.x(), click.y())) {
+            return true;
+        }
+        if (click.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
+            MarketListing listing = results.clicked(click.x(), click.y());
+            if (listing != null) {
+                this.minecraft.gui.setScreen(new MarketItemScreen(this, listing));
+                return true;
+            }
+        }
+        return super.mouseClicked(click, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        return tab == Tab.SEARCH && results.mouseDragged(click.y()) || super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent click) {
+        results.mouseReleased();
+        return super.mouseReleased(click);
+    }
+
+    // --- drawing ---
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+        if (tab == Tab.SEARCH) {
+            searchButton.active = !searchSlot.loading() && !queryField.getValue().trim().isEmpty();
+            refreshSuggestions();
+        }
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(this.font, this.title, this.width / 2, 8, GuiTheme.TEXT);
+        if (tab == Tab.SQUARE) {
+            renderSquare(context, mouseX, mouseY);
+        } else {
+            renderSearch(context, mouseX, mouseY);
+        }
+    }
+
+    private void renderSquare(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        MarketIndex stalls = index();
+        MarketSweep current = sweep;
+        boolean loading = current != null && current.running();
+        int left = contentLeft();
+
+        Component status;
+        int statusColor = GuiTheme.MUTED;
+        if (current == null || current.failed()) {
+            status = Component.translatable("betterloka.market.unreachable");
+            statusColor = GuiTheme.BAD;
+        } else if (loading) {
+            status = Component.translatable("betterloka.market.fetching", current.pagesDone(),
+                    Math.max(1, current.pagesTotal()));
+            statusColor = GuiTheme.LIVE;
+        } else {
+            status = Component.translatable("betterloka.market.square_status", stalls.total(),
+                    TimeFormat.ago(current.finishedAt()));
+            if (current.pagesFailed() > 0) {
+                status = status.copy().append(Component.translatable("betterloka.market.pages_missing",
+                        current.pagesFailed()).withStyle(ChatFormatting.RED));
+            }
+        }
+        context.text(this.font, status, left, BAR_Y + 1, statusColor);
+        if (loading) {
+            int barX = left + this.font.width(status) + 6;
+            int barW = Math.max(20, contentLeft() + contentWidth() - REFRESH_WIDTH - 8 - barX);
+            GuiTheme.progressBar(context, barX, BAR_Y + 2, Math.min(barW, 120), 5, current.progress());
+        }
+
+        MarketCategory hovered = devHovered != null ? devHovered : square.stallAt(mouseX, mouseY);
+        square.render(context, this.font, stalls, loading, hovered);
+        if (hovered != null) {
+            if (devHovered != null) {
+                int[] centre = square.centreOf(devHovered);
+                mouseX = centre[0];
+                mouseY = centre[1];
+            }
+            MarketIndex.Stall stall = stalls.stall(hovered);
+            List<Component> lines = List.of(
+                    Component.translatable(hovered.key()).withStyle(ChatFormatting.YELLOW),
+                    Component.translatable(hovered.descriptionKey()).withStyle(ChatFormatting.GRAY),
+                    Component.translatable("betterloka.market.stall_tooltip", stall.offers(), stall.types())
+                            .withStyle(ChatFormatting.DARK_GRAY));
+            context.setComponentTooltipForNextFrame(this.font, lines, mouseX, mouseY);
+        }
+    }
+
+    private void renderSearch(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        int left = contentLeft();
+        int headerY = BAR_Y + BAR_HEIGHT + 4;
+        Found found = searchSlot.value();
+        Component header;
+        Component empty;
+        List<MarketListing> listings = List.of();
+        if (searchSlot.loading()) {
+            header = Component.translatable("betterloka.market.searching");
+            empty = Component.empty();
+        } else if (searchSlot.failed()) {
+            header = Component.translatable("betterloka.market.unreachable").withStyle(ChatFormatting.RED);
+            empty = Component.translatable("betterloka.market.retry_search");
+        } else if (found == null) {
+            header = Component.translatable(searchSlot.state() == AsyncSlot.State.READY
+                    ? "betterloka.market.no_type" : "betterloka.market.hint", queryField.getValue().trim());
+            empty = Component.empty();
+        } else {
+            listings = ordered();
+            header = Component.translatable("betterloka.market.offers", MarketListing.pretty(found.type()),
+                    listings.size(), Component.translatable(filter.sort().orderKey()));
+            empty = Component.translatable("betterloka.market.no_offers", MarketListing.pretty(found.type()));
+        }
+        context.text(this.font, header, left, headerY, GuiTheme.MUTED);
+        results.render(context, this.font, listings, filter.sort(), empty, mouseX, mouseY,
+                filter.isOpen() || !suggestions().isEmpty() && queryField.isFocused());
+
+        filter.render(context, this.font, mouseX, mouseY);
+        renderSuggestions(context, left);
+        filter.renderMenu(context, this.font, mouseX, mouseY);
+    }
+
+    private void renderSuggestions(GuiGraphicsExtractor context, int left) {
         suggestionBounds.clear();
         List<String> suggestions = suggestions();
         if (suggestions.isEmpty() || !queryField.isFocused()) {
             return;
         }
+        context.nextStratum();
         int rowHeight = ROW_HEIGHT + 2;
-        int y = SEARCH_ROW_Y + SEARCH_ROW_HEIGHT + 1;
-        int panelWidth = width - SEARCH_BUTTON_WIDTH - 4;
+        int y = BAR_Y + BAR_HEIGHT + 1;
+        int panelWidth = queryField.getWidth();
         int height = suggestions.size() * rowHeight + 2;
-        // Opaque, because the list floats over whatever is drawing underneath it.
         context.fill(left, y, left + panelWidth, y + height, 0xFF121218);
         GuiTheme.panel(context, left, y, panelWidth, height);
-
         for (int i = 0; i < suggestions.size(); i++) {
             int rowY = y + 1 + i * rowHeight;
             boolean hovered = lastMouseX >= left && lastMouseX < left + panelWidth
@@ -416,172 +467,56 @@ public class LokaMarketScreen extends Screen {
                 context.fill(left + 1, rowY, left + panelWidth - 1, rowY + rowHeight, 0x40FFFFFF);
             }
             context.text(this.font,
-                    this.font.plainSubstrByWidth(prettify(suggestions.get(i)), panelWidth - 10),
+                    this.font.plainSubstrByWidth(MarketListing.pretty(suggestions.get(i)), panelWidth - 10),
                     left + 5, rowY + 2, hovered ? GuiTheme.ACCENT : GuiTheme.TEXT);
             suggestionBounds.add(new int[]{left, rowY, panelWidth, rowHeight});
         }
     }
 
-    /** {@code DIAMOND_SWORD} reads better as {@code Diamond Sword} in a suggestion list. */
-    private static String prettify(String type) {
-        StringBuilder out = new StringBuilder(type.length());
-        for (String word : type.toLowerCase(Locale.ROOT).split("_")) {
-            if (!word.isEmpty()) {
-                if (out.length() > 0) {
-                    out.append(' ');
-                }
-                out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-            }
-        }
-        return out.toString();
+    // --- for the dev harness ---
+
+    /** Where a stall stands on screen. */
+    public int[] devStallCentre(String categoryId) {
+        return square.centreOf(MarketCategory.byId(categoryId));
     }
 
-    /** @return the y just past the last row. */
-    private int renderListings(GuiGraphicsExtractor context, int left, int y, int width,
-                               List<MarketListing> listings, String type) {
-        context.text(this.font,
-                Component.translatable("betterloka.market.offers", listings.get(0).prettyType(),
-                        listings.size(), Component.translatable(sort.orderKey())),
-                left, y + 2, GuiTheme.MUTED);
-        y += ROW_HEIGHT + 3;
-
-        int inner = width - CARD_PADDING * 2;
-        for (MarketListing listing : listings) {
-            boolean special = listing.isSpecial();
-            List<String> enchantLines = enchantLines(listing.enchantments());
-
-            // Worked out before anything is formatted, because a card off-screen should cost the
-            // height arithmetic and nothing else. Rows here vary in height with their enchantments,
-            // so the height has to come first.
-            int rows = Math.max(2, Math.max(special ? 3 : 2, enchantLines.size()));
-            int height = CARD_PADDING * 2 + ROW_HEIGHT * rows;
-            if (!visible(y, height)) {
-                y += height + CARD_GAP;
-                continue;
-            }
-            noteOwner(listing);
-
-            // Three columns: what it is and who is selling it on the left, its enchantments down the
-            // middle, what it costs on the right.
-            List<String> leftLines = new ArrayList<>();
-            leftLines.add(listing.displayName());
-            leftLines.add(Component.translatable("betterloka.market.seller", sellerOf(listing)).getString());
-            if (special) {
-                leftLines.add(listing.prettyType());
-            }
-
-            String price = money(listing.price());
-            // When the order is by date, the date is what the reader is comparing, so it takes the
-            // second line; otherwise that line is what the offer works out at each.
-            String second = sort == MarketSort.NEWEST || sort == MarketSort.OLDEST
-                    ? Component.translatable("betterloka.market.listed",
-                            TimeFormat.ago(listedAtMillis(listing))).getString()
-                    : Component.translatable("betterloka.market.stock", listing.quantity()).getString()
-                            + "  ·  " + money(listing.pricePerUnit())
-                            + Component.translatable("betterloka.market.each").getString();
-
-            int rightWidth = Math.max(this.font.width(price), this.font.width(second)) + COLUMN_GAP;
-            int middleWidth = enchantLines.isEmpty()
-                    ? 0
-                    : Math.max(MIN_ENCHANT_WIDTH, (inner - rightWidth) * 2 / 5);
-            int leftWidth = Math.max(40, inner - rightWidth - middleWidth - (middleWidth == 0 ? 0 : COLUMN_GAP));
-
-            GuiTheme.panel(context, left, y, width, height);
-
-            int textX = left + CARD_PADDING;
-            int textY = y + CARD_PADDING;
-
-            context.text(this.font,
-                    this.font.plainSubstrByWidth(leftLines.get(0), leftWidth), textX, textY,
-                    special ? GuiTheme.ACCENT : GuiTheme.TEXT);
-            for (int i = 1; i < leftLines.size(); i++) {
-                context.text(this.font,
-                        this.font.plainSubstrByWidth(leftLines.get(i), leftWidth),
-                        textX, textY + ROW_HEIGHT * i, GuiTheme.MUTED);
-            }
-
-            int middleX = textX + leftWidth + COLUMN_GAP;
-            for (int i = 0; i < enchantLines.size(); i++) {
-                context.text(this.font,
-                        this.font.plainSubstrByWidth(enchantLines.get(i), middleWidth),
-                        middleX, textY + ROW_HEIGHT * i, GuiTheme.ENCHANT);
-            }
-
-            context.text(this.font, price,
-                    left + width - CARD_PADDING - this.font.width(price), textY, GuiTheme.GOOD);
-            context.text(this.font, second,
-                    left + width - CARD_PADDING - this.font.width(second), textY + ROW_HEIGHT,
-                    GuiTheme.MUTED);
-
-            y += height + CARD_GAP;
+    /** Puts text in the search field and runs the search, as typing and Enter would. */
+    public void devSearch(String query) {
+        if (tab != Tab.SEARCH) {
+            selectTab(Tab.SEARCH);
         }
-        return y;
+        queryField.setValue(query);
+        search();
     }
 
-    /** @return when the offer went up, or 0 if its id carries no date. */
-    private static long listedAtMillis(MarketListing listing) {
-        return listing.listedAt() == null ? 0 : listing.listedAt().toEpochMilli();
+    /** Where the first result card {@code match} accepts is drawn. */
+    public int[] devRowWhere(java.util.function.Predicate<MarketListing> match) {
+        return results.rowWhere(match);
     }
 
-    /**
-     * The enchantment column, one per line so a fully kitted sword stays readable.
-     *
-     * <p>Beyond {@link #MAX_ENCHANT_ROWS} the rest are counted rather than listed — a card that grows
-     * to a dozen lines pushes everything else off the screen.
-     */
-    private static List<String> enchantLines(List<String> enchantments) {
-        if (enchantments.isEmpty()) {
-            return List.of();
-        }
-        if (enchantments.size() <= MAX_ENCHANT_ROWS) {
-            return enchantments;
-        }
-        List<String> shown = new ArrayList<>(enchantments.subList(0, MAX_ENCHANT_ROWS - 1));
-        shown.add(Component.translatable("betterloka.market.more_enchants",
-                enchantments.size() - (MAX_ENCHANT_ROWS - 1)).getString());
-        return shown;
+    public int[] devFilterButton() {
+        return filter.centre();
     }
 
-    /**
-     * The seller's name if it has landed, without asking for it here.
-     *
-     * <p>Never blocks and never starts a request: this runs while drawing, and the lookups are
-     * started once per frame from {@link #render} for the rows that were actually on screen.
-     */
-    private String sellerOf(MarketListing listing) {
-        String name = BetterLokaClient.market().sellerNameIfKnown(listing.ownerId());
-        if (name == null) {
-            return "...";
-        }
-        return name.isEmpty() ? "?" : name;
+    public int[] devFilterOption(int i) {
+        return filter.optionCentre(i);
     }
 
-    /** Remembers a drawn row's seller, to be looked up once the frame is done. */
-    private void noteOwner(MarketListing listing) {
-        String owner = listing.ownerId();
-        if (owner != null && !owner.isEmpty() && !visibleOwners.contains(owner)) {
-            visibleOwners.add(owner);
-        }
+    /** Lights a stall up as if the pointer were on it, which a headless window cannot do. */
+    public void devHover(String categoryId) {
+        devHovered = categoryId == null ? null : MarketCategory.byId(categoryId);
     }
 
-    /** Loka's prices run to the millions, so large numbers are abbreviated. */
-    private static String money(double amount) {
-        if (amount >= 1_000_000) {
-            return String.format(Locale.ROOT, "%.2fM", amount / 1_000_000);
-        }
-        if (amount >= 10_000) {
-            return String.format(Locale.ROOT, "%.1fk", amount / 1_000);
-        }
-        return String.format(Locale.ROOT, "%.0f", amount);
+    private MarketCategory devHovered;
+
+    public String devState() {
+        MarketSweep current = sweep;
+        return "tab=" + tab + " sweep=" + (current == null ? "none"
+                : current.pagesDone() + "/" + current.pagesTotal() + " listings=" + current.listings().size()
+                + (current.running() ? " running" : " done")) + " search=" + searchSlot.state()
+                + " sort=" + filter.sort() + " shown=" + ordered.size();
     }
 
-    /**
-     * Drops everything in flight when the screen goes away.
-     *
-     * <p>Screens register no global listeners — every widget goes through {@code addDrawableChild},
-     * which Minecraft clears itself — so requests are the only thing that outlives a closed screen,
-     * and this is where they stop.
-     */
     @Override
     public void removed() {
         searchSlot.cancel();

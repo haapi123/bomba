@@ -175,7 +175,7 @@ class LiveStatsTest {
             java.util.List<com.betterloka.api.model.MarketListing> swords = market.fetchListings("DIAMOND_SWORD");
             assertTrue(swords.size() > 5, "there are always swords on sale, got " + swords.size());
             for (int i = 1; i < swords.size(); i++) {
-                assertTrue(swords.get(i - 1).pricePerUnit() <= swords.get(i).pricePerUnit(),
+                assertTrue(swords.get(i - 1).itemPrice() <= swords.get(i).itemPrice(),
                         "listings should come back cheapest per unit first");
             }
 
@@ -196,7 +196,7 @@ class LiveStatsTest {
                     types.size(), swords.size(), special.size());
             System.out.printf("  cheapest: %s from %s at %.0f (%.0f each, %d left)%n",
                     swords.get(0).displayName(), seller, swords.get(0).price(),
-                    swords.get(0).pricePerUnit(), swords.get(0).quantity());
+                    swords.get(0).itemPrice(), swords.get(0).quantity());
             for (var listing : special.stream().limit(5).toList()) {
                 System.out.printf("  named:    %-34s [%s] %.0f%n", listing.customName(),
                         String.join(", ", listing.enchantments()), listing.price());

@@ -24,13 +24,18 @@ class MarketSortTest {
     private static final String AUG_24_2255 = "6a8ccbcc1541d13a1c12a623";
     private static final String AUG_24_2325 = "6a8cd2d11541d13a1c14ce13";
 
+    /** An offer of single items. */
     private static MarketListing listing(String id, double price, int quantity) {
+        return listing(id, price, quantity, 1);
+    }
+
+    private static MarketListing listing(String id, double price, int quantity, int stackSize) {
         JsonObject json = new JsonObject();
         json.addProperty("id", id);
         json.addProperty("ownerId", "owner-" + id);
         json.addProperty("price", price);
         json.addProperty("quantity", quantity);
-        json.addProperty("stackSize", 64);
+        json.addProperty("stackSize", stackSize);
         json.addProperty("type", "DIAMOND_SWORD");
         return MarketListing.fromJson(json);
     }
@@ -48,21 +53,35 @@ class MarketSortTest {
         assertNull(listing("not-an-object-id", 100, 1).listedAt());
     }
 
-    /** Price is compared per unit: the cheapest listing is otherwise just the smallest one. */
+    /**
+     * Price is compared per item: an offer's price is for one unit, a stack of {@code stackSize},
+     * so the cheapest offer is otherwise just the one sold in the smallest stacks.
+     */
     @Test
-    void cheapestComparesPerUnitRatherThanPerListing() {
-        MarketListing single = listing(AUG_24_2106, 90, 1);        // 90 each
-        MarketListing stack = listing(AUG_24_2255, 640, 64);       // 10 each
+    void cheapestComparesPerItemRatherThanPerOffer() {
+        MarketListing single = listing(AUG_24_2106, 90, 1, 1);        // 90 each
+        MarketListing stack = listing(AUG_24_2255, 640, 1, 64);       // 10 each
 
         List<MarketListing> sorted = MarketSort.CHEAPEST.sort(List.of(single, stack));
 
         assertEquals(stack.id(), sorted.get(0).id(), "640 for 64 is cheaper than 90 for one");
     }
 
+    /** How many units are left says nothing about what each costs. */
+    @Test
+    void stockDoesNotChangeThePrice() {
+        MarketListing plenty = listing(AUG_24_2106, 1200, 7);
+        MarketListing last = listing(AUG_24_2255, 1000, 1);
+
+        assertEquals(1200, plenty.itemPrice(), 1e-9, "1200 a unit, however many units are left");
+        assertEquals(8400, plenty.stockValue(), 1e-9);
+        assertEquals(last.id(), MarketSort.CHEAPEST.sort(List.of(plenty, last)).get(0).id());
+    }
+
     @Test
     void dearestIsTheOtherWayRound() {
-        MarketListing single = listing(AUG_24_2106, 90, 1);
-        MarketListing stack = listing(AUG_24_2255, 640, 64);
+        MarketListing single = listing(AUG_24_2106, 90, 1, 1);
+        MarketListing stack = listing(AUG_24_2255, 640, 1, 64);
 
         List<MarketListing> sorted = MarketSort.DEAREST.sort(List.of(stack, single));
 
@@ -95,6 +114,12 @@ class MarketSortTest {
 
         assertEquals(dated.id(), MarketSort.NEWEST.sort(List.of(undated, dated)).get(0).id());
         assertEquals(dated.id(), MarketSort.OLDEST.sort(List.of(undated, dated)).get(0).id());
+    }
+
+    @Test
+    void theFilterOffersTheFourOrdersNewestFirst() {
+        assertEquals(List.of(MarketSort.NEWEST, MarketSort.OLDEST, MarketSort.DEAREST, MarketSort.CHEAPEST),
+                List.of(MarketSort.values()));
     }
 
     /** Two offers put up in the same second should not swap places between refreshes. */

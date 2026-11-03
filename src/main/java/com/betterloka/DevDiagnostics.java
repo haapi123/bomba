@@ -58,6 +58,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("market".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            marketInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("waypoints".equals(System.getenv("BETTERLOKA_DIAG"))) {
             waypointInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -115,12 +120,18 @@ public final class DevDiagnostics {
             int number = round;
             step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
             step(2, () -> {
-                type(client().gui.screen(), "Diamond Sword");
-                click(client().gui.screen(), "Search");
+                if (client().gui.screen() instanceof LokaMarketScreen market) {
+                    market.devSearch("Diamond Sword");
+                }
             });
             // Deliberately no wait: changing the order before the answer lands is the same
             // shape as the reported trigger — the view moves under an in-flight request.
-            step(1, () -> click(client().gui.screen(), "Oldest"));
+            step(1, () -> {
+                if (client().gui.screen() instanceof LokaMarketScreen market) {
+                    realClickAt(market.devFilterButton(), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                    realClickAt(market.devFilterOption(1), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
             step(60, () -> { });
             step(1, () -> {
                 marketState("scenario A round " + number);
@@ -139,21 +150,13 @@ public final class DevDiagnostics {
         // section, so the screens are checked rather than assumed.
         step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
         step(2, () -> {
-            type(client().gui.screen(), "Diamond Sword");
-            click(client().gui.screen(), "Search");
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devSearch("Diamond Sword");
+            }
         });
         step(120, () -> { });
         shot(20, "market-cheapest");
-        step(2, () -> click(client().gui.screen(), "Dearest"));
-        step(20, () -> { });
-        shot(20, "market-dearest");
-        step(2, () -> click(client().gui.screen(), "Newest"));
-        step(20, () -> { });
-        shot(20, "market-newest");
-        step(2, () -> click(client().gui.screen(), "Oldest"));
-        step(20, () -> { });
-        shot(20, "market-oldest");
-        step(1, () -> marketState("after cycling every order"));
+        step(1, () -> marketState("after a search"));
         step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
         step(2, () -> {
             type(client().gui.screen(), "haapi");
@@ -553,10 +556,9 @@ public final class DevDiagnostics {
                     screen == null ? "null" : screen.getClass().getSimpleName());
             return;
         }
-        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: search={} sort={} suggestions={}",
-                label, sinceTimerMillis(),
-                slot(field(market, "searchSlot")), field(market, "sort"),
-                slot(field(market, "suggestSlot")));
+        BetterLoka.LOGGER.info("DIAG {} [+{} ms]: {} search={} suggestions={}",
+                label, sinceTimerMillis(), market.devState(),
+                slot(field(market, "searchSlot")), slot(field(market, "suggestSlot")));
     }
 
     /**
@@ -1008,6 +1010,131 @@ public final class DevDiagnostics {
             client().gui.setScreen(null);
         });
         step(20, () -> BetterLoka.LOGGER.info("DIAG translator checks done"));
+    }
+
+    // --- the Market: square, stall, filter, profile, search ---
+
+    private void marketInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
+        step(20, () -> marketScreenState("square, 1 s in"));
+        shot(2, "market-square-loading");
+        step(200, () -> marketScreenState("square, 11 s in"));
+        shot(5, "market-square");
+        step(2, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devHover("weapons");
+            }
+        });
+        shot(5, "market-square-hover");
+        step(2, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devHover(null);
+                realClickAt(market.devStallCentre("armor"), left);
+            }
+        });
+        step(20, () -> marketScreenState("armor stall"));
+        shot(5, "market-stall-armor");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devFilterButton(), left);
+            }
+        });
+        shot(5, "market-filter-open");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devFilterOption(3), left);
+            }
+        });
+        step(5, () -> marketScreenState("armor stall, cheapest"));
+        shot(5, "market-stall-cheapest");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devFilterButton(), left);
+                realClickAt(stall.devFilterOption(2), left);
+            }
+        });
+        shot(10, "market-stall-dearest");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devRowWhere(listing -> true), left);
+            }
+        });
+        step(60, () -> marketScreenState("profile from the armor stall"));
+        shot(5, "market-profile-armor");
+        step(2, () -> client().gui.screen().onClose());
+        step(2, () -> client().gui.screen().onClose());
+        step(5, () -> marketScreenState("back on the square"));
+        step(5, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                realClickAt(market.devStallCentre("colored"), left);
+            }
+        });
+        shot(20, "market-stall-colored");
+        step(2, () -> client().gui.screen().onClose());
+        step(5, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                realClickAt(market.devStallCentre("misc"), left);
+            }
+        });
+        shot(20, "market-stall-misc");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devRowWhere(listing -> listing.isLokaItem()), left);
+            }
+        });
+        shot(40, "market-profile-loka");
+        step(2, () -> client().gui.screen().onClose());
+        step(2, () -> client().gui.screen().onClose());
+        step(5, () -> realClick("Search", left));
+        step(5, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devSearch("diamond sword");
+            }
+        });
+        step(60, () -> marketScreenState("searched diamond sword"));
+        shot(5, "market-search");
+        step(2, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                realClickAt(market.devFilterButton(), left);
+                realClickAt(market.devFilterOption(2), left);
+            }
+        });
+        shot(10, "market-search-dearest");
+        step(2, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                realClickAt(market.devRowWhere(listing -> listing.isSpecial() && !listing.loreJson().isEmpty()), left);
+            }
+        });
+        step(60, () -> marketScreenState("profile of a named sword"));
+        shot(5, "market-profile-named");
+        step(2, () -> scroll(-10));
+        shot(5, "market-profile-named-scrolled");
+        step(2, () -> realClick("Other offers", left));
+        step(60, () -> marketScreenState("other offers"));
+        shot(5, "market-other-offers");
+        step(2, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devSearch("xp bottle");
+            }
+        });
+        step(60, () -> marketScreenState("searched xp bottle"));
+        shot(5, "market-search-xp");
+        step(2, () -> client().gui.setScreen(null));
+        step(20, () -> BetterLoka.LOGGER.info("DIAG market checks done"));
+    }
+
+    private static void marketScreenState(String label) {
+        Screen screen = client().gui.screen();
+        String state = screen instanceof LokaMarketScreen market ? market.devState()
+                : screen instanceof com.betterloka.gui.MarketStallScreen stall ? stall.devState()
+                : screen == null ? "no screen" : screen.getClass().getSimpleName();
+        BetterLoka.LOGGER.info("DIAG market {}: {} requests={}", label, state,
+                counter("requestCount"));
     }
 
     private static void translatorState(String label) {

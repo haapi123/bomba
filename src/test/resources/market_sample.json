@@ -1,0 +1,1514 @@
+[
+{
+"id": "6ad7b1df540b5ebc3a80aa9a",
+"ownerId": "owner-0",
+"price": 120.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "ECHO_SHARD",
+"itemStack": "ItemStack{ECHO_SHARD x 64}"
+},
+{
+"id": "6ad80ba18c248967c0250246",
+"ownerId": "owner-1",
+"price": 200.0,
+"quantity": 3,
+"stackSize": 64,
+"type": "BUBBLE_CORAL_FAN",
+"itemStack": "ItemStack{BUBBLE_CORAL_FAN x 64}"
+},
+{
+"id": "6ad80ba78c248967c0250265",
+"ownerId": "owner-2",
+"price": 225.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "BUBBLE_CORAL_BLOCK",
+"itemStack": "ItemStack{BUBBLE_CORAL_BLOCK x 64}"
+},
+{
+"id": "6ad80bb08c248967c02502da",
+"ownerId": "owner-3",
+"price": 210.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "BRAIN_CORAL",
+"itemStack": "ItemStack{BRAIN_CORAL x 64}"
+},
+{
+"id": "6ad80bb78c248967c0250314",
+"ownerId": "owner-4",
+"price": 240.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "BRAIN_CORAL_BLOCK",
+"itemStack": "ItemStack{BRAIN_CORAL_BLOCK x 64}"
+},
+{
+"id": "6ad80bbc8c248967c02507b6",
+"ownerId": "owner-5",
+"price": 210.0,
+"quantity": 6,
+"stackSize": 64,
+"type": "TUBE_CORAL_FAN",
+"itemStack": "ItemStack{TUBE_CORAL_FAN x 64}"
+},
+{
+"id": "6ad80bcb8c248967c0250817",
+"ownerId": "owner-6",
+"price": 225.0,
+"quantity": 3,
+"stackSize": 64,
+"type": "TUBE_CORAL",
+"itemStack": "ItemStack{TUBE_CORAL x 64}"
+},
+{
+"id": "6ad80bd58c248967c025085a",
+"ownerId": "owner-7",
+"price": 230.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "FIRE_CORAL",
+"itemStack": "ItemStack{FIRE_CORAL x 64}"
+},
+{
+"id": "6ad80bdc8c248967c025087f",
+"ownerId": "owner-8",
+"price": 215.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "HORN_CORAL",
+"itemStack": "ItemStack{HORN_CORAL x 64}"
+},
+{
+"id": "6ad80bea8c248967c02508cb",
+"ownerId": "owner-9",
+"price": 64.0,
+"quantity": 10,
+"stackSize": 64,
+"type": "SEAGRASS",
+"itemStack": "ItemStack{SEAGRASS x 64}"
+},
+{
+"id": "6ad841418c248967c02eb102",
+"ownerId": "owner-10",
+"price": 564.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "MAGMA_CREAM",
+"itemStack": "ItemStack{MAGMA_CREAM x 64}"
+},
+{
+"id": "6ad8522f8c248967c031ded9",
+"ownerId": "owner-11",
+"price": 105.0,
+"quantity": 26,
+"stackSize": 64,
+"type": "BASALT",
+"itemStack": "ItemStack{BASALT x 64}"
+},
+{
+"id": "6ad85b138c248967c032e175",
+"ownerId": "owner-12",
+"price": 300.0,
+"quantity": 16,
+"stackSize": 64,
+"type": "FLOWERING_AZALEA_LEAVES",
+"itemStack": "ItemStack{FLOWERING_AZALEA_LEAVES x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Silvermoon\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Silvermoon\"\n}}}"
+},
+{
+"id": "6ad88b0d8c248967c034ce67",
+"ownerId": "owner-13",
+"price": 594.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "BLACK_SHULKER_BOX",
+"itemStack": "ItemStack{BLACK_SHULKER_BOX x 1}"
+},
+{
+"id": "6ad8b4fb1c0ab2a2a75377de",
+"ownerId": "owner-14",
+"price": 913.0,
+"quantity": 6,
+"stackSize": 1,
+"type": "OUTPUT_CHEST_ITEM_FRAME",
+"itemStack": "ItemStack{ITEM_FRAME x 1, ENTITY_TAG_META:{meta-type=ENTITY_TAG, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Void Storage Access Marker\",\"color\":\"dark_aqua\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"A Void Marker that imbues the chest it's\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"placed on with properties of The Void.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"Provides access to items stored in The\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"Void.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"Place \",\"color\":\"yellow\",\"italic\":false},{\"text\":\"on a chest to turn it into a \",\"color\":\"gray\",\"italic\":false},{\"text\":\"Void Storage\",\"color\":\"dark_aqua\",\"italic\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"Access Chest\",\"color\":\"dark_aqua\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}], PublicBukkitValues={\n    \"theartifact:custom-item\": \"OUTPUT_CHEST_ITEM_FRAME\"\n}}}"
+},
+{
+"id": "6ad8b5d51c0ab2a2a7546132",
+"ownerId": "owner-15",
+"price": 192.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "COBBLED_DEEPSLATE",
+"itemStack": "ItemStack{COBBLED_DEEPSLATE x 64}"
+},
+{
+"id": "6ad8b7321c0ab2a2a7547462",
+"ownerId": "owner-16",
+"price": 120.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "GLASS",
+"itemStack": "ItemStack{GLASS x 64}"
+},
+{
+"id": "6ad8b7cc1c0ab2a2a7547f97",
+"ownerId": "owner-17",
+"price": 64.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "SMOOTH_STONE",
+"itemStack": "ItemStack{SMOOTH_STONE x 64}"
+},
+{
+"id": "6ad8b7db1c0ab2a2a7548382",
+"ownerId": "owner-18",
+"price": 192.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "SMOOTH_SANDSTONE",
+"itemStack": "ItemStack{SMOOTH_SANDSTONE x 64}"
+},
+{
+"id": "6ad8dab11c0ab2a2a75eee70",
+"ownerId": "owner-19",
+"price": 3500.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "ENCHANTED_BOOK",
+"itemStack": "ItemStack{ENCHANTED_BOOK x 1, ENCHANTED_META:{meta-type=ENCHANTED, stored-enchants={minecraft:mending=1}}}"
+},
+{
+"id": "6ad8e71771ef522cfe2665ae",
+"ownerId": "owner-20",
+"price": 1000.0,
+"quantity": 36,
+"stackSize": 1,
+"type": "SHULKER_BOX",
+"itemStack": "ItemStack{SHULKER_BOX x 1}"
+},
+{
+"id": "6ad8e71d71ef522cfe2665fc",
+"ownerId": "owner-21",
+"price": 1000.0,
+"quantity": 4,
+"stackSize": 1,
+"type": "BLUE_SHULKER_BOX",
+"itemStack": "ItemStack{BLUE_SHULKER_BOX x 1}"
+},
+{
+"id": "6ad8e8cd71ef522cfe2682ea",
+"ownerId": "owner-22",
+"price": 1000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "MAGENTA_SHULKER_BOX",
+"itemStack": "ItemStack{MAGENTA_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"_Skilltissue's refill #1\", blockMaterial=MAGENTA_SHULKER_BOX}}"
+},
+{
+"id": "6ad8e96d71ef522cfe26919a",
+"ownerId": "owner-23",
+"price": 1000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "GREEN_SHULKER_BOX",
+"itemStack": "ItemStack{GREEN_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"❀ Arval Box ❀\", blockMaterial=GREEN_SHULKER_BOX}}"
+},
+{
+"id": "6ad8e97371ef522cfe269228",
+"ownerId": "owner-24",
+"price": 1000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "CYAN_SHULKER_BOX",
+"itemStack": "ItemStack{CYAN_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"🔥☆Dark's & Whale's Boxes ☆🔥\", blockMaterial=CYAN_SHULKER_BOX}}"
+},
+{
+"id": "6ad8e97b71ef522cfe2692d3",
+"ownerId": "owner-25",
+"price": 1000.0,
+"quantity": 3,
+"stackSize": 1,
+"type": "WHITE_SHULKER_BOX",
+"itemStack": "ItemStack{WHITE_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"Mine Shulk\", blockMaterial=WHITE_SHULKER_BOX}}"
+},
+{
+"id": "6ad8e98271ef522cfe269398",
+"ownerId": "owner-26",
+"price": 1000.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "LIGHT_GRAY_SHULKER_BOX",
+"itemStack": "ItemStack{LIGHT_GRAY_SHULKER_BOX x 1}"
+},
+{
+"id": "6ad8e99171ef522cfe2694a2",
+"ownerId": "owner-27",
+"price": 1000.0,
+"quantity": 6,
+"stackSize": 1,
+"type": "DIAMOND_CHESTPLATE",
+"itemStack": "ItemStack{DIAMOND_CHESTPLATE x 1, ARMOR_META:{meta-type=ARMOR, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Sandsete\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:protection=4, minecraft:unbreaking=3}, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Sandsete\"\n}}}"
+},
+{
+"id": "6ad8e99971ef522cfe269706",
+"ownerId": "owner-28",
+"price": 1000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_LEGGINGS",
+"itemStack": "ItemStack{DIAMOND_LEGGINGS x 1, ARMOR_META:{meta-type=ARMOR, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Arak\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:protection=4, minecraft:unbreaking=3}, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Arak\"\n}}}"
+},
+{
+"id": "6ae0292a4938c4be769c293c",
+"ownerId": "owner-29",
+"price": 390.0,
+"quantity": 11,
+"stackSize": 64,
+"type": "GUNPOWDER",
+"itemStack": "ItemStack{GUNPOWDER x 64}"
+},
+{
+"id": "6ae0875f4938c4be76a861ba",
+"ownerId": "owner-30",
+"price": 1118.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "§dLarge Xp Bottles",
+"itemStack": "ItemStack{EXPERIENCE_BOTTLE x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Large Xp Bottle\",\"color\":\"light_purple\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[\"\", {\"text\":\"\",\"extra\":[{\"text\":\"Consume this bottle to gain\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"a large amount of Xp\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Harvested in \",\"extra\":[{\"text\":\"Astro\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"dungeon|Astro\",\n    \"theartifact:item-xp-amount\": 176\n}}}"
+},
+{
+"id": "6ae0877e4938c4be76a86509",
+"ownerId": "owner-31",
+"price": 559.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "§aSmall Xp Bottles",
+"itemStack": "ItemStack{EXPERIENCE_BOTTLE x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Small Xp Bottle\",\"color\":\"green\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[\"\", {\"text\":\"\",\"extra\":[{\"text\":\"Consume this bottle to gain\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"a small amount of Xp\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Harvested in \",\"extra\":[{\"text\":\"Astro\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"dungeon|Astro\",\n    \"theartifact:item-xp-amount\": 44\n}}}"
+},
+{
+"id": "6ae088494938c4be76a9521b",
+"ownerId": "owner-32",
+"price": 256.0,
+"quantity": 13,
+"stackSize": 4,
+"type": "END_CRYSTAL",
+"itemStack": "ItemStack{END_CRYSTAL x 4}"
+},
+{
+"id": "6ae0b4642cb85b4e1cb61956",
+"ownerId": "owner-33",
+"price": 29.0,
+"quantity": 30,
+"stackSize": 64,
+"type": "BAKED_POTATO",
+"itemStack": "ItemStack{BAKED_POTATO x 64}"
+},
+{
+"id": "6ae0c1662cb85b4e1cba566a",
+"ownerId": "owner-34",
+"price": 250.0,
+"quantity": 34,
+"stackSize": 64,
+"type": "SPRUCE_WOOD",
+"itemStack": "ItemStack{SPRUCE_WOOD x 64}"
+},
+{
+"id": "6ae0cbb52cb85b4e1cbebb74",
+"ownerId": "owner-35",
+"price": 15000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_SWORD",
+"itemStack": "ItemStack{DIAMOND_SWORD x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"✭ \",\"extra\":[{\"text\":\"Voids Whispr ✭ \",\"bold\":true}],\"color\":\"dark_blue\",\"italic\":false}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"--------------\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"Forged where the ocean floor\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"splits and light dares not \",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"follow. Tempered in the breath\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"of drowned leaders, and \",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"quenched in blackened tidals.\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"With each swing dragging\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"the weight of foe's\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"skulls to the deep dark void.\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"--------------\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", \"\", {\"text\":\"\",\"extra\":[{\"text\":\"💫Wielded by Pluto💫\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"\",\"color\":\"dark_blue\",\"bold\":false,\"italic\":true,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"◆ Owner\",\"color\":\"gold\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\": \",\"color\":\"gray\",\"italic\":false},{\"text\":\"ForrestNA\",\"color\":\"gold\",\"italic\":false}]}], enchants={minecraft:fire_aspect=2, minecraft:looting=3, minecraft:sharpness=5, minecraft:sweeping_edge=3, minecraft:unbreaking=3}, repair-cost=7, PublicBukkitValues={\n    \"theartifact:has-web-lore\": 1b,\n    \"theartifact:lore-id\": [B; 101B, -91B, -82B, 12B, -46B, -3B, -12B, 40B, 53B, 76B, -5B, 67B],\n    \"theartifact:lore-time\": 1762729651779L\n}}}"
+},
+{
+"id": "6ae10ac82cb85b4e1cd98ff4",
+"ownerId": "owner-36",
+"price": 300.0,
+"quantity": 10,
+"stackSize": 64,
+"type": "BIRCH_WOOD",
+"itemStack": "ItemStack{BIRCH_WOOD x 64}"
+},
+{
+"id": "6ae10c432cb85b4e1cdab0c3",
+"ownerId": "owner-37",
+"price": 800.0,
+"quantity": 8,
+"stackSize": 1,
+"type": "RECALL_STONE",
+"itemStack": "ItemStack{EMERALD x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Recall Stone\",\"color\":\"green\",\"bold\":true,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"This stone grants a warp to spawn.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"Right/Left click\",\"color\":\"yellow\",\"bold\":true,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\" to use when in-hand.\",\"color\":\"yellow\",\"bold\":false,\"italic\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"Consumed on Use\",\"color\":\"gray\",\"italic\":false}]}], PublicBukkitValues={\n    \"theartifact:custom-item\": \"RECALL_STONE\"\n}}}"
+},
+{
+"id": "6ae116b92cb85b4e1cdd4246",
+"ownerId": "owner-38",
+"price": 74.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_PICKAXE",
+"itemStack": "ItemStack{DIAMOND_PICKAXE x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Estra\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:efficiency=5, minecraft:fortune=3}, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Estra\"\n}}}"
+},
+{
+"id": "6ae133db2cb85b4e1ce66d88",
+"ownerId": "owner-39",
+"price": 424.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "COAST_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{COAST_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae13b132cb85b4e1ce7e2b4",
+"ownerId": "owner-40",
+"price": 739.0,
+"quantity": 4,
+"stackSize": 1,
+"type": "INPUT_CHEST_ITEM_FRAME",
+"itemStack": "ItemStack{ITEM_FRAME x 1, ENTITY_TAG_META:{meta-type=ENTITY_TAG, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Void Storage Deposit Marker\",\"color\":\"dark_aqua\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"A Void Marker that imbues the chest it's\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"placed on with properties of The Void.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"This allows items within to be transported\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"to their respective Access Chests.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"Place \",\"color\":\"yellow\",\"italic\":false},{\"text\":\"on a chest to turn it into a \",\"color\":\"gray\",\"italic\":false},{\"text\":\"Void Storage\",\"color\":\"dark_aqua\",\"italic\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"Input Chest\",\"color\":\"dark_aqua\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}], PublicBukkitValues={\n    \"theartifact:custom-item\": \"INPUT_CHEST_ITEM_FRAME\"\n}}}"
+},
+{
+"id": "6ae13bbe2cb85b4e1ce7ed9d",
+"ownerId": "owner-41",
+"price": 450.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "COOKED_BEEF",
+"itemStack": "ItemStack{COOKED_BEEF x 64}"
+},
+{
+"id": "6ae1d9092cb85b4e1c03a6a0",
+"ownerId": "owner-42",
+"price": 534.0,
+"quantity": 39,
+"stackSize": 16,
+"type": "ANTIPEARL",
+"itemStack": "ItemStack{SNOWBALL x 16, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Webbed Bola\",\"color\":\"green\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"A sticky, Webbed Bola that prevents its\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"target from pearling and doing extra\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"knockback once hit\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"Cooldown \",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\"16s\",\"color\":\"blue\",\"italic\":false}]}], ItemFlags=[HIDE_ATTRIBUTES], PublicBukkitValues={\n    \"theartifact:custom-item\": \"ANTIPEARL\"\n}}}"
+},
+{
+"id": "6ae1e7fe3b5c6c14ef7a4461",
+"ownerId": "owner-43",
+"price": 2000.0,
+"quantity": 1,
+"stackSize": 4,
+"type": "WITHER_ROSE",
+"itemStack": "ItemStack{WITHER_ROSE x 4}"
+},
+{
+"id": "6ae1ef793b5c6c14ef7babfe",
+"ownerId": "owner-44",
+"price": 859.0,
+"quantity": 4,
+"stackSize": 1,
+"type": "TOTEM_OF_UNDYING",
+"itemStack": "ItemStack{TOTEM_OF_UNDYING x 1}"
+},
+{
+"id": "6ae2033761f1743d93d2d09b",
+"ownerId": "owner-45",
+"price": 999.0,
+"quantity": 74,
+"stackSize": 1,
+"type": "PINK_SHULKER_BOX",
+"itemStack": "ItemStack{PINK_SHULKER_BOX x 1}"
+},
+{
+"id": "6ae2061a61f1743d93d4bbb2",
+"ownerId": "owner-46",
+"price": 350.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "WAYFINDER_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{WAYFINDER_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae2077561f1743d93d4de0e",
+"ownerId": "owner-47",
+"price": 250.0,
+"quantity": 23,
+"stackSize": 64,
+"type": "PALE_OAK_LOG",
+"itemStack": "ItemStack{PALE_OAK_LOG x 64}"
+},
+{
+"id": "6ae280a361f1743d93f448b3",
+"ownerId": "owner-48",
+"price": 135.0,
+"quantity": 10,
+"stackSize": 1,
+"type": "DIAMOND_BOOTS",
+"itemStack": "ItemStack{DIAMOND_BOOTS x 1, ARMOR_META:{meta-type=ARMOR, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Donzula\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:protection=4, minecraft:unbreaking=3}, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Donzula\"\n}}}"
+},
+{
+"id": "6ae2e44961f1743d9309560a",
+"ownerId": "owner-49",
+"price": 1200.0,
+"quantity": 7,
+"stackSize": 1,
+"type": "ELYTRA",
+"itemStack": "ItemStack{ELYTRA x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, enchants={minecraft:unbreaking=3}, repair-cost=1}}"
+},
+{
+"id": "6ae3042b61f1743d930f25bf",
+"ownerId": "owner-50",
+"price": 2300.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "VEX_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{VEX_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae31f0761f1743d931862d5",
+"ownerId": "owner-51",
+"price": 300.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "GLOWSTONE_DUST",
+"itemStack": "ItemStack{GLOWSTONE_DUST x 64}"
+},
+{
+"id": "6ae36affacf07fd407c8ec34",
+"ownerId": "owner-52",
+"price": 94.0,
+"quantity": 108,
+"stackSize": 1,
+"type": "ENDER_CHEST",
+"itemStack": "ItemStack{ENDER_CHEST x 1}"
+},
+{
+"id": "6ae37ab9acf07fd407cf1bea",
+"ownerId": "owner-53",
+"price": 1549.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "BLACK_DYE",
+"itemStack": "ItemStack{BLACK_DYE x 64}"
+},
+{
+"id": "6ae380f2acf07fd407d10e60",
+"ownerId": "owner-54",
+"price": 190.0,
+"quantity": 28,
+"stackSize": 64,
+"type": "FIREWORK_ROCKET",
+"itemStack": "ItemStack{FIREWORK_ROCKET x 64}"
+},
+{
+"id": "6ae39439acf07fd407d79f1b",
+"ownerId": "owner-55",
+"price": 780.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "BREWING_STAND",
+"itemStack": "ItemStack{BREWING_STAND x 64}"
+},
+{
+"id": "6ae399abacf07fd407da1995",
+"ownerId": "owner-56",
+"price": 180.0,
+"quantity": 21,
+"stackSize": 64,
+"type": "PINK_PETALS",
+"itemStack": "ItemStack{PINK_PETALS x 64}"
+},
+{
+"id": "6ae399b3acf07fd407da1f02",
+"ownerId": "owner-57",
+"price": 235.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "PEONY",
+"itemStack": "ItemStack{PEONY x 64}"
+},
+{
+"id": "6ae39dbbacf07fd407dbd3df",
+"ownerId": "owner-58",
+"price": 410.0,
+"quantity": 26,
+"stackSize": 64,
+"type": "GOLDEN_CARROT",
+"itemStack": "ItemStack{GOLDEN_CARROT x 64}"
+},
+{
+"id": "6ae3a420acf07fd407de2565",
+"ownerId": "owner-59",
+"price": 132.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_HELMET",
+"itemStack": "ItemStack{DIAMOND_HELMET x 1, ARMOR_META:{meta-type=ARMOR, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"The Tetris\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Dropped by 1Taxed at Boney Beach\",\"color\":\"gray\",\"italic\":false}], enchants={minecraft:protection=4, minecraft:unbreaking=3}, PublicBukkitValues={\n    \"theartifact:dropped-at-string\": \"§6Boney Beach\",\n    \"theartifact:dropped-by-id\": [B; 98B, 127B, -6B, 81B, -102B, 69B, -123B, 18B, -92B, 30B, -13B, -68B],\n    \"theartifact:industry-item\": \"arcanum|The Tetris\"\n}}}"
+},
+{
+"id": "6ae3cdb7acf07fd407eca8e7",
+"ownerId": "owner-60",
+"price": 2000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "FRESH_BLOOD",
+"itemStack": "ItemStack{POTION x 1, POTION_META:{meta-type=POTION, display-name={\"text\":\"\",\"extra\":[{\"text\":\"koreapoludniowa's Blood\",\"color\":\"red\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"An unseemly vial of \",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\"koreapoludniowa's\",\"color\":\"green\",\"italic\":false},{\"text\":\" blood.\",\"color\":\"gray\",\"italic\":false}]}], PublicBukkitValues={\n    \"theartifact:item-blood-bottle\": 1b\n}, potion-type=minecraft:healing}}"
+},
+{
+"id": "6ae3d0d9acf07fd407ed1ad0",
+"ownerId": "owner-61",
+"price": 1800.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "HOST_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{HOST_ARMOR_TRIM_SMITHING_TEMPLATE x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Looted from \",\"extra\":[{\"text\":\"Ruins of Camelot\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:discovered-in\": \"Ruins of Camelot\"\n}}}"
+},
+{
+"id": "6ae3d0e5acf07fd407ed1bba",
+"ownerId": "owner-62",
+"price": 900.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "SHAPER_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{SHAPER_ARMOR_TRIM_SMITHING_TEMPLATE x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Looted from \",\"extra\":[{\"text\":\"Ruins of Auru\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:discovered-in\": \"Ruins of Auru\"\n}}}"
+},
+{
+"id": "6ae4232eacf07fd407fcb951",
+"ownerId": "owner-63",
+"price": 320.0,
+"quantity": 19,
+"stackSize": 64,
+"type": "TIPPED_ARROW",
+"itemStack": "ItemStack{TIPPED_ARROW x 64, POTION_META:{meta-type=POTION, potion-type=minecraft:strong_harming}}"
+},
+{
+"id": "6ae48b4c772fdd864c1a5b1e",
+"ownerId": "owner-64",
+"price": 596.0,
+"quantity": 11,
+"stackSize": 64,
+"type": "§3Xp Bottles",
+"itemStack": "ItemStack{EXPERIENCE_BOTTLE x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Xp Bottle\",\"color\":\"dark_aqua\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[\"\", {\"text\":\"\",\"extra\":[{\"text\":\"Consume this bottle to gain\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"a fair amount of Xp\",\"color\":\"yellow\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Harvested in \",\"extra\":[{\"text\":\"Vanguard\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"dungeon|Vanguard\",\n    \"theartifact:item-xp-amount\": 88\n}}}"
+},
+{
+"id": "6ae4c2e4a18d7cd76668ea76",
+"ownerId": "owner-65",
+"price": 526.0,
+"quantity": 23,
+"stackSize": 64,
+"type": "COOKED_PORKCHOP",
+"itemStack": "ItemStack{COOKED_PORKCHOP x 64}"
+},
+{
+"id": "6ae5012aa18d7cd7667e1a21",
+"ownerId": "owner-66",
+"price": 500.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "PURPLE_SHULKER_BOX",
+"itemStack": "ItemStack{PURPLE_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"𝐭𝐢𝐤𝐯𝐚 𝐦𝐲𝐬𝐭𝐞𝐫𝐲 𝐛𝐨𝐱\", blockMaterial=PURPLE_SHULKER_BOX}}"
+},
+{
+"id": "6ad8e9b571ef522cfe269c7f",
+"ownerId": "owner-67",
+"price": 1000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_SHOVEL",
+"itemStack": "ItemStack{DIAMOND_SHOVEL x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Sandsete\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:efficiency=5, minecraft:silk_touch=1, minecraft:unbreaking=3}, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Sandsete\"\n}}}"
+},
+{
+"id": "6ad8ea4a22cd8ae5b7e16aba",
+"ownerId": "owner-68",
+"price": 1000.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "RED_SHULKER_BOX",
+"itemStack": "ItemStack{RED_SHULKER_BOX x 1}"
+},
+{
+"id": "6ad8ea5822cd8ae5b7e16d46",
+"ownerId": "owner-69",
+"price": 1000.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "YELLOW_SHULKER_BOX",
+"itemStack": "ItemStack{YELLOW_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"༺ Laveria MysteryBox ༻\", blockMaterial=YELLOW_SHULKER_BOX}}"
+},
+{
+"id": "6ad9070c769d21c9c3639cce",
+"ownerId": "owner-70",
+"price": 400.0,
+"quantity": 22,
+"stackSize": 64,
+"type": "AZALEA_LEAVES",
+"itemStack": "ItemStack{AZALEA_LEAVES x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Silvermoon\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Silvermoon\"\n}}}"
+},
+{
+"id": "6ae55f08a18d7cd7669505a7",
+"ownerId": "owner-71",
+"price": 256.0,
+"quantity": 3,
+"stackSize": 64,
+"type": "SUNFLOWER",
+"itemStack": "ItemStack{SUNFLOWER x 64}"
+},
+{
+"id": "6ae55f0fa18d7cd766950769",
+"ownerId": "owner-72",
+"price": 128.0,
+"quantity": 41,
+"stackSize": 64,
+"type": "RED_MUSHROOM",
+"itemStack": "ItemStack{RED_MUSHROOM x 64}"
+},
+{
+"id": "6ae55f1ea18d7cd766950957",
+"ownerId": "owner-73",
+"price": 256.0,
+"quantity": 26,
+"stackSize": 64,
+"type": "PUMPKIN",
+"itemStack": "ItemStack{PUMPKIN x 64}"
+},
+{
+"id": "6ae55f30a18d7cd766950c31",
+"ownerId": "owner-74",
+"price": 96.0,
+"quantity": 19,
+"stackSize": 16,
+"type": "EGG",
+"itemStack": "ItemStack{EGG x 16}"
+},
+{
+"id": "6ae55f3ea18d7cd766950d2c",
+"ownerId": "owner-75",
+"price": 128.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "CHORUS_FRUIT",
+"itemStack": "ItemStack{CHORUS_FRUIT x 64}"
+},
+{
+"id": "6ae55f54a18d7cd766950ff1",
+"ownerId": "owner-76",
+"price": 480.0,
+"quantity": 6,
+"stackSize": 64,
+"type": "REDSTONE_LAMP",
+"itemStack": "ItemStack{REDSTONE_LAMP x 64}"
+},
+{
+"id": "6ae55f5aa18d7cd766951064",
+"ownerId": "owner-77",
+"price": 640.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "HONEY_BLOCK",
+"itemStack": "ItemStack{HONEY_BLOCK x 64}"
+},
+{
+"id": "6ae55f61a18d7cd7669510be",
+"ownerId": "owner-78",
+"price": 480.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "DISPENSER",
+"itemStack": "ItemStack{DISPENSER x 64}"
+},
+{
+"id": "6ae55f6ea18d7cd7669511e1",
+"ownerId": "owner-79",
+"price": 96.0,
+"quantity": 33,
+"stackSize": 64,
+"type": "COARSE_DIRT",
+"itemStack": "ItemStack{COARSE_DIRT x 64}"
+},
+{
+"id": "6ae55f84a18d7cd7669513db",
+"ownerId": "owner-80",
+"price": 256.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "DROPPER",
+"itemStack": "ItemStack{DROPPER x 64}"
+},
+{
+"id": "6ae55f8fa18d7cd766951465",
+"ownerId": "owner-81",
+"price": 256.0,
+"quantity": 6,
+"stackSize": 64,
+"type": "STICKY_PISTON",
+"itemStack": "ItemStack{STICKY_PISTON x 64}"
+},
+{
+"id": "6ae55f98a18d7cd7669514d8",
+"ownerId": "owner-82",
+"price": 320.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "OBSERVER",
+"itemStack": "ItemStack{OBSERVER x 64}"
+},
+{
+"id": "6ae55fa5a18d7cd766951565",
+"ownerId": "owner-83",
+"price": 256.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "LILAC",
+"itemStack": "ItemStack{LILAC x 64}"
+},
+{
+"id": "6ae55fb5a18d7cd766951647",
+"ownerId": "owner-84",
+"price": 320.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "POWERED_RAIL",
+"itemStack": "ItemStack{POWERED_RAIL x 64}"
+},
+{
+"id": "6ae55fc1a18d7cd766951700",
+"ownerId": "owner-85",
+"price": 64.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "POLISHED_GRANITE",
+"itemStack": "ItemStack{POLISHED_GRANITE x 64}"
+},
+{
+"id": "6ae5746aa18d7cd7669883f5",
+"ownerId": "owner-86",
+"price": 32.0,
+"quantity": 20,
+"stackSize": 1,
+"type": "Potion of Invisibility 1",
+"itemStack": "ItemStack{POTION x 1, POTION_META:{meta-type=POTION, PublicBukkitValues={\n    \"theartifact:item-mastery-tracked\": 1b\n}, potion-type=minecraft:long_invisibility}}"
+},
+{
+"id": "6ae5a7bfa18d7cd766a1f315",
+"ownerId": "owner-87",
+"price": 49.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "SUGAR_CANE",
+"itemStack": "ItemStack{SUGAR_CANE x 64}"
+},
+{
+"id": "6ae5a8b1a18d7cd766a1fd97",
+"ownerId": "owner-88",
+"price": 127.0,
+"quantity": 17,
+"stackSize": 64,
+"type": "BROWN_MUSHROOM",
+"itemStack": "ItemStack{BROWN_MUSHROOM x 64}"
+},
+{
+"id": "6ae5abbaa18d7cd766a2117d",
+"ownerId": "owner-89",
+"price": 122.0,
+"quantity": 15,
+"stackSize": 16,
+"type": "ENDER_PEARL",
+"itemStack": "ItemStack{ENDER_PEARL x 16}"
+},
+{
+"id": "6ae5ae82a18d7cd766a315a2",
+"ownerId": "owner-90",
+"price": 48.0,
+"quantity": 25,
+"stackSize": 64,
+"type": "SPIDER_EYE",
+"itemStack": "ItemStack{SPIDER_EYE x 64}"
+},
+{
+"id": "6ae5bbb7a18d7cd766a5c336",
+"ownerId": "owner-91",
+"price": 380.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "REDSTONE_BLOCK",
+"itemStack": "ItemStack{REDSTONE_BLOCK x 64}"
+},
+{
+"id": "6ae5da9526012517533f5edd",
+"ownerId": "owner-92",
+"price": 3000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DRAGON_EGG",
+"itemStack": "ItemStack{DRAGON_EGG x 1}"
+},
+{
+"id": "6ae5fdd826012517534c0395",
+"ownerId": "owner-93",
+"price": 13.0,
+"quantity": 10,
+"stackSize": 64,
+"type": "SUGAR",
+"itemStack": "ItemStack{SUGAR x 64}"
+},
+{
+"id": "6ae5fe1126012517534c0d5a",
+"ownerId": "owner-94",
+"price": 43.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "PAPER",
+"itemStack": "ItemStack{PAPER x 64}"
+},
+{
+"id": "6ae5fe2026012517534c1122",
+"ownerId": "owner-95",
+"price": 6000.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "GLOW_INK_SAC",
+"itemStack": "ItemStack{GLOW_INK_SAC x 64}"
+},
+{
+"id": "6ae60c9ea9e149f2e60efac1",
+"ownerId": "owner-96",
+"price": 50.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "PUMPKIN_SEEDS",
+"itemStack": "ItemStack{PUMPKIN_SEEDS x 64}"
+},
+{
+"id": "6ae60ca5a9e149f2e60efb35",
+"ownerId": "owner-97",
+"price": 50.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "WHEAT_SEEDS",
+"itemStack": "ItemStack{WHEAT_SEEDS x 64}"
+},
+{
+"id": "6ae6232ea9e149f2e616ac85",
+"ownerId": "owner-98",
+"price": 21000.0,
+"quantity": 18,
+"stackSize": 1,
+"type": "BEACON",
+"itemStack": "ItemStack{BEACON x 1}"
+},
+{
+"id": "6ae62bc3a9e149f2e61ab32f",
+"ownerId": "owner-99",
+"price": 150.0,
+"quantity": 27,
+"stackSize": 64,
+"type": "CARROT",
+"itemStack": "ItemStack{CARROT x 64}"
+},
+{
+"id": "6ae6679aa9e149f2e62e8e1b",
+"ownerId": "owner-100",
+"price": 290.0,
+"quantity": 11,
+"stackSize": 64,
+"type": "BIRCH_LOG",
+"itemStack": "ItemStack{BIRCH_LOG x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Great Nuxvar\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Great Nuxvar\"\n}}}"
+},
+{
+"id": "6ae667e5a9e149f2e62e945c",
+"ownerId": "owner-101",
+"price": 2500.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "ENCHANTING_TABLE",
+"itemStack": "ItemStack{ENCHANTING_TABLE x 64}"
+},
+{
+"id": "6ae66922a9e149f2e62ecf56",
+"ownerId": "owner-102",
+"price": 240.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DIAMOND_SPEAR",
+"itemStack": "ItemStack{DIAMOND_SPEAR x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Concord\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Dropped by Prommmmmm at Zyre Keep\",\"color\":\"gray\",\"italic\":false}], enchants={minecraft:sharpness=5}, PublicBukkitValues={\n    \"theartifact:dropped-at-string\": \"§6Zyre Keep\",\n    \"theartifact:dropped-by-id\": [B; 100B, -15B, -31B, -109B, 28B, -24B, -88B, 84B, -20B, -92B, -46B, -26B],\n    \"theartifact:industry-item\": \"arcanum|Concord\"\n}}}"
+},
+{
+"id": "6ae6695da9e149f2e62ed8a8",
+"ownerId": "owner-103",
+"price": 879.0,
+"quantity": 19,
+"stackSize": 64,
+"type": "COBWEB",
+"itemStack": "ItemStack{COBWEB x 64}"
+},
+{
+"id": "6ae6942ea9e149f2e63a3a7a",
+"ownerId": "owner-104",
+"price": 9999.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "SHULKER_SHELL",
+"itemStack": "ItemStack{SHULKER_SHELL x 64}"
+},
+{
+"id": "6ae6b2b1a9e149f2e63f7ff2",
+"ownerId": "owner-105",
+"price": 192.0,
+"quantity": 13,
+"stackSize": 64,
+"type": "POTATO",
+"itemStack": "ItemStack{POTATO x 64}"
+},
+{
+"id": "6ae6e392a9e149f2e6449033",
+"ownerId": "owner-106",
+"price": 4000.0,
+"quantity": 4,
+"stackSize": 1,
+"type": "FISHING_ROD",
+"itemStack": "ItemStack{FISHING_ROD x 1, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Imbued in \",\"extra\":[{\"text\":\"Noobville\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], enchants={minecraft:luck_of_the_sea=3, minecraft:lure=3, minecraft:mending=1, minecraft:unbreaking=3}, repair-cost=1, PublicBukkitValues={\n    \"theartifact:industry-item\": \"arcanum|Noobville\"\n}}}"
+},
+{
+"id": "6ae71345a9e149f2e64a4678",
+"ownerId": "owner-107",
+"price": 100.0,
+"quantity": 31,
+"stackSize": 64,
+"type": "POINTED_DRIPSTONE",
+"itemStack": "ItemStack{POINTED_DRIPSTONE x 64}"
+},
+{
+"id": "6ae71351a9e149f2e64a4720",
+"ownerId": "owner-108",
+"price": 399.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "DRIPSTONE_BLOCK",
+"itemStack": "ItemStack{DRIPSTONE_BLOCK x 64}"
+},
+{
+"id": "6ae7137aa9e149f2e64a49f8",
+"ownerId": "owner-109",
+"price": 90.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "POLISHED_BASALT",
+"itemStack": "ItemStack{POLISHED_BASALT x 64}"
+},
+{
+"id": "6ae72850a9e149f2e64f2612",
+"ownerId": "owner-110",
+"price": 898.0,
+"quantity": 2,
+"stackSize": 1,
+"type": "DUNE_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{DUNE_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae75d35cb2aed797e2eef49",
+"ownerId": "owner-111",
+"price": 1200.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "DRAGON_HEAD",
+"itemStack": "ItemStack{DRAGON_HEAD x 1}"
+},
+{
+"id": "6ae782bfcb2aed797e404d83",
+"ownerId": "owner-112",
+"price": 2495.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "WILD_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{WILD_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae7865acb2aed797e41134b",
+"ownerId": "owner-113",
+"price": 300.0,
+"quantity": 29,
+"stackSize": 64,
+"type": "MANGROVE_WOOD",
+"itemStack": "ItemStack{MANGROVE_WOOD x 64}"
+},
+{
+"id": "6ae78693cb2aed797e412762",
+"ownerId": "owner-114",
+"price": 300.0,
+"quantity": 27,
+"stackSize": 64,
+"type": "RED_SAND",
+"itemStack": "ItemStack{RED_SAND x 64}"
+},
+{
+"id": "6ae786b0cb2aed797e4130e9",
+"ownerId": "owner-115",
+"price": 300.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "BROWN_MUSHROOM_BLOCK",
+"itemStack": "ItemStack{BROWN_MUSHROOM_BLOCK x 64}"
+},
+{
+"id": "6ae786becb2aed797e413425",
+"ownerId": "owner-116",
+"price": 300.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "MUSHROOM_STEM",
+"itemStack": "ItemStack{MUSHROOM_STEM x 64}"
+},
+{
+"id": "6ae79049cb2aed797e44d40e",
+"ownerId": "owner-117",
+"price": 140.0,
+"quantity": 8,
+"stackSize": 64,
+"type": "SNOW_BLOCK",
+"itemStack": "ItemStack{SNOW_BLOCK x 64}"
+},
+{
+"id": "6ae7913dcb2aed797e44fffb",
+"ownerId": "owner-118",
+"price": 140.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "GHAST_TEAR",
+"itemStack": "ItemStack{GHAST_TEAR x 64}"
+},
+{
+"id": "6ae79aa7cb2aed797e49b717",
+"ownerId": "owner-119",
+"price": 121.0,
+"quantity": 12,
+"stackSize": 64,
+"type": "MYCELIUM",
+"itemStack": "ItemStack{MYCELIUM x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Looted from \",\"extra\":[{\"text\":\"Athenaeum\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:discovered-in\": \"Athenaeum\"\n}}}"
+},
+{
+"id": "6ae7ff1acb2aed797e62022f",
+"ownerId": "owner-120",
+"price": 350.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "NOTE_BLOCK",
+"itemStack": "ItemStack{NOTE_BLOCK x 64}"
+},
+{
+"id": "6ae7ff3dcb2aed797e620741",
+"ownerId": "owner-121",
+"price": 350.0,
+"quantity": 9,
+"stackSize": 64,
+"type": "JUKEBOX",
+"itemStack": "ItemStack{JUKEBOX x 64}"
+},
+{
+"id": "6ae863facb2aed797e711faa",
+"ownerId": "owner-122",
+"price": 2500.0,
+"quantity": 10,
+"stackSize": 1,
+"type": "SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ae8ce30271fdf39b7bfc300",
+"ownerId": "owner-123",
+"price": 12.0,
+"quantity": 8,
+"stackSize": 64,
+"type": "MELON_SEEDS",
+"itemStack": "ItemStack{MELON_SEEDS x 64}"
+},
+{
+"id": "6ae8ce80271fdf39b7bfd154",
+"ownerId": "owner-124",
+"price": 16.0,
+"quantity": 15,
+"stackSize": 64,
+"type": "MELON_SLICE",
+"itemStack": "ItemStack{MELON_SLICE x 64}"
+},
+{
+"id": "6ae8e201271fdf39b7c60424",
+"ownerId": "owner-125",
+"price": 5000.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "WITHER_SKELETON_SKULL",
+"itemStack": "ItemStack{WITHER_SKELETON_SKULL x 1}"
+},
+{
+"id": "6ad92e6b769d21c9c36dc0f8",
+"ownerId": "owner-126",
+"price": 250.0,
+"quantity": 10,
+"stackSize": 64,
+"type": "JUNGLE_LOG",
+"itemStack": "ItemStack{JUNGLE_LOG x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[\"\", {\"text\":\"\",\"extra\":[{\"text\":\"Cut in \",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\"Donzula\",\"color\":\"gold\",\"italic\":false}]}]}}"
+},
+{
+"id": "6ad9971b0f805e662c6727ac",
+"ownerId": "owner-127",
+"price": 2000.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "TNT",
+"itemStack": "ItemStack{TNT x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Looted from \",\"extra\":[{\"text\":\"Kaldrsvell\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:discovered-in\": \"Kaldrsvell\"\n}}}"
+},
+{
+"id": "6ad9995c0f805e662c673d76",
+"ownerId": "owner-128",
+"price": 48.0,
+"quantity": 85,
+"stackSize": 1,
+"type": "NULL_POTION_SPLASH_LONG",
+"itemStack": "ItemStack{SPLASH_POTION x 1, POTION_META:{meta-type=POTION, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Splash Potion of Nullifying\",\"color\":\"white\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"Debuff Resistance (2:00)\",\"color\":\"blue\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"When consumed, removes all active debuffs\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"and provides immunity from further player\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"debuffs.\",\"color\":\"gray\",\"italic\":false}]}], ItemFlags=[HIDE_ADDITIONAL_TOOLTIP, HIDE_STORED_ENCHANTS], PublicBukkitValues={\n    \"theartifact:custom-item\": \"NULL_POTION_SPLASH_LONG\"\n}, custom-color=Color:[argb0xFFFFFFFF]}}"
+},
+{
+"id": "6ada4b1cf2bada56eec401d3",
+"ownerId": "owner-129",
+"price": 64.0,
+"quantity": 12,
+"stackSize": 64,
+"type": "MOSSY_STONE_BRICKS",
+"itemStack": "ItemStack{MOSSY_STONE_BRICKS x 64}"
+},
+{
+"id": "6ae8edd2271fdf39b7cb162a",
+"ownerId": "owner-130",
+"price": 200.0,
+"quantity": 4,
+"stackSize": 1,
+"type": "MUSIC_DISC_5",
+"itemStack": "ItemStack{MUSIC_DISC_5 x 1}"
+},
+{
+"id": "6ae922f99dc04c27d6951f8b",
+"ownerId": "owner-131",
+"price": 200.0,
+"quantity": 10,
+"stackSize": 64,
+"type": "GLOWSTONE",
+"itemStack": "ItemStack{GLOWSTONE x 64}"
+},
+{
+"id": "6ae931009dc04c27d6964fa0",
+"ownerId": "owner-132",
+"price": 76.0,
+"quantity": 15,
+"stackSize": 64,
+"type": "NETHER_WART",
+"itemStack": "ItemStack{NETHER_WART x 64}"
+},
+{
+"id": "6ae974f7a80f27d6838bc932",
+"ownerId": "owner-133",
+"price": 1750.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "WARPED_HYPHAE",
+"itemStack": "ItemStack{WARPED_HYPHAE x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, PublicBukkitValues={\n    \"theartifact:special-data\": \"yuletide_2023_present4\"\n}}}"
+},
+{
+"id": "6ae975f6a80f27d6838bdfe9",
+"ownerId": "owner-134",
+"price": 250.0,
+"quantity": 11,
+"stackSize": 64,
+"type": "MANGROVE_LOG",
+"itemStack": "ItemStack{MANGROVE_LOG x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Sovestead\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Sovestead\"\n}}}"
+},
+{
+"id": "6ae97661a80f27d6838be36c",
+"ownerId": "owner-135",
+"price": 200.0,
+"quantity": 32,
+"stackSize": 64,
+"type": "JUNGLE_WOOD",
+"itemStack": "ItemStack{JUNGLE_WOOD x 64}"
+},
+{
+"id": "6ae9768ca80f27d6838be489",
+"ownerId": "owner-136",
+"price": 500.0,
+"quantity": 7,
+"stackSize": 1,
+"type": "REINFORCED_HOPPER",
+"itemStack": "ItemStack{HOPPER x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name={\"text\":\"\",\"extra\":[{\"text\":\"Reinforced Hopper\",\"color\":\"green\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, lore=[{\"text\":\"\",\"extra\":[{\"text\":\"A more durable hopper with increased\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, {\"text\":\"\",\"extra\":[{\"text\":\"comparative capabilities.\",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false}]}, \"\", {\"text\":\"\",\"extra\":[{\"text\":\"◆ Crafting Material\",\"color\":\"dark_gray\",\"italic\":false}]}], PublicBukkitValues={\n    \"theartifact:custom-item\": \"REINFORCED_HOPPER\"\n}, blockMaterial=HOPPER}}"
+},
+{
+"id": "6ae976dfa80f27d6838be58f",
+"ownerId": "owner-137",
+"price": 150.0,
+"quantity": 31,
+"stackSize": 64,
+"type": "ACACIA_LOG",
+"itemStack": "ItemStack{ACACIA_LOG x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Sovereign\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Sovereign\"\n}}}"
+},
+{
+"id": "6ae9771da80f27d6838be6b9",
+"ownerId": "owner-138",
+"price": 200.0,
+"quantity": 26,
+"stackSize": 64,
+"type": "CHERRY_WOOD",
+"itemStack": "ItemStack{CHERRY_WOOD x 64}"
+},
+{
+"id": "6ae977aca80f27d6838be8da",
+"ownerId": "owner-139",
+"price": 200.0,
+"quantity": 32,
+"stackSize": 64,
+"type": "PALE_OAK_WOOD",
+"itemStack": "ItemStack{PALE_OAK_WOOD x 64}"
+},
+{
+"id": "6aea0c0ee602cb081e982df9",
+"ownerId": "owner-140",
+"price": 349.0,
+"quantity": 10,
+"stackSize": 1,
+"type": "WARD_ARMOR_TRIM_SMITHING_TEMPLATE",
+"itemStack": "ItemStack{WARD_ARMOR_TRIM_SMITHING_TEMPLATE x 1}"
+},
+{
+"id": "6ada4b21f2bada56eec40319",
+"ownerId": "owner-141",
+"price": 100.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "SMOOTH_BASALT",
+"itemStack": "ItemStack{SMOOTH_BASALT x 64}"
+},
+{
+"id": "6ada6834f2bada56eed28f3a",
+"ownerId": "owner-142",
+"price": 315.0,
+"quantity": 4,
+"stackSize": 64,
+"type": "OBSIDIAN",
+"itemStack": "ItemStack{OBSIDIAN x 64}"
+},
+{
+"id": "6adb51fd16e89cb3c39bc84e",
+"ownerId": "owner-143",
+"price": 699.0,
+"quantity": 14,
+"stackSize": 64,
+"type": "BEEF",
+"itemStack": "ItemStack{BEEF x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Gathered in \",\"extra\":[{\"text\":\"Astro\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"barn|Astro\"\n}}}"
+},
+{
+"id": "6aea1ba8e602cb081e9c0215",
+"ownerId": "owner-144",
+"price": 12000.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "DIAMOND_BLOCK",
+"itemStack": "ItemStack{DIAMOND_BLOCK x 64}"
+},
+{
+"id": "6adb8e343a13ef5356d67f89",
+"ownerId": "owner-145",
+"price": 50.0,
+"quantity": 1,
+"stackSize": 64,
+"type": "MAGMA_BLOCK",
+"itemStack": "ItemStack{MAGMA_BLOCK x 64}"
+},
+{
+"id": "6adba56b3a13ef5356dfc320",
+"ownerId": "owner-146",
+"price": 88.0,
+"quantity": 7,
+"stackSize": 64,
+"type": "BREAD",
+"itemStack": "ItemStack{BREAD x 64}"
+},
+{
+"id": "6adce6fc1844411fd1d42375",
+"ownerId": "owner-147",
+"price": 300.0,
+"quantity": 35,
+"stackSize": 64,
+"type": "CHERRY_LEAVES",
+"itemStack": "ItemStack{CHERRY_LEAVES x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[{\"text\":\"--------------\",\"color\":\"gray\",\"italic\":false}, {\"text\":\"❖ Cut in \",\"extra\":[{\"text\":\"Corvus\",\"color\":\"gold\"}],\"color\":\"gray\",\"italic\":false}], PublicBukkitValues={\n    \"theartifact:industry-item\": \"lumbermill|Corvus\"\n}}}"
+},
+{
+"id": "6add343b1844411fd118015e",
+"ownerId": "owner-148",
+"price": 29.0,
+"quantity": 30,
+"stackSize": 64,
+"type": "CYAN_WOOL",
+"itemStack": "ItemStack{CYAN_WOOL x 64}"
+},
+{
+"id": "6add34881844411fd11902cd",
+"ownerId": "owner-149",
+"price": 177.0,
+"quantity": 183,
+"stackSize": 64,
+"type": "ICE",
+"itemStack": "ItemStack{ICE x 64}"
+},
+{
+"id": "6add34a01844411fd11909e1",
+"ownerId": "owner-150",
+"price": 24.0,
+"quantity": 28,
+"stackSize": 64,
+"type": "PINK_WOOL",
+"itemStack": "ItemStack{PINK_WOOL x 64}"
+},
+{
+"id": "6add34aa1844411fd1190dfd",
+"ownerId": "owner-151",
+"price": 24.0,
+"quantity": 29,
+"stackSize": 64,
+"type": "GREEN_WOOL",
+"itemStack": "ItemStack{GREEN_WOOL x 64}"
+},
+{
+"id": "6add34c31844411fd119124b",
+"ownerId": "owner-152",
+"price": 24.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "LIGHT_BLUE_WOOL",
+"itemStack": "ItemStack{LIGHT_BLUE_WOOL x 64}"
+},
+{
+"id": "6add35081844411fd1192682",
+"ownerId": "owner-153",
+"price": 24.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "ORANGE_WOOL",
+"itemStack": "ItemStack{ORANGE_WOOL x 64}"
+},
+{
+"id": "6add35431844411fd1193b61",
+"ownerId": "owner-154",
+"price": 24.0,
+"quantity": 28,
+"stackSize": 64,
+"type": "BLUE_WOOL",
+"itemStack": "ItemStack{BLUE_WOOL x 64}"
+},
+{
+"id": "6add35551844411fd1193f2f",
+"ownerId": "owner-155",
+"price": 24.0,
+"quantity": 28,
+"stackSize": 64,
+"type": "MAGENTA_WOOL",
+"itemStack": "ItemStack{MAGENTA_WOOL x 64}"
+},
+{
+"id": "6add35631844411fd1194390",
+"ownerId": "owner-156",
+"price": 24.0,
+"quantity": 24,
+"stackSize": 64,
+"type": "PURPLE_WOOL",
+"itemStack": "ItemStack{PURPLE_WOOL x 64}"
+},
+{
+"id": "6ade2baca6a35dc6915cd6ee",
+"ownerId": "owner-157",
+"price": 2500.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "RAW_GOLD_BLOCK",
+"itemStack": "ItemStack{RAW_GOLD_BLOCK x 64}"
+},
+{
+"id": "6ade5df6a6a35dc6917ec942",
+"ownerId": "owner-158",
+"price": 96.0,
+"quantity": 26,
+"stackSize": 64,
+"type": "MUD",
+"itemStack": "ItemStack{MUD x 64}"
+},
+{
+"id": "6ade5e0fa6a35dc6917ecf7e",
+"ownerId": "owner-159",
+"price": 128.0,
+"quantity": 34,
+"stackSize": 64,
+"type": "PACKED_MUD",
+"itemStack": "ItemStack{PACKED_MUD x 64}"
+},
+{
+"id": "6ade62f6a6a35dc691837fed",
+"ownerId": "owner-160",
+"price": 450.0,
+"quantity": 1,
+"stackSize": 1,
+"type": "GRAY_SHULKER_BOX",
+"itemStack": "ItemStack{GRAY_SHULKER_BOX x 1, TILE_ENTITY_META:{meta-type=TILE_ENTITY, display-name=\"❀ Arval Box ❀\", blockMaterial=GRAY_SHULKER_BOX}}"
+},
+{
+"id": "6ade7606e5e413c7a389c436",
+"ownerId": "owner-161",
+"price": 128.0,
+"quantity": 21,
+"stackSize": 64,
+"type": "RAIL",
+"itemStack": "ItemStack{RAIL x 64}"
+},
+{
+"id": "6adeb2cd1e51893a83505a76",
+"ownerId": "owner-162",
+"price": 65.0,
+"quantity": 15,
+"stackSize": 64,
+"type": "OAK_LOG",
+"itemStack": "ItemStack{OAK_LOG x 64, UNSPECIFIC_META:{meta-type=UNSPECIFIC, lore=[\"\", {\"text\":\"\",\"extra\":[{\"text\":\"Cut in \",\"color\":\"gray\",\"bold\":false,\"italic\":false,\"underlined\":false,\"strikethrough\":false,\"obfuscated\":false},{\"text\":\"Valentia\",\"color\":\"gold\",\"italic\":false}]}]}}"
+},
+{
+"id": "6adf097b1e51893a835ec35c",
+"ownerId": "owner-163",
+"price": 300.0,
+"quantity": 27,
+"stackSize": 64,
+"type": "GLISTERING_MELON_SLICE",
+"itemStack": "ItemStack{GLISTERING_MELON_SLICE x 64}"
+},
+{
+"id": "6adf89654938c4be765981ff",
+"ownerId": "owner-164",
+"price": 32.0,
+"quantity": 13,
+"stackSize": 64,
+"type": "STONE",
+"itemStack": "ItemStack{STONE x 64}"
+},
+{
+"id": "6adf89734938c4be7659831e",
+"ownerId": "owner-165",
+"price": 32.0,
+"quantity": 5,
+"stackSize": 64,
+"type": "DIRT",
+"itemStack": "ItemStack{DIRT x 64}"
+},
+{
+"id": "6adff1c14938c4be76946089",
+"ownerId": "owner-166",
+"price": 534.0,
+"quantity": 12,
+"stackSize": 64,
+"type": "COOKED_MUTTON",
+"itemStack": "ItemStack{COOKED_MUTTON x 64}"
+},
+{
+"id": "6ae013344938c4be769a93d4",
+"ownerId": "owner-167",
+"price": 5000.0,
+"quantity": 2,
+"stackSize": 64,
+"type": "IRON_BLOCK",
+"itemStack": "ItemStack{IRON_BLOCK x 64}"
+}
+]

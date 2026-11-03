@@ -189,35 +189,48 @@ Polish and English. The mod never sends anything to the server itself; you alway
 
 ## Loka Market
 
-![Named items on the market](docs/market-special.png)
+![The market square](docs/market-square.png)
 
-Three views over Loka's market:
+The Market opens on a **market square**: a stall for each kind of goods, drawn in three quarters
+view out of the game's own block textures — a planked counter, posts, a striped awning in the
+stall's colour — with the goods it has most of standing on the counter as real little item models.
+Hovering a stall says what it sells and how much of it there is; clicking it opens the stall.
 
-- **Search** — type an item and get every offer, cheapest per unit first, with the seller, the price,
-  how many they have left and the price each.
-- **Special** — every *named* item on sale, dearest first. This is where the one-off swords live.
-  Plain lore is not enough to qualify: on Loka every imbued item carries "Imbued in <town>" lore, so
-  only a player-given name marks a piece of gear out.
-- **Deals** — every listing priced well under what its item usually goes for.
+Fifteen stalls: **Building Blocks, Colored Blocks, Misc Building, Nature, Redstone, Materials,
+Food & Farming, Brewing, Enchanting, Loka & Misc, Tools, Weapons, Armor, Nether, End**. Loka's API
+has no categories — an offer is an item type, a price and a seller — so the stalls are the mod's
+own, modelled on the game's creative tabs: every item is placed by its id (`_sword`, `_wool`,
+`_ore`...), checked by a test against all 1,658 items in the game and every type on the market.
+Loka's own items — Recall Stones, Reinforced Hoppers, Void Storage markers — are listed under a
+type of Loka's over an ordinary material, and go to **Loka & Misc** with a *Loka* badge.
 
-![Deals](docs/market-deals.png)
+The square is the whole market: every page of `/market_sales` (the API hands out twenty offers a
+page, so about forty requests), fetched in the background when the Market opens, filling in as it
+goes, and kept for three minutes. **Refresh** fetches it again.
 
-A deal is measured against the **going rate** for that item — its median price per unit — not against
-the cheapest listing, since the cheapest cannot undercut itself. Anything 20% or more below the
-median is listed, deepest discount first, with both prices so the number means something. Items with
-fewer than three listings are skipped: two offers make each other look like a bargain or a ripoff
-depending on the order.
+![A stall and its Filter](docs/market-stall.png)
 
-![Suggestions](docs/market-suggestions.png)
+A stall lists every offer it has: the item in a slot, with its count, wear and enchantment glint;
+its name in its own colours; the seller and when it was listed; the price and how many are left.
+Hovering the item shows its tooltip. A field narrows the stall down by name or enchantment
+(`mending`), and **Filter** puts it in one of four orders: **Newest**, **Oldest**, **Most
+expensive**, **Cheapest**.
 
-The search field suggests item types as you type — `diamond_sw` offers **Diamond Sword**; click one
-to search it.
+![Search](docs/market-search.png)
 
-Every card is three columns: **what it is and who is selling it** on the left, **its enchantments**
-down the middle, **what it costs** on the right. Enchantments are read out of the listed item stack
-itself, so they show on search results as well — a bare Sharpness V book is as enchanted as a named
-sword. Past five enchantments the rest are counted rather than listed, so one fully kitted sword
-cannot fill the screen.
+**Search** works as before: type an item — `diamond sword`, or `xp bottle` for Loka's own bottles —
+and get every offer of it, with type suggestions as you type and the same Filter.
+
+![An item's profile](docs/market-profile.png)
+
+Clicking any offer opens its **profile**: the item four times its size on a stand, turning slowly,
+with its name and lore exactly as the game colours them, its enchantments, durability or potion
+effect, the seller, when it was listed, and what it costs a unit, an item and all told. **Other
+offers** searches the same item; **Copy seller** puts the seller's name on the clipboard.
+
+Prices are read as Loka's API documents them: `price` is for one unit, a stack of `stackSize`
+items, of which `quantity` are left. A stack of sixty-four gunpowder at 390 is about six shards a
+powder, and orders by price compare the price of one item, so a stack and a single can be compared.
 
 ## Town Finder
 

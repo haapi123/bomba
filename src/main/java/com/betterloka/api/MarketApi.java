@@ -3,6 +3,7 @@ package com.betterloka.api;
 import com.betterloka.BetterLoka;
 import com.betterloka.api.model.Json;
 import com.betterloka.api.model.MarketListing;
+import com.betterloka.api.model.MarketSort;
 import com.betterloka.data.LruCache;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -15,7 +16,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
@@ -82,31 +82,119 @@ public final class MarketApi {
      * anywhere.
      */
     public List<String> matchTypes(String query, int limit) throws ApiException {
-        String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT).replace(' ', '_');
+        return matchTypes(fetchTypes(), query, limit);
+    }
+
+    /**
+     * Ranks {@code types} against what was typed.
+     *
+     * <p>Both sides are read the way a player would: colour codes off, underscores as spaces, case
+     * ignored — so {@code xp bottle} finds {@code §3Xp Bottles}, and {@code diamond sword} finds
+     * {@code DIAMOND_SWORD}.
+     */
+    public static List<String> matchTypes(List<String> types, String query, int limit) {
+        String needle = searchKey(query);
         if (needle.isEmpty()) {
             return List.of();
         }
         List<String> ranked = new ArrayList<>();
-        for (String type : fetchTypes()) {
-            if (type.toLowerCase(Locale.ROOT).contains(needle)) {
+        for (String type : types) {
+            if (searchKey(type).contains(needle)) {
                 ranked.add(type);
             }
         }
         ranked.sort(Comparator
-                .comparingInt((String type) -> type.toLowerCase(Locale.ROOT).equals(needle) ? 0
-                        : type.toLowerCase(Locale.ROOT).startsWith(needle) ? 1 : 2)
-                .thenComparingInt(String::length)
+                .comparingInt((String type) -> searchKey(type).equals(needle) ? 0
+                        : searchKey(type).startsWith(needle) ? 1 : 2)
+                .thenComparingInt(type -> searchKey(type).length())
                 .thenComparing(String.CASE_INSENSITIVE_ORDER));
         return ranked.size() > limit ? List.copyOf(ranked.subList(0, limit)) : List.copyOf(ranked);
     }
 
-    /** Everything currently on sale of one item type, cheapest per unit first. */
+    /** A type or a query as it is compared: {@code §3Xp_Bottles} to {@code xp bottles}. */
+    static String searchKey(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("§.", "").replace('_', ' ').toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ").strip();
+    }
+
+    /** Everything currently on sale of one item type, cheapest per item first. */
     public List<MarketListing> fetchListings(String type) throws ApiException {
         List<MarketListing> listings = readListings(
                 getObject(BASE_URL + "/market_sales/search/findByType?type=" + encode(type)));
-        List<MarketListing> sorted = new ArrayList<>(listings);
-        sorted.sort(Comparator.comparingDouble(MarketListing::pricePerUnit));
-        return List.copyOf(sorted);
+        return MarketSort.CHEAPEST.sort(listings);
+    }
+
+    // --- the whole market ---
+
+    /** The API hands the market out twenty offers a page, whatever size is asked for. */
+    private static final int PAGE_SIZE = 20;
+
+    /** How long a sweep of the whole market is good for before opening the square fetches it again. */
+    private static final long SWEEP_TTL_MILLIS = 3 * 60 * 1000L;
+
+    private volatile MarketSweep sweep;
+
+    /**
+     * The whole market, as far as it has been fetched.
+     *
+     * <p>Loka's API has no categories and no way to ask for more than twenty offers at once, so the
+     * square is built from every page of {@code /market_sales} — about forty requests. They go out
+     * as background work, so a Fight Manager refresh or a search still comes first, and the result
+     * is kept for a few minutes, so walking between stalls costs nothing.
+     *
+     * @param refresh true to fetch it again even if the last sweep is still fresh
+     */
+    public synchronized MarketSweep sweep(boolean refresh) {
+        MarketSweep current = sweep;
+        long now = System.currentTimeMillis();
+        if (current != null && current.running()) {
+            return current;
+        }
+        if (current != null && !refresh && !current.failed()
+                && now - current.finishedAt() < SWEEP_TTL_MILLIS) {
+            return current;
+        }
+        MarketSweep fresh = new MarketSweep();
+        sweep = fresh;
+        transport.bulkExecutor().execute(() -> runSweep(fresh));
+        return fresh;
+    }
+
+    /** The last sweep, finished or not, without starting one. */
+    public MarketSweep currentSweep() {
+        return sweep;
+    }
+
+    private void runSweep(MarketSweep target) {
+        JsonObject first;
+        try {
+            first = getObject(pageUrl(0), false);
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not fetch the first market page", e);
+            target.fail();
+            return;
+        }
+        int pages = Math.max(1, Json.integer(Json.object(first, "page"), "totalPages", 1));
+        target.start(pages);
+        target.add(readListings(first));
+        for (int page = 1; page < pages; page++) {
+            int number = page;
+            transport.bulkExecutor().execute(() -> {
+                try {
+                    target.add(readListings(getObject(pageUrl(number), true)));
+                } catch (ApiException e) {
+                    BetterLoka.LOGGER.debug("Could not fetch market page {}", number, e);
+                    target.pageFailed();
+                }
+            });
+        }
+    }
+
+    private static String pageUrl(int page) {
+        return BASE_URL + "/market_sales?size=" + PAGE_SIZE + "&page=" + page;
     }
 
     /**
