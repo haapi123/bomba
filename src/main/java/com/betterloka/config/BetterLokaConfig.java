@@ -81,7 +81,15 @@ public final class BetterLokaConfig {
     private boolean shrineNotifications = true;
 
     /** How long a purged shrine takes to come back, in minutes. */
-    private int shrineCooldownMinutes = 15;
+    private int shrineCooldownMinutes = 20;
+
+    /**
+     * Whether a cooldown saved under the old default has been moved to the new one. 0.35 started at
+     * fifteen minutes and wrote that into every config it saved; the default is now twenty, and a
+     * saved fifteen is the old default rather than a choice, so it is moved once. Set afterwards, a
+     * fifteen is the player's own and stays.
+     */
+    private boolean shrineCooldownMigrated = false;
 
 
     private transient Path file;
@@ -99,6 +107,15 @@ public final class BetterLokaConfig {
             }
         }
         config.file = file;
+        if (!config.shrineCooldownMigrated) {
+            if (config.shrineCooldownMinutes == 15) {
+                config.shrineCooldownMinutes = 20;
+            }
+            config.shrineCooldownMigrated = true;
+            if (Files.isRegularFile(file)) {
+                config.save();
+            }
+        }
         return config;
     }
 

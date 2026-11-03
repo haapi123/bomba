@@ -147,18 +147,20 @@ class ShrinesTest {
     // --- the timers ---
 
     @Test
-    void aPurgeStartsFifteenMinutesThatSurviveARestart(@TempDir Path dir) {
+    void aPurgeStartsTwentyMinutesThatSurviveARestart(@TempDir Path dir) {
         Shrine ghast1 = shrine("ghast-1");
         ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
         assertEquals(ShrineTimers.State.UNKNOWN, timers.state(ghast1, 0));
 
         timers.purged(ghast1, 1_000_000);
         assertEquals(ShrineTimers.State.COOLDOWN, timers.state(ghast1, 1_000_000));
-        assertEquals(15 * 60 * 1000L, timers.remaining(ghast1, 1_000_000));
+        assertEquals(20 * 60 * 1000L, timers.remaining(ghast1, 1_000_000));
 
         ShrineTimers reloaded = new ShrineTimers(dir.resolve("shrines.json"));
-        assertEquals(60_000L, reloaded.remaining(ghast1, 1_000_000 + 14 * 60 * 1000L));
-        assertEquals(ShrineTimers.State.READY, reloaded.state(ghast1, 1_000_000 + 15 * 60 * 1000L));
+        assertEquals(60_000L, reloaded.remaining(ghast1, 1_000_000 + 19 * 60 * 1000L));
+        assertEquals(ShrineTimers.State.COOLDOWN, reloaded.state(ghast1, 1_000_000 + 15 * 60 * 1000L),
+                "fifteen minutes is no longer enough");
+        assertEquals(ShrineTimers.State.READY, reloaded.state(ghast1, 1_000_000 + 20 * 60 * 1000L));
         assertEquals(ShrineTimers.State.UNKNOWN, reloaded.state(shrine("ghast-2"), 1_000_000));
     }
 

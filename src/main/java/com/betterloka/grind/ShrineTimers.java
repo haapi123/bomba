@@ -16,7 +16,7 @@ import java.util.function.LongSupplier;
  * use for them.
  *
  * <p>Kept on disk as wall-clock times, so a timer started before logging off is still right after
- * logging back in: a shrine purged at 20:00 is back at 20:15 whether or not the game was running.
+ * logging back in: a shrine purged at 20:00 is back at 20:20 whether or not the game was running.
  *
  * <p>What is kept is when a shrine was purged, not when it comes back: the cooldown is the player's
  * setting, and changing it — to the right number, once they know it — moves the timers already
@@ -48,7 +48,7 @@ public final class ShrineTimers {
     private final Map<String, String> learned = new HashMap<>();
     private final Map<String, ShrineLoot.Stats> stats = new HashMap<>();
 
-    /** With the default fifteen minute cooldown. */
+    /** With the default twenty minute cooldown. */
     public ShrineTimers(Path file) {
         this(file, () -> Shrines.COOLDOWN_MILLIS);
     }
@@ -60,7 +60,7 @@ public final class ShrineTimers {
         Saved saved = store.read();
         if (saved != null) {
             if (saved.endsAt() != null) {
-                saved.endsAt().forEach((id, end) -> purgedAt.put(id, end - Shrines.COOLDOWN_MILLIS));
+                saved.endsAt().forEach((id, end) -> purgedAt.put(id, end - Shrines.LEGACY_COOLDOWN_MILLIS));
             }
             if (saved.purgedAt() != null) {
                 purgedAt.putAll(saved.purgedAt());
@@ -146,7 +146,7 @@ public final class ShrineTimers {
         return Map.copyOf(learned);
     }
 
-    /** {@code 12:31}, or {@code 0:05}: minutes and seconds, which is all a fifteen minute wait needs. */
+    /** {@code 12:31}, or {@code 0:05}: minutes and seconds, which is all a twenty minute wait needs. */
     public static String clock(long millis) {
         long seconds = Math.max(0, (millis + 999) / 1000);
         return String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);

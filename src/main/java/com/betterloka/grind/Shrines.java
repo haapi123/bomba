@@ -13,8 +13,14 @@ import java.util.regex.Pattern;
  * <p>Plain Java with no Minecraft in it, so it is tested outside the game.
  */
 public final class Shrines {
-    /** How long a purged shrine takes to come back. */
-    public static final long COOLDOWN_MILLIS = 15 * 60 * 1000L;
+    /** How long a purged shrine takes to come back, until the player sets it otherwise. */
+    public static final long COOLDOWN_MILLIS = 20 * 60 * 1000L;
+
+    /**
+     * The cooldown 0.34 assumed, which is what its saved end times were counted with. Only used to
+     * turn those back into purge times.
+     */
+    static final long LEGACY_COOLDOWN_MILLIS = 15 * 60 * 1000L;
 
     /**
      * Every shrine, as the player gave them.

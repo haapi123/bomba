@@ -939,7 +939,7 @@ public final class DevDiagnostics {
         step(2, () -> server("execute in minecraft:overworld run tp @a 0 100 0"));
         step(1260, () -> shrineState("a minute later, in the overworld"));
         shot(5, "shrines-restart-chat");
-        step(2, () -> BetterLokaClient.config().setShrineCooldownMinutes(15));
+        step(2, () -> BetterLokaClient.config().setShrineCooldownMinutes(20));
         step(20, () -> BetterLoka.LOGGER.info("DIAG shrine checks done"));
     }
 

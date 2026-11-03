@@ -149,7 +149,7 @@ public class BetterLokaClient implements ClientModInitializer {
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
         new ShulkerWatcher(grindTimers, config).register();
         new GrindHud(grindTimers, config).register();
-        // The Nether shrines: markers over each, the ground around each, and a fifteen minute
+        // The Nether shrines: markers over each, the ground around each, and a twenty minute
         // timer started by the server's own "was purged!" line.
         shrines = new ShrineTracker(new ShrineTimers(configDir().resolve("shrines.json"),
                 () -> config.shrineCooldownMinutes() * 60_000L), config);
