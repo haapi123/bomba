@@ -161,4 +161,17 @@ class ChatLogParsingTest {
         assertEquals(ChatChannel.PUBLIC, line.channel());
         assertEquals("Ghuraa", line.sender());
     }
+
+    @Test
+    void aLineWithoutAWordInItIsNeverSentForTranslation() {
+        org.junit.jupiter.api.Assertions.assertFalse(ChatLog.hasLetters("1234 64 -560"));
+        org.junit.jupiter.api.Assertions.assertFalse(ChatLog.hasLetters(":) ?? !!"));
+        org.junit.jupiter.api.Assertions.assertTrue(ChatLog.hasLetters("gg"));
+        org.junit.jupiter.api.Assertions.assertTrue(ChatLog.hasLetters("żółw"));
+        ChatLog.Line coordinates = ChatLog.parse("Rezorie: 1234 64 -560");
+        org.junit.jupiter.api.Assertions.assertTrue(coordinates.needsNoTranslation("pl"));
+        ChatLog.Line words = ChatLog.parse("Rezorie: idziemy na fighta");
+        org.junit.jupiter.api.Assertions.assertFalse(words.needsNoTranslation("en"),
+                "not yet translated, so it still needs it");
+    }
 }

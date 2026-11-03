@@ -48,6 +48,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("translator".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            translatorInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("shrines".equals(System.getenv("BETTERLOKA_DIAG"))) {
             shrineInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -941,6 +946,101 @@ public final class DevDiagnostics {
         shot(5, "shrines-restart-chat");
         step(2, () -> BetterLokaClient.config().setShrineCooldownMinutes(20));
         step(20, () -> BetterLoka.LOGGER.info("DIAG shrine checks done"));
+    }
+
+    /**
+     * The Translator with real chat in it: lines in Polish, German and English, town and alliance
+     * chat by colour, a line of bare numbers, sent by the server as Loka sends its chat. Then the
+     * language picker, and the writing section with its own language and the copy.
+     */
+    private void translatorInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+            BetterLokaClient.config().setNativeLanguage("pl");
+            BetterLokaClient.config().setChatLanguage("en");
+        });
+        step(5, () -> {
+            server("tellraw @a \"Kxrma: anyone up for conquest tonight? we need 3 more on Balak\"");
+            server("tellraw @a {\"text\":\"Ghuraa: wir brauchen noch zwei Leute am Tor, schnell!\",\"color\":\"green\"}");
+            server("tellraw @a {\"text\":\"[Alliance] Rezorie: idziemy na fighta o 20, kto jest online?\",\"color\":\"aqua\"}");
+            server("tellraw @a \"Duelist_77: 1234 64 -560\"");
+            server("tellraw @a \"Nemo: ¿alguien vende pociones de fuerza? pago bien\"");
+        });
+        step(40, () -> BetterLoka.LOGGER.info("DIAG translator lines captured: {}", BetterLokaClient.chatLog().size()));
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.TranslatorScreen(null)));
+        step(80, () -> translatorState("opened, chat into Polish"));
+        shot(5, "translator-chat");
+        step(2, () -> realClick("Translate to", left));
+        shot(5, "translator-picker");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen translator) {
+                realClickAt(translator.devPickerCell("en"), left);
+            }
+        });
+        step(80, () -> translatorState("picked English for chat"));
+        shot(5, "translator-english");
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (char c : "siema, ktos chetny na fighta o 20?".toCharArray()) {
+                screen.charTyped(new net.minecraft.client.input.CharacterEvent(c));
+            }
+            screen.keyPressed(new net.minecraft.client.input.KeyEvent(
+                    com.mojang.blaze3d.platform.InputConstants.KEY_RETURN, 0, 0));
+        });
+        step(40, () -> translatorState("typed a Polish line and pressed Enter"));
+        step(2, () -> realClick("Copy", left));
+        step(5, () -> translatorState("pressed Copy"));
+        shot(5, "translator-compose");
+        // The writing section's own language: the second "Translate to" button.
+        step(2, () -> realClickNth("Translate to", 1, left));
+        step(5, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen translator) {
+                realClickAt(translator.devPickerCell("de"), left);
+            }
+        });
+        step(40, () -> translatorState("writing section switched to German"));
+        shot(5, "translator-german");
+        step(2, () -> {
+            BetterLokaClient.config().setNativeLanguage("pl");
+            BetterLokaClient.config().setChatLanguage("en");
+            client().gui.setScreen(null);
+        });
+        step(20, () -> BetterLoka.LOGGER.info("DIAG translator checks done"));
+    }
+
+    private static void translatorState(String label) {
+        StringBuilder lines = new StringBuilder();
+        String target = BetterLokaClient.config().nativeLanguage();
+        for (var line : BetterLokaClient.chatLog().recent(10)) {
+            lines.append("\n    [").append(line.channel()).append("] ").append(line.sender()).append(" (")
+                    .append(line.source()).append("): ").append(line.message()).append(" => ")
+                    .append(line.hasTranslation(target) ? line.translated()
+                            : line.needsNoTranslation(target) ? "(none needed)"
+                            : line.failed() ? "(failed)" : "(pending)");
+        }
+        String output = client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen translator
+                ? translator.devTranslated() : "-";
+        BetterLoka.LOGGER.info("DIAG translator {}: chat->{} text->{} output='{}' clipboard='{}'{}", label, target,
+                BetterLokaClient.config().chatLanguage(), output, client().keyboardHandler.getClipboard(), lines);
+    }
+
+    /** Presses the {@code n}th button whose label contains {@code label}, counting from nought. */
+    private static void realClickNth(String label, int n, int button) {
+        Screen screen = client().gui.screen();
+        if (screen == null) {
+            return;
+        }
+        int seen = 0;
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof Button widget && widget.getMessage().getString().contains(label) && seen++ == n) {
+                realClickAt(new int[] {widget.getX() + widget.getWidth() / 2,
+                        widget.getY() + widget.getHeight() / 2}, button);
+                return;
+            }
+        }
+        BetterLoka.LOGGER.info("DIAG no button {} labelled {}", n, label);
     }
 
     private static void server(String command) {

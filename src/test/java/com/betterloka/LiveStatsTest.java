@@ -494,11 +494,11 @@ class LiveStatsTest {
         try (HttpTransport transport = new HttpTransport()) {
             TranslationService service = new TranslationService(transport);
 
-            String toEnglish = service.translate("idziemy na fighta o 20, potrzebujemy jeszcze 3", "pl", "en").get();
+            String toEnglish = service.translate("idziemy na fighta o 20, potrzebujemy jeszcze 3", "pl", "en").get().text();
             assertTrue(toEnglish.toLowerCase(Locale.ROOT).contains("fight"),
                     "expected an English sentence, got: " + toEnglish);
 
-            String toPolish = service.translate("anyone up for a fight at 8? we need 3 more", "auto", "pl").get();
+            String toPolish = service.translate("anyone up for a fight at 8? we need 3 more", "auto", "pl").get().text();
             assertTrue(toPolish.toLowerCase(Locale.ROOT).contains("walk"),
                     "expected a Polish sentence, got: " + toPolish);
 

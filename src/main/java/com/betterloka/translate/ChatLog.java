@@ -14,7 +14,13 @@ import java.util.regex.Pattern;
 
 /**
  * A rolling record of what players have said, with each message translated into the player's
- * language.
+ * language while the Translator is open.
+ *
+ * <p>Translating is lazy on purpose. Every chat line is a request to the translation service, and
+ * Loka's chat runs all evening; translating it in the background would spend those requests on
+ * conversations nobody reads. Lines are kept as they arrive, and asked for only when the screen that
+ * shows them is open — then newest first, each once per language, with repeats served from the
+ * service's own cache. A line with no letters in it — a number, a smiley — is never sent at all.
  *
  * <p>Only actual chat is kept. Servers push a great deal of other text through the same channel —
  * join notices, territory announcements, command output — and translating all of it buries the
@@ -55,13 +61,16 @@ public final class ChatLog {
     private static final Pattern CHANNEL_TAG = Pattern.compile(
             "^\\[\\s*(TC|AC|T|A|TOWN|ALLIANCE|ALLY|NATION)\\s*\\]\\s*", Pattern.CASE_INSENSITIVE);
 
-    /** One captured chat message. {@code translated} fills in once the request comes back. */
+    /** One captured chat message. The translation fills in once the request comes back. */
     public static final class Line {
         private final String sender;
         private final String message;
         private final ChatChannel channel;
         private final long receivedAt;
         private volatile String translated;
+        private volatile String translatedTo;
+        private volatile String requestedFor;
+        private volatile String source;
         private volatile boolean failed;
 
         Line(String sender, String message, ChatChannel channel) {
@@ -94,19 +103,55 @@ public final class ChatLog {
             return translated;
         }
 
+        /** The language the original was detected as, or {@code null} until it has been asked. */
+        public String source() {
+            return source;
+        }
+
         public boolean failed() {
             return failed;
         }
 
-        /** Whether the translation says anything the original did not — i.e. worth showing. */
-        public boolean hasUsefulTranslation() {
-            return translated != null && !translated.isBlank() && !translated.equalsIgnoreCase(message);
+        /** Whether a translation into {@code target} has been asked for and not yet come back. */
+        public boolean pending(String target) {
+            return target.equals(requestedFor) && !target.equals(translatedTo) && !failed;
         }
+
+        /** Whether this line has nothing to translate: no letters, or already in {@code target}. */
+        public boolean needsNoTranslation(String target) {
+            if (!hasLetters(message)) {
+                return true;
+            }
+            return target.equals(translatedTo) && (sameLanguage(source, target)
+                    || translated == null || translated.isBlank() || translated.equalsIgnoreCase(message));
+        }
+
+        /** Whether there is a translation into {@code target} worth showing under the original. */
+        public boolean hasTranslation(String target) {
+            return target.equals(translatedTo) && !needsNoTranslation(target);
+        }
+    }
+
+    private static boolean sameLanguage(String source, String target) {
+        return source != null && new TranslationService.Translation("", source).sameLanguage(target);
+    }
+
+    /** Whether there is a word in it at all, which is what is worth translating. */
+    static boolean hasLetters(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isLetter(text.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private final TranslationService translations;
     private final BetterLokaConfig config;
     private final Deque<Line> lines = new ArrayDeque<>();
+
+    /** Whether the Translator is open, which is the only time lines are translated. */
+    private volatile boolean watching;
 
     public ChatLog(TranslationService translations, BetterLokaConfig config) {
         this.translations = translations;
@@ -114,7 +159,7 @@ public final class ChatLog {
     }
 
     /**
-     * Records a chat message and, when incoming translation is on, starts translating it.
+     * Records a chat message and, while the Translator is open, starts translating it.
      * Anything that is not somebody speaking is ignored.
      */
     public void record(ChatMessage message) {
@@ -128,8 +173,19 @@ public final class ChatLog {
                 lines.removeFirst();
             }
         }
-        if (config.translateIncoming()) {
+        if (watching) {
             translate(line);
+        }
+    }
+
+    /**
+     * Opens or closes the tap: while the Translator is open, everything not yet in the reader's
+     * language is translated, and every new line as it arrives.
+     */
+    public void setWatching(boolean watching) {
+        this.watching = watching;
+        if (watching) {
+            translateAll();
         }
     }
 
@@ -221,26 +277,38 @@ public final class ChatLog {
         return said.isEmpty() ? null : new Line(sender, said, channel);
     }
 
-    /** Starts (or restarts) the translation of one message. */
+    /** Starts the translation of one message into the reader's language, unless it needs none. */
     public void translate(Line line) {
-        translations.translate(line.message(), "auto", config.nativeLanguage())
+        String target = config.nativeLanguage();
+        if (!hasLetters(line.message()) || target.equals(line.translatedTo) || line.pending(target)) {
+            return;
+        }
+        line.requestedFor = target;
+        line.failed = false;
+        translations.translate(line.message(), "auto", target)
                 .whenComplete((result, error) -> {
+                    if (!target.equals(line.requestedFor)) {
+                        // Asked again in another language meanwhile; that answer is the one wanted.
+                        return;
+                    }
                     if (error != null) {
                         line.failed = true;
                         BetterLoka.LOGGER.debug("Could not translate a chat message", error);
                     } else {
-                        line.translated = result;
-                        line.failed = false;
+                        line.translated = result.text();
+                        line.source = result.source();
+                        line.translatedTo = target;
                     }
                 });
     }
 
-    /** Translates everything captured so far — used when the player turns translation on. */
+    /**
+     * Translates everything captured that is not yet in the reader's language, newest first — on
+     * opening the Translator, and when the language is changed.
+     */
     public void translateAll() {
         for (Line line : recent(CAPACITY)) {
-            if (line.translated() == null) {
-                translate(line);
-            }
+            translate(line);
         }
     }
 

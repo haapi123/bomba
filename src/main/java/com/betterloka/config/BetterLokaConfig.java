@@ -21,14 +21,12 @@ public final class BetterLokaConfig {
     /** Show each player's K/D beside their nameplate in the world. */
     private boolean showNameplateKd = false;
 
-    /** Language the player writes in; chat is translated into it, and their replies out of it. */
+    /** The language chat is translated into in the Translator: the player's own. */
     private String nativeLanguage = "pl";
 
-    /** Language the server is spoken in — what replies get translated into. */
+    /** What the player's own text is translated into in the Translator. English unless changed. */
     private String chatLanguage = "en";
 
-    /** Translate incoming server chat into {@link #nativeLanguage}. */
-    private boolean translateIncoming = false;
 
     /** Keep watching who holds every territory, so fallen towns are noticed. */
     private boolean townLogEnabled = true;
@@ -213,15 +211,6 @@ public final class BetterLokaConfig {
 
     public void setChatLanguage(String chatLanguage) {
         this.chatLanguage = chatLanguage;
-        save();
-    }
-
-    public boolean translateIncoming() {
-        return translateIncoming;
-    }
-
-    public void setTranslateIncoming(boolean translateIncoming) {
-        this.translateIncoming = translateIncoming;
         save();
     }
 
