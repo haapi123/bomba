@@ -62,6 +62,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("finder".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            finderInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("fights".equals(System.getenv("BETTERLOKA_DIAG"))) {
             fightsInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -174,9 +179,9 @@ public final class DevDiagnostics {
         step(200, () -> { });
         step(1, () -> battleIndex("just after a search"));
         step(400, () -> { });
-        step(2, () -> click(client().gui.screen(), "Nemesis"));
+        step(2, () -> click(client().gui.screen(), "Month"));
         step(60, () -> { });
-        shot(20, "player-finder-nemesis");
+        shot(20, "player-finder-month");
         step(2, () -> click(client().gui.screen(), "Profile"));
         step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
         step(20, () -> { });
@@ -1106,6 +1111,100 @@ public final class DevDiagnostics {
         shot(2, "finder-7s");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG helper checks done");
+            client().stop();
+        });
+    }
+
+    // --- 0.40: the coordinates' size and switch, and the Player Finder's stand ---
+
+    private void finderInput() {
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+        });
+        step(2, () -> BetterLoka.LOGGER.info("DIAG coords on at start: {} size {}",
+                BetterLokaClient.config().coordsHudEnabled(), BetterLokaClient.config().coordsHudScale()));
+        step(2, () -> client().gui.setScreen(null));
+        shot(10, "coords-default-off");
+        step(2, () -> net.minecraft.client.KeyMapping.click(com.mojang.blaze3d.platform.InputConstants.Type
+                .KEYBOARD.getOrCreate(com.mojang.blaze3d.platform.InputConstants.KEY_P)));
+        shot(10, "coords-position-off");
+        step(2, () -> click(client().gui.screen(), "Coordinates: "));
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.CoordsHudPositionScreen screen) {
+                screen.devResize(-3);
+            }
+        });
+        step(2, () -> BetterLoka.LOGGER.info("DIAG after switch and three steps smaller: on={} size={}",
+                BetterLokaClient.config().coordsHudEnabled(), BetterLokaClient.config().coordsHudScale()));
+        shot(5, "coords-position-small");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.CoordsHudPositionScreen screen) {
+                screen.devResize(6);
+            }
+        });
+        shot(5, "coords-position-big");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.CoordsHudPositionScreen screen) {
+                screen.devResize(-5);
+            }
+        });
+        step(2, () -> client().gui.screen().onClose());
+        shot(10, "coords-hud-small");
+
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
+        shot(10, "finder-empty");
+        step(2, () -> {
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), "Search");
+        });
+        step(200, () -> BetterLoka.LOGGER.info("DIAG finder 10 s after search: profile={} skin={}",
+                field(client().gui.screen(), "profile") != null, field(client().gui.screen(), "skin")));
+        shot(2, "finder-profile");
+        step(30, () -> { });
+        shot(2, "finder-profile-turned");
+        // Over the column of details, right of the stand.
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (int i = 0; i < 12; i++) {
+                screen.mouseScrolled(screen.width / 2.0 + 60, screen.height / 2.0, 0, -1);
+            }
+        });
+        shot(5, "finder-profile-scrolled");
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (int i = 0; i < 40; i++) {
+                screen.mouseScrolled(screen.width / 2.0 + 60, screen.height / 2.0, 0, -1);
+            }
+        });
+        shot(5, "finder-profile-bottom");
+        step(2, () -> {
+            if (client().gui.screen() instanceof PlayerFinderScreen finder) {
+                finder.devTab(true);
+            }
+        });
+        shot(10, "finder-month");
+        step(2, () -> {
+            if (client().gui.screen() instanceof PlayerFinderScreen finder) {
+                finder.devTab(false);
+            }
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        shot(10, "finder-scale3");
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            type(client().gui.screen(), "Rezorie");
+            click(client().gui.screen(), "Search");
+        });
+        step(200, () -> { });
+        shot(2, "finder-other");
+        step(2, () -> {
+            BetterLokaClient.config().setCoordsHudEnabled(false);
+            BetterLokaClient.config().setCoordsHudScale(100);
+            BetterLokaClient.config().setCoordsHudPosition(0, 0);
+            BetterLoka.LOGGER.info("DIAG finder checks done");
             client().stop();
         });
     }

@@ -3,7 +3,6 @@ package com.betterloka;
 import com.betterloka.api.ArenaApi;
 import com.betterloka.api.EldritchApi;
 import com.betterloka.api.HttpTransport;
-import com.betterloka.api.LabyApi;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
 import com.betterloka.fights.FightWatch;
@@ -29,9 +28,7 @@ import com.betterloka.map.WaypointHud;
 import com.betterloka.map.WaypointWorldRenderer;
 import com.betterloka.stats.ArenaService;
 import com.betterloka.stats.BattleIndex;
-import com.betterloka.stats.NameHistoryService;
 import com.betterloka.stats.NameplateKdService;
-import com.betterloka.stats.NemesisIndex;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.towns.TownActivityStore;
 import com.betterloka.towns.TownInfoReader;
@@ -80,13 +77,11 @@ public class BetterLokaClient implements ClientModInitializer {
     private static PlayerStatsService stats;
     private static ArenaService arenaStats;
     private static BattleIndex battleIndex;
-    private static NemesisIndex nemesisIndex;
     private static NameplateKdService nameplateKd;
     private static TranslationService translations;
     private static ChatLog chatLog;
     private static TownLogger townLogger;
     private static TownActivityStore townActivity;
-    private static NameHistoryService nameHistory;
     private static MapService map;
     private static MapDataStore mapData;
     private static MapIcons mapIcons;
@@ -113,9 +108,9 @@ public class BetterLokaClient implements ClientModInitializer {
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
-        // Who killed whom, which only a fight page says. Read a few fights at a time, and kept, so
-        // looking people up deepens the month rather than re-reading it.
-        nemesisIndex = new NemesisIndex(eldritch, configDir().resolve("nemesis.json"));
+        // What the Player Finder's "Nemesis of" and "Previously known as" kept, before both went.
+        deleteQuietly(configDir().resolve("nemesis.json"));
+        deleteQuietly(configDir().resolve("name-history.json"));
         nameplateKd = new NameplateKdService(eldritch);
         translations = new TranslationService(transport);
         chatLog = new ChatLog(translations, config);
@@ -125,10 +120,6 @@ public class BetterLokaClient implements ClientModInitializer {
         // The active count is the number Loka deletes towns on, and the only place it exists is the
         // /town info panel. Read passively: the mod never runs the command, it reads a screen the
         // player opened.
-        // Mojang withdrew name history in 2022; Laby.net kept its own and has more of it than
-        // Loka's own /find does.
-        nameHistory = new NameHistoryService(new LabyApi(transport), transport,
-                configDir().resolve("name-history.json"));
         map = new MapService(configDir().resolve("waypoints.json"));
         // The market and the ranked ladders are fetched ahead of time while the player is online, so
         // neither screen opens on a wait: the last whole market comes back off disk at once, and a
@@ -251,7 +242,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -310,11 +301,6 @@ public class BetterLokaClient implements ClientModInitializer {
         return battleIndex;
     }
 
-    /** Who has killed whom this conquest month, from the fight pages read so far. */
-    public static NemesisIndex nemesisIndex() {
-        return nemesisIndex;
-    }
-
     public static GrindTimers grindTimers() {
         return grindTimers;
     }
@@ -358,8 +344,13 @@ public class BetterLokaClient implements ClientModInitializer {
         return townActivity;
     }
 
-    public static NameHistoryService nameHistory() {
-        return nameHistory;
+    /** Removes a file the mod no longer uses; one that cannot be removed is left, harmlessly. */
+    private static void deleteQuietly(java.nio.file.Path file) {
+        try {
+            java.nio.file.Files.deleteIfExists(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            BetterLoka.LOGGER.debug("Could not remove {}", file, e);
+        }
     }
 
     public static MapService map() {

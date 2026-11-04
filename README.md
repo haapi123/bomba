@@ -25,17 +25,25 @@ never talks to the game server and sends nothing about you anywhere.
 
 ![Player Finder](docs/player-finder.png)
 
-Type a Loka player's name, hit Search, and their whole Conquest record comes back in about a second:
+Type a Loka player's name, hit Search, and their whole Conquest record comes back in about a second,
+laid out like a market item's profile:
 
-- **Kills**, **deaths**, **assists** and **K/D**
-- **Wins**, **losses**, total **fights** and **win rate**
-- **Golems** and **lamps** taken
-- **Potions**, **pearls**, **food** and **ancient ingots** used across their career
-- Their **town** — level, continent, member count, whether it is recruiting
-- **Who they currently fight for** — Loka lets players reinforce towns other than their own
-- Their **nemesis**: whoever has killed them most
-- **When they first appeared on Loka**, and whether they are **in a fight right now**
-- Their **last 5 fights** — territory, side sizes, kills/deaths/assists, the towns, and the result
+- **On the left, the player themselves** — their own skin in 3D, turning slowly on a stand over a
+  glow in their K/D's colour. Drag it to turn it yourself. Under it: their name, their Loka rank (or
+  **IN FIGHT** when they are in one right now), when they first appeared on Loka, and their **K/D** on
+  a tag at the foot of the stand.
+- **On the right, the numbers**, in coloured tiles:
+  - **Combat** — kills, deaths, K/D, assists, first bloods, close calls, and their nemesis (whoever
+    has killed them most)
+  - **Conquest record** — wins, losses, fights, win rate, and a bar of wins against losses
+  - **Supplies used** — golems, lamps, potions, pearls, food and ancient ingots
+  - Their **town** — level, continent, member count, whether it is recruiting — and **who they
+    currently fight for**, since Loka lets players reinforce towns other than their own
+  - **RIVI vs Conquest**, **Ranked 1v1**, and their **last 5 fights** (below)
+
+The skin is the one the game already has when the player is on the same server; anybody else's is
+asked of Mojang by UUID and drawn by the game's own skin manager, exactly as for a player you meet.
+Until it arrives — a moment — the default skin stands in.
 
 ![Career statistics](docs/player-finder-stats.png)
 
@@ -109,37 +117,16 @@ A season's weekly snapshots are cumulative, which is what makes its **last publi
 season's result and keeps this to one table per season rather than one per week. Players are followed
 by UUID, not by name, because names change between seasons.
 
-### Possible alts and old names
-
-![Alts](docs/player-finder-alts.png)
-
-At the bottom of the profile: the other accounts this person plays on, and names they have gone by.
-
-The alts are Loka's own grouping — accounts sharing an `identityId` are the same person, which is the
-fact `/find` reports — so the mod reads it rather than sending a command as you.
-
-Old names come from two places. **EldritchBot files a career under whatever the player was called at
-their last fight**, so when Loka reports a newer name, the one on the career page is a former one —
-which is the case that matters, because it is the same mismatch that used to make a renamed player
-look like no player at all (below). Past seasons' ladder tables fill in the rest: they record
-whatever a player was called at the time, and cost nothing since they are already cached.
-
-Mojang stopped publishing name history in 2022 and Loka keeps only the current name, so those two are
-the only sources left. Both sections are **always shown**, saying "None on record" when there is
-nothing — most players have neither an alt nor a rename on file, and a panel that vanishes in that
-case is indistinguishable from one that is broken.
-
 ### A player who has renamed
 
 EldritchBot answers by name, so somebody who renamed yesterday 302s away from their new one and comes
 back as "no such player" — even while they are standing on the server. Loka tracks renames, so when
 the name misses, the mod looks the career up by **UUID** instead, which EldritchBot answers to
-whatever they are called today. The card then shows Loka's current name, with the career's older one
-listed under "Previously known as".
+whatever they are called today. The card then shows Loka's current name.
 
 ### K/D above nameplates
 
-The toggle at the top of the Player Finder puts each player's K/D beside their name tag in the
+The toggle at the bottom of the Player Finder puts each player's K/D beside their name tag in the
 world, coloured the way Loka players already read it:
 
 | K/D | Colour |
@@ -544,14 +531,17 @@ Several things are done deliberately in the HTTP layer, all measured against the
 - **GUI scale** — an inventory big enough to hit a slot without aiming, and a hotbar that stays the
   size it was.
 - **Coordinates and facing** — where you stand and which way you look (eight points, with the axes:
-  *North-East +X -Z*), in a small box. **P** opens a screen where the box is dragged wherever it
-  should go — it snaps to the edges and the middle — or nudged with the arrow keys. P is rebindable
-  under Options → Controls → BetterLoka; vanilla's Social Interactions is on P as well, and this
-  takes precedence.
+  *North-East +X -Z*), in a small box. **Off until you turn it on.** **P** opens a screen where the
+  box is dragged wherever it should go — it snaps to the edges and the middle — or nudged with the
+  arrow keys; the buttons there switch it on or off and make it **smaller or bigger** (50–150 %, also
+  with the mouse wheel over the box or the minus and plus keys). P is rebindable under Options →
+  Controls → BetterLoka; vanilla's Social Interactions is on P as well, and this takes precedence.
 - **Clear lava** — in lava you see what a spectator sees instead of an arm's length of orange fog.
   Off until you turn it on.
 - **/tl on a key** — press the key and `/tl` is sent, once per press and only with no menu open. Off,
   and with no key, until you set both: **Key:** waits for the next key you press, Esc clears it.
+
+![Coordinates, placed and sized](docs/helper-coords.png)
 
 ![Clear lava](docs/helper-clear-lava.png)
 

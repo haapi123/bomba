@@ -80,8 +80,10 @@ public final class BetterLokaConfig {
 
     // --- Loka Helper ---
 
-    /** The coordinates and facing, on screen. */
-    private boolean coordsHudEnabled = true;
+    /** The coordinates and facing, on screen. Off until the player turns them on. */
+    private boolean coordsHudEnabled = false;
+    /** How big the coordinates box is, in percent of its normal size. */
+    private int coordsHudScale = 100;
     /**
      * Where they are, as a fraction of the room the screen leaves for them: 0 is the left or top
      * edge, 1 the right or bottom. A fraction rather than pixels, so a resize or a new GUI scale
@@ -105,6 +107,13 @@ public final class BetterLokaConfig {
      */
     private boolean shrineCooldownMigrated = false;
 
+    /**
+     * Whether the coordinates have been turned off once. 0.39 showed them from the start and wrote
+     * that into every config it saved; they now start off, and a saved "on" from then is the old
+     * default rather than a choice, so it is turned off once. Turned on afterwards, it stays on.
+     */
+    private boolean coordsHudDefaultMigrated = false;
+
 
     private transient Path file;
 
@@ -126,6 +135,13 @@ public final class BetterLokaConfig {
                 config.shrineCooldownMinutes = 20;
             }
             config.shrineCooldownMigrated = true;
+            if (Files.isRegularFile(file)) {
+                config.save();
+            }
+        }
+        if (!config.coordsHudDefaultMigrated) {
+            config.coordsHudEnabled = false;
+            config.coordsHudDefaultMigrated = true;
             if (Files.isRegularFile(file)) {
                 config.save();
             }
@@ -208,6 +224,29 @@ public final class BetterLokaConfig {
         this.coordsHudX = clamp01(x);
         this.coordsHudY = clamp01(y);
         save();
+    }
+
+    /** The smallest and largest the coordinates box can be, in percent, and the step between. */
+    public static final int COORDS_SCALE_MIN = 50;
+    public static final int COORDS_SCALE_MAX = 150;
+    public static final int COORDS_SCALE_STEP = 10;
+
+    /** How big the coordinates box is, in percent of its normal size. */
+    public int coordsHudScale() {
+        return clampCoordsScale(coordsHudScale);
+    }
+
+    public void setCoordsHudScale(int percent) {
+        this.coordsHudScale = clampCoordsScale(percent);
+        save();
+    }
+
+    private static int clampCoordsScale(int percent) {
+        // Zero is what a config written before the setting existed reads as.
+        if (percent <= 0) {
+            return 100;
+        }
+        return Math.max(COORDS_SCALE_MIN, Math.min(COORDS_SCALE_MAX, percent));
     }
 
     private static double clamp01(double value) {

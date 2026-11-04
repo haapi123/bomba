@@ -15,7 +15,7 @@ import java.util.Locale;
 
 /**
  * Loka Helper's coordinates: where the player stands and which way they face, in a small box
- * wherever they put it — press P to move it.
+ * wherever they put it and at the size they chose — press P to move or resize it. Off until turned on.
  */
 public final class CoordsHud {
     static final int PADDING = 3;
@@ -46,8 +46,10 @@ public final class CoordsHud {
             return;
         }
         List<Line> lines = lines(client.player);
-        int[] box = place(context.guiWidth(), context.guiHeight(), client.font, lines);
-        draw(context, client.font, lines, box[0], box[1]);
+        float scale = scale(config.coordsHudScale());
+        int[] box = place(config.coordsHudX(), config.coordsHudY(), context.guiWidth(), context.guiHeight(),
+                width(client.font, lines, scale), height(lines, scale));
+        draw(context, client.font, lines, box[0], box[1], scale);
     }
 
     /** One line of the box: a coloured part and a grey part after it. */
@@ -83,10 +85,18 @@ public final class CoordsHud {
         return lines.size() * LINE + PADDING * 2 - 1;
     }
 
-    /** Where the box goes on a screen this size, from the fractions the player chose. */
-    public int[] place(int screenWidth, int screenHeight, Font font, List<Line> lines) {
-        return place(config.coordsHudX(), config.coordsHudY(), screenWidth, screenHeight,
-                width(font, lines), height(lines));
+    /** A size setting in percent, as the factor the box is drawn at. */
+    public static float scale(int percent) {
+        return percent / 100f;
+    }
+
+    /** How wide the box is at a size: rounded up, so the outline around it never cuts into it. */
+    public static int width(Font font, List<Line> lines, float scale) {
+        return (int) Math.ceil(width(font, lines) * scale);
+    }
+
+    public static int height(List<Line> lines, float scale) {
+        return (int) Math.ceil(height(lines) * scale);
     }
 
     /**
@@ -107,15 +117,21 @@ public final class CoordsHud {
                 Math.max(0, Math.min(1, (y - 2) / (double) roomY))};
     }
 
-    public static void draw(GuiGraphicsExtractor context, Font font, List<Line> lines, int x, int y) {
-        context.fill(x, y, x + width(font, lines), y + height(lines), BACKGROUND);
-        int lineY = y + PADDING;
+    /** Draws the box with its top-left corner at {@code (x, y)}, {@code scale} times its normal size. */
+    public static void draw(GuiGraphicsExtractor context, Font font, List<Line> lines, int x, int y, float scale) {
+        var pose = context.pose();
+        pose.pushMatrix();
+        pose.translate(x, y);
+        pose.scale(scale, scale);
+        context.fill(0, 0, width(font, lines), height(lines), BACKGROUND);
+        int lineY = PADDING;
         for (Line line : lines) {
-            context.text(font, line.text(), x + PADDING, lineY, line.color());
+            context.text(font, line.text(), PADDING, lineY, line.color());
             if (!line.after().isEmpty()) {
-                context.text(font, line.after(), x + PADDING + font.width(line.text()), lineY, AXES);
+                context.text(font, line.after(), PADDING + font.width(line.text()), lineY, AXES);
             }
             lineY += LINE;
         }
+        pose.popMatrix();
     }
 }
