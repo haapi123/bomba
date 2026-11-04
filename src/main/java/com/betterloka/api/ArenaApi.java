@@ -65,6 +65,11 @@ public final class ArenaApi {
         return transport.bulkExecutor();
     }
 
+    /** The lane for building the history index, which nobody is waiting on. */
+    public ExecutorService backgroundExecutor() {
+        return transport.backgroundExecutor();
+    }
+
     /** The standings as they are right now, i.e. this season so far. */
     public List<ArenaEntry> fetchCurrent(Ladder ladder) throws ApiException {
         return readLadder(BASE_URL + "/arena/" + ladder.path + "/1v1/players", ladder);

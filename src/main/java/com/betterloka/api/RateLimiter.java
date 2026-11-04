@@ -52,6 +52,32 @@ public final class RateLimiter {
     /** How long a background caller sleeps before looking at the bucket again. */
     private static final long BACKGROUND_RETRY_MILLIS = 60;
 
+    /**
+     * How much of the server's own budget background work leaves alone.
+     *
+     * <p>api.lokamc.com counts down {@code x-rate-limit-remaining} from about thirty, shared by
+     * everything the client sends. Several sweeps at once could spend it to nought and draw a 429 —
+     * and a 429 holds every request to the host off, the one a player is waiting on included.
+     */
+    private static final int SERVER_RESERVE = 10;
+
+    /** How long a reading of the server's budget is trusted; it refills between requests. */
+    private static final long REMAINING_TRUSTED_NANOS = 2_000_000_000L;
+
+    private int serverRemaining = Integer.MAX_VALUE;
+    private long serverRemainingAt;
+
+    /** What the server last said was left of its budget. */
+    public synchronized void observeRemaining(int remaining) {
+        serverRemaining = remaining;
+        serverRemainingAt = System.nanoTime();
+    }
+
+    /** Whether the server's budget is low enough that background work should hold back. */
+    private boolean serverBudgetLow(long now) {
+        return serverRemaining < SERVER_RESERVE && now - serverRemainingAt < REMAINING_TRUSTED_NANOS;
+    }
+
     /** Blocks until this caller is allowed to send one request. */
     public void acquire() throws InterruptedException {
         acquire(false);
@@ -74,7 +100,7 @@ public final class RateLimiter {
                 long now = System.nanoTime();
                 // Background work waits for a real permit rather than reserving one it has not got,
                 // so it can never put an interactive caller into its debt.
-                if (background && tokens < INTERACTIVE_RESERVE) {
+                if (background && (tokens < INTERACTIVE_RESERVE || serverBudgetLow(now))) {
                     sleepNanos = -1;
                 } else {
                     long waitForTokenNanos = tokens >= 1.0

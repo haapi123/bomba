@@ -78,6 +78,22 @@ public final class BetterLokaConfig {
     /** Say in chat, in any world, when a shrine's cooldown has run out. */
     private boolean shrineNotifications = true;
 
+    // --- Loka Helper ---
+
+    /** The coordinates and facing, on screen. */
+    private boolean coordsHudEnabled = true;
+    /**
+     * Where they are, as a fraction of the room the screen leaves for them: 0 is the left or top
+     * edge, 1 the right or bottom. A fraction rather than pixels, so a resize or a new GUI scale
+     * keeps them in the same corner rather than pushing them off the screen.
+     */
+    private double coordsHudX = 0.0;
+    private double coordsHudY = 0.0;
+    /** Lava seen through rather than as a wall of orange fog. Off unless the player turns it on. */
+    private boolean clearLava = false;
+    /** Whether the /tl key does anything; off, and with no key, until the player sets both. */
+    private boolean tlKeyEnabled = false;
+
     /** How long a purged shrine takes to come back, in minutes. */
     private int shrineCooldownMinutes = 20;
 
@@ -167,6 +183,52 @@ public final class BetterLokaConfig {
 
     public void setShrineNotifications(boolean shrineNotifications) {
         this.shrineNotifications = shrineNotifications;
+        save();
+    }
+
+    public boolean coordsHudEnabled() {
+        return coordsHudEnabled;
+    }
+
+    public void setCoordsHudEnabled(boolean coordsHudEnabled) {
+        this.coordsHudEnabled = coordsHudEnabled;
+        save();
+    }
+
+    public double coordsHudX() {
+        return clamp01(coordsHudX);
+    }
+
+    public double coordsHudY() {
+        return clamp01(coordsHudY);
+    }
+
+    /** Where the coordinates go, each 0 to 1 across the room the screen leaves for them. */
+    public void setCoordsHudPosition(double x, double y) {
+        this.coordsHudX = clamp01(x);
+        this.coordsHudY = clamp01(y);
+        save();
+    }
+
+    private static double clamp01(double value) {
+        return Double.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    }
+
+    public boolean clearLava() {
+        return clearLava;
+    }
+
+    public void setClearLava(boolean clearLava) {
+        this.clearLava = clearLava;
+        save();
+    }
+
+    public boolean tlKeyEnabled() {
+        return tlKeyEnabled;
+    }
+
+    public void setTlKeyEnabled(boolean tlKeyEnabled) {
+        this.tlKeyEnabled = tlKeyEnabled;
         save();
     }
 

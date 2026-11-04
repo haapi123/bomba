@@ -18,9 +18,8 @@ never talks to the game server and sends nothing about you anywhere.
 | **Town Finder** | Working |
 | **Town Logger** | Working |
 | **Loka Grinder** | Working |
-| Loka Helper | Planned |
+| **Loka Helper** | Working |
 
-Loka Helper is listed in the menu but opens a placeholder screen for now.
 
 ## Player Finder
 
@@ -538,6 +537,24 @@ Several things are done deliberately in the HTTP layer, all measured against the
 - **Background work yields.** A sweep or an index build hangs back before taking its permit, so a
   search never queues behind traffic nobody asked for.
 
+## Loka Helper
+
+![Loka Helper](docs/helper.png)
+
+- **GUI scale** — an inventory big enough to hit a slot without aiming, and a hotbar that stays the
+  size it was.
+- **Coordinates and facing** — where you stand and which way you look (eight points, with the axes:
+  *North-East +X -Z*), in a small box. **P** opens a screen where the box is dragged wherever it
+  should go — it snaps to the edges and the middle — or nudged with the arrow keys. P is rebindable
+  under Options → Controls → BetterLoka; vanilla's Social Interactions is on P as well, and this
+  takes precedence.
+- **Clear lava** — in lava you see what a spectator sees instead of an arm's length of orange fog.
+  Off until you turn it on.
+- **/tl on a key** — press the key and `/tl` is sent, once per press and only with no menu open. Off,
+  and with no key, until you set both: **Key:** waits for the next key you press, Esc clears it.
+
+![Clear lava](docs/helper-clear-lava.png)
+
 ## What it costs a connection
 
 Three of the things the mod reads are large and barely change, and re-fetching them every session was
@@ -548,7 +565,8 @@ like they were not loading at all. They are cached to disk in `config/betterloka
 | --- | --- | --- | --- |
 | `towns.json` | 968 KB → 48 KB | 12 hours | Loka ships every town with its full member list; the mod uses a dozen fields, so only those are stored. |
 | `fights.json` | ~110 KB per fight | 30 days | A finished fight's numbers never change again. |
-| `arena-history.json` | ~1.8 MB | 24 hours | A finished season's final table never changes again. |
+| `arena-history-v2.json` | ~1.8 MB | 24 hours | A finished season's final table never changes again; only a complete index is saved. |
+| `market-cache.json` | ~0.6 MB | until replaced (7 days at most) | Shown only until the background refresh lands. |
 
 Measured end to end, opening the Player Finder and then the Town Finder:
 
@@ -561,6 +579,23 @@ Measured end to end, opening the Player Finder and then the Town Finder:
 The territory sweep also went from every 10 minutes to **every 30**, with the first one 5 minutes
 after launch rather than 1 — starting the game already saturates a connection, and a sweep on top of
 that is exactly when somebody opens the first screen.
+
+### Nothing waits for a sweep
+
+- **The market** is fetched ahead of time while you are online — straight after joining, then every
+  five minutes — and the last whole market is kept on disk (`market-cache.json`), so the square opens
+  full at once, even on a fresh start, and a refresh replaces it when it lands. A search shows the
+  offers already in hand immediately and swaps in the current ones a moment later.
+- **The ranked ladders** are read straight after joining as well, both at once, and the best-rank
+  index is built with every season in parallel (about four seconds rather than eight) — and only a
+  complete index is saved. One that came back with a season missing used to be kept for the session
+  and saved for a day, which is how a player's Best rank could stay blank.
+- **Long jobs have their own lane.** The battle archive, the ranked history and the market sweep run
+  on background threads of their own, so the Player Finder's own requests — the Loka record behind its
+  headline, the fight pages — no longer queue behind minutes of somebody else's sweep.
+- **The server's own budget is respected.** api.lokamc.com reports what is left of its rate limit with
+  every answer; background work stops short of the last ten, so a sweep can no longer draw a 429 —
+  which held every request to the host off, the one a player was waiting on included.
 
 ### What is not shown
 

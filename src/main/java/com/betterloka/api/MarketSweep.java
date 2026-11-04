@@ -1,13 +1,16 @@
 package com.betterloka.api;
 
 import com.betterloka.api.model.MarketListing;
+import com.google.gson.JsonObject;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
- * One fetch of the whole market, filling in a page at a time.
+ * One fetch of the whole market, filling in a page at a time — or the last one, read back from disk.
  *
  * <p>Written from the request threads and read from the render thread: every write takes the lock,
  * and what the screen reads — the listing snapshot, the counters — is published through volatile
@@ -15,7 +18,9 @@ import java.util.Map;
  */
 public final class MarketSweep {
     private final Map<String, MarketListing> byId = new LinkedHashMap<>();
+    private final Map<String, JsonObject> rawById = new LinkedHashMap<>();
     private int unnamed;
+    private final Consumer<MarketSweep> onFinish;
 
     private volatile List<MarketListing> listings = List.of();
     private volatile int version;
@@ -24,8 +29,24 @@ public final class MarketSweep {
     private volatile int pagesFailed;
     private volatile boolean failed;
     private volatile long finishedAt;
+    private volatile boolean fromDisk;
 
-    MarketSweep() {
+    MarketSweep(Consumer<MarketSweep> onFinish) {
+        this.onFinish = onFinish;
+    }
+
+    /** A sweep that finished in an earlier session, read back so the market opens full. */
+    static MarketSweep restored(List<JsonObject> raw, long savedAt) {
+        MarketSweep sweep = new MarketSweep(ignored -> { });
+        List<MarketListing> page = new ArrayList<>(raw.size());
+        for (JsonObject object : raw) {
+            page.add(MarketListing.fromJson(object));
+        }
+        sweep.start(1);
+        sweep.add(page, raw);
+        sweep.finishedAt = savedAt;
+        sweep.fromDisk = true;
+        return sweep;
     }
 
     /** The first page is in, and says how many there are. */
@@ -34,36 +55,61 @@ public final class MarketSweep {
     }
 
     /** One page's offers. An offer seen twice — the market moved between pages — is kept once. */
-    synchronized void add(List<MarketListing> page) {
-        for (MarketListing listing : page) {
-            String key = listing.id() != null ? listing.id() : "#" + unnamed++;
-            byId.putIfAbsent(key, listing);
+    void add(List<MarketListing> page, List<JsonObject> raw) {
+        boolean finished;
+        synchronized (this) {
+            for (int i = 0; i < page.size(); i++) {
+                MarketListing listing = page.get(i);
+                String key = listing.id() != null ? listing.id() : "#" + unnamed++;
+                if (byId.putIfAbsent(key, listing) == null && i < raw.size()) {
+                    rawById.put(key, raw.get(i));
+                }
+            }
+            listings = List.copyOf(byId.values());
+            pagesDone++;
+            version++;
+            finished = finishIfDone();
         }
-        listings = List.copyOf(byId.values());
-        pagesDone++;
-        version++;
-        finishIfDone();
+        if (finished) {
+            onFinish.accept(this);
+        }
     }
 
     /** A page that could not be fetched: the rest of the market is still worth showing. */
-    synchronized void pageFailed() {
-        pagesFailed++;
-        pagesDone++;
-        version++;
-        finishIfDone();
+    void pageFailed() {
+        boolean finished;
+        synchronized (this) {
+            pagesFailed++;
+            pagesDone++;
+            version++;
+            finished = finishIfDone();
+        }
+        if (finished) {
+            onFinish.accept(this);
+        }
     }
 
     /** The first page could not be fetched, so nothing is known. */
-    synchronized void fail() {
-        failed = true;
-        finishedAt = System.currentTimeMillis();
-        version++;
+    void fail() {
+        synchronized (this) {
+            failed = true;
+            finishedAt = System.currentTimeMillis();
+            version++;
+        }
+        onFinish.accept(this);
     }
 
-    private void finishIfDone() {
-        if (pagesTotal > 0 && pagesDone >= pagesTotal) {
+    private boolean finishIfDone() {
+        if (finishedAt == 0 && pagesTotal > 0 && pagesDone >= pagesTotal) {
             finishedAt = System.currentTimeMillis();
+            return true;
         }
+        return false;
+    }
+
+    /** The offers as the API sent them, for saving. */
+    synchronized List<JsonObject> raw() {
+        return List.copyOf(rawById.values());
     }
 
     /** Every offer fetched so far. */
@@ -83,6 +129,16 @@ public final class MarketSweep {
     /** Whether nothing at all could be fetched. */
     public boolean failed() {
         return failed;
+    }
+
+    /** Whether it finished with every page in. */
+    public boolean whole() {
+        return finishedAt != 0 && !failed && pagesFailed == 0;
+    }
+
+    /** Whether this is the last session's market, read back from disk. */
+    public boolean fromDisk() {
+        return fromDisk;
     }
 
     /** How many pages could not be fetched, in a sweep that otherwise finished. */

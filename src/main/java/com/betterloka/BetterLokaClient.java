@@ -69,6 +69,8 @@ public class BetterLokaClient implements ClientModInitializer {
     private static KeyMapping openMenuKey;
     private static KeyMapping shulkerTimerKey;
     private static KeyMapping glowstoneTimerKey;
+    private static KeyMapping coordsPositionKey;
+    private static KeyMapping tlKey;
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
@@ -107,7 +109,7 @@ public class BetterLokaClient implements ClientModInitializer {
         arena = new ArenaApi(transport);
         towns = new TownCache(loka, configDir().resolve("towns.json"));
         stats = new PlayerStatsService(loka, eldritch, towns, configDir().resolve("fights.json"));
-        arenaStats = new ArenaService(arena, configDir().resolve("arena-history.json"));
+        arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v2.json"));
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
@@ -128,6 +130,22 @@ public class BetterLokaClient implements ClientModInitializer {
         nameHistory = new NameHistoryService(new LabyApi(transport), transport,
                 configDir().resolve("name-history.json"));
         map = new MapService(configDir().resolve("waypoints.json"));
+        // The market and the ranked ladders are fetched ahead of time while the player is online, so
+        // neither screen opens on a wait: the last whole market comes back off disk at once, and a
+        // fresh one replaces it every few minutes in the background lane.
+        market.useCache(configDir().resolve("market-cache.json"));
+        java.util.concurrent.ScheduledExecutorService warmup =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "BetterLoka-Warmup");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        warmup.scheduleWithFixedDelay(BetterLokaClient::warmUp, 20, 60, java.util.concurrent.TimeUnit.SECONDS);
+        // And straight after joining a server, rather than up to a minute later.
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+                (handler, sender, client) -> warmup.schedule(BetterLokaClient::warmUp, 3,
+                        java.util.concurrent.TimeUnit.SECONDS));
+
         // The declared fights, for the map: asked for only while the map is open, every fifteen
         // seconds, so a fight placed while somebody is looking is on it within a quarter of a minute.
         fights = new FightWatch(new FightWatch.Source() {
@@ -194,6 +212,14 @@ public class BetterLokaClient implements ClientModInitializer {
                 new KeyMapping("key.betterloka.shulker_timer", InputConstants.KEY_G, KEY_CATEGORY));
         glowstoneTimerKey = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping("key.betterloka.glowstone_timer", InputConstants.KEY_H, KEY_CATEGORY));
+        // P as asked, though vanilla has Social Interactions there too: both fire, and this one opens
+        // its screen after, so the coordinates win. Rebindable from Options -> Controls.
+        coordsPositionKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.betterloka.coords_position", InputConstants.KEY_P, KEY_CATEGORY));
+        // No key until the player picks one, and it does nothing until they also turn it on.
+        tlKey = KeyMappingHelper.registerKeyMapping(
+                new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
+        new com.betterloka.helper.CoordsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMenuKey.consumeClick()) {
@@ -207,12 +233,25 @@ public class BetterLokaClient implements ClientModInitializer {
             while (glowstoneTimerKey.consumeClick()) {
                 toggleTimer(grindTimers.glowstone(), "betterloka.grind.tab.glowstone");
             }
+            while (coordsPositionKey.consumeClick()) {
+                var open = client.gui.screen();
+                if (open == null || open instanceof net.minecraft.client.gui.screens.social.SocialInteractionsScreen) {
+                    client.gui.setScreen(new com.betterloka.gui.CoordsHudPositionScreen(null));
+                }
+            }
+            while (tlKey.consumeClick()) {
+                // One press, one /tl, sent as if typed — and only with the option on and the game in
+                // view, never from a menu.
+                if (config.tlKeyEnabled() && client.gui.screen() == null && client.player != null) {
+                    client.player.connection.sendCommand("tl");
+                }
+            }
         });
 
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -286,6 +325,21 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static ShrineIcons shrineIcons() {
         return shrineIcons;
+    }
+
+    /** The key that opens the coordinates' position screen. */
+    public static KeyMapping coordsPositionKey() {
+        return coordsPositionKey;
+    }
+
+    /** The key that sends /tl. */
+    public static KeyMapping tlKey() {
+        return tlKey;
+    }
+
+    /** Whether lava should be seen through; read from the fog code on the render thread. */
+    public static boolean isClearLavaEnabled() {
+        return config != null && config.clearLava();
     }
 
     public static KeyMapping shulkerTimerKey() {
@@ -365,6 +419,25 @@ public class BetterLokaClient implements ClientModInitializer {
         return terrainDownload;
     }
 
+    /** How old the market may get, while the player is online, before it is fetched again unasked. */
+    private static final long MARKET_PREFETCH_MILLIS = 5 * 60 * 1000L;
+
+    /**
+     * Keeps what the screens open on ready: a minute after another, while connected to a server.
+     * Nothing is fetched in the menus.
+     */
+    private static void warmUp() {
+        try {
+            if (net.minecraft.client.Minecraft.getInstance().getConnection() == null) {
+                return;
+            }
+            arenaStats.prewarm();
+            market.sweep(MARKET_PREFETCH_MILLIS);
+        } catch (RuntimeException e) {
+            BetterLoka.LOGGER.debug("Warm-up failed", e);
+        }
+    }
+
     /** The declared fights, which the map polls while it is open. */
     public static FightWatch fights() {
         return fights;
@@ -383,9 +456,14 @@ public class BetterLokaClient implements ClientModInitializer {
         return loka.executor();
     }
 
-    /** The lane for work nobody is watching, such as building the battle archive. */
+    /** The lane for short background fan-out, such as reading several fight pages at once. */
     public static java.util.concurrent.ExecutorService lokaBulkExecutor() {
         return transport.bulkExecutor();
+    }
+
+    /** The lane for long jobs nobody is watching, such as building the battle archive. */
+    public static java.util.concurrent.ExecutorService backgroundExecutor() {
+        return transport.backgroundExecutor();
     }
 
     public static NameplateKdService nameplateKd() {

@@ -84,6 +84,8 @@ public class LokaMarketScreen extends Screen {
     private final List<int[]> suggestionBounds = new ArrayList<>();
     /** What the field said when it was last searched, so the suggestions stay shut until it changes. */
     private String searchedText;
+    /** The answer the market in hand gave the current search, shown until the request lands. */
+    private Found instant;
 
     private int lastMouseX;
     private int lastMouseY;
@@ -131,7 +133,8 @@ public class LokaMarketScreen extends Screen {
     protected void init() {
         int left = contentLeft();
         int width = contentWidth();
-        sweep = BetterLokaClient.market().sweep(false);
+        BetterLokaClient.market().sweep(false);
+        sweep = BetterLokaClient.market().shown();
 
         int tabsX = this.width / 2 - TAB_WIDTH - 2;
         for (Tab value : Tab.values()) {
@@ -188,15 +191,16 @@ public class LokaMarketScreen extends Screen {
     }
 
     private void refresh() {
-        sweep = BetterLokaClient.market().sweep(true);
+        BetterLokaClient.market().sweep(true);
         indexedVersion = -1;
     }
 
     /** The square's stalls, worked out again only when another page of the market has come in. */
     private MarketIndex index() {
-        MarketSweep current = BetterLokaClient.market().currentSweep();
-        if (current != null && current != sweep) {
-            sweep = current;
+        // The newest market that finished, kept on screen while a fresher one comes in behind it.
+        MarketSweep shown = BetterLokaClient.market().shown();
+        if (shown != null && shown != sweep) {
+            sweep = shown;
             indexedVersion = -1;
         }
         if (sweep != null && sweep.version() != indexedVersion) {
@@ -218,6 +222,8 @@ public class LokaMarketScreen extends Screen {
         suggestDebounce.accept(query, System.currentTimeMillis());
         results.reset();
         MarketApi market = BetterLokaClient.market();
+        // The market already in hand answers at once; the request below brings the current offers.
+        instant = instantFor(query, null);
         searchSlot.start(market.executor(), () -> {
             List<String> matches = market.matchTypes(query, 1);
             if (matches.isEmpty()) {
@@ -231,12 +237,51 @@ public class LokaMarketScreen extends Screen {
     /** Looks up one exact type, as "other offers" from a profile asks. */
     private void searchType(String type) {
         results.reset();
+        instant = instantFor(null, type);
         MarketApi market = BetterLokaClient.market();
         searchSlot.start(market.executor(), () -> new Found(type, market.fetchListings(type)));
     }
 
-    private List<MarketListing> ordered() {
+    /**
+     * What the market already fetched says about a search, to show while the request goes out.
+     *
+     * @param query what was typed, matched against the types on sale; or {@code null} with
+     * @param type  an exact type
+     */
+    private Found instantFor(String query, String type) {
+        MarketSweep shown = BetterLokaClient.market().shown();
+        if (shown == null || shown.listings().isEmpty()) {
+            return null;
+        }
+        String wanted = type;
+        if (wanted == null) {
+            java.util.Set<String> types = new java.util.LinkedHashSet<>();
+            for (MarketListing listing : shown.listings()) {
+                types.add(listing.type());
+            }
+            List<String> matches = MarketApi.matchTypes(List.copyOf(types), query, 1);
+            if (matches.isEmpty()) {
+                return null;
+            }
+            wanted = matches.get(0);
+        }
+        List<MarketListing> offers = new ArrayList<>();
+        for (MarketListing listing : shown.listings()) {
+            if (wanted.equals(listing.type())) {
+                offers.add(listing);
+            }
+        }
+        return offers.isEmpty() ? null : new Found(wanted, List.copyOf(offers));
+    }
+
+    /** The search's answer, or while it is on its way, what the market in hand said. */
+    private Found found() {
         Found found = searchSlot.value();
+        return found == null && (searchSlot.loading() || searchSlot.failed()) ? instant : found;
+    }
+
+    private List<MarketListing> ordered() {
+        Found found = found();
         if (found == null) {
             return List.of();
         }
@@ -388,6 +433,13 @@ public class LokaMarketScreen extends Screen {
                 status = status.copy().append(Component.translatable("betterloka.market.pages_missing",
                         current.pagesFailed()).withStyle(ChatFormatting.RED));
             }
+            MarketSweep coming = BetterLokaClient.market().currentSweep();
+            if (BetterLokaClient.market().refreshing() && coming != current) {
+                status = status.copy().append((coming.pagesTotal() == 0
+                        ? Component.translatable("betterloka.market.refreshing_start")
+                        : Component.translatable("betterloka.market.refreshing", coming.pagesDone(),
+                                coming.pagesTotal())).withStyle(ChatFormatting.YELLOW));
+            }
         }
         context.text(this.font, status, left, BAR_Y + 1, statusColor);
         if (loading) {
@@ -417,11 +469,19 @@ public class LokaMarketScreen extends Screen {
     private void renderSearch(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         int left = contentLeft();
         int headerY = BAR_Y + BAR_HEIGHT + 4;
-        Found found = searchSlot.value();
+        Found found = found();
         Component header;
         Component empty;
         List<MarketListing> listings = List.of();
-        if (searchSlot.loading()) {
+        if (found != null && found == instant) {
+            // Shown at once from the market in hand while the current offers are asked for.
+            listings = ordered();
+            header = Component.translatable("betterloka.market.offers", MarketListing.pretty(found.type()),
+                    listings.size(), Component.translatable(filter.sort().orderKey()))
+                    .append(Component.translatable(searchSlot.loading() ? "betterloka.market.updating"
+                            : "betterloka.market.from_cache").withStyle(ChatFormatting.YELLOW));
+            empty = Component.empty();
+        } else if (searchSlot.loading()) {
             header = Component.translatable("betterloka.market.searching");
             empty = Component.empty();
         } else if (searchSlot.failed()) {

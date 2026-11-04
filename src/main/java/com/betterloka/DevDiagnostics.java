@@ -57,6 +57,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("helper".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            helperInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("fights".equals(System.getenv("BETTERLOKA_DIAG"))) {
             fightsInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1013,6 +1018,96 @@ public final class DevDiagnostics {
             client().gui.setScreen(null);
         });
         step(20, () -> BetterLoka.LOGGER.info("DIAG translator checks done"));
+    }
+
+    // --- Loka Helper: coordinates, clear lava, the /tl key, and the warmed-up screens ---
+
+    private void helperInput() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
+        shot(10, "helper-default");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
+                helper.devSet(true, true, true);
+                helper.devBindTl(com.mojang.blaze3d.platform.InputConstants.KEY_K);
+            }
+        });
+        shot(5, "helper-on");
+        step(2, () -> client().gui.setScreen(null));
+        step(2, () -> server("time set noon"));
+        shot(10, "coords-hud");
+        // P, pressed the way the keyboard would.
+        step(2, () -> net.minecraft.client.KeyMapping.click(com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD.getOrCreate(com.mojang.blaze3d.platform.InputConstants.KEY_P)));
+        step(5, () -> BetterLoka.LOGGER.info("DIAG after P: screen={}", client().gui.screen() == null ? "none"
+                : client().gui.screen().getClass().getSimpleName()));
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.CoordsHudPositionScreen screen) {
+                int[] box = screen.devBox();
+                var info = new net.minecraft.client.input.MouseButtonInfo(left, 0);
+                int targetX = client().getWindow().getGuiScaledWidth() - 60;
+                int targetY = client().getWindow().getGuiScaledHeight() - 40;
+                screen.mouseClicked(new net.minecraft.client.input.MouseButtonEvent(box[0], box[1], info), false);
+                screen.mouseDragged(new net.minecraft.client.input.MouseButtonEvent(targetX, targetY, info),
+                        targetX - box[0], targetY - box[1]);
+                screen.mouseReleased(new net.minecraft.client.input.MouseButtonEvent(targetX, targetY, info));
+            }
+        });
+        shot(5, "coords-position");
+        step(2, () -> client().gui.screen().onClose());
+        step(5, () -> BetterLoka.LOGGER.info("DIAG coords saved at {}, {}", BetterLokaClient.config().coordsHudX(),
+                BetterLokaClient.config().coordsHudY()));
+        shot(5, "coords-moved");
+        // Into lava, with fire resistance, looking along the ground.
+        step(2, () -> {
+            server("gamemode survival @a");
+            server("effect give @a minecraft:fire_resistance 600 0 true");
+            server("execute at @a run fill ~-12 ~-1 ~-12 ~12 ~4 ~12 minecraft:lava");
+            server("execute at @a run fill ~-2 ~-2 ~6 ~2 ~6 ~8 minecraft:gold_block");
+            server("execute as @a at @s run tp @s ~ ~ ~ 180 10");
+        });
+        step(60, () -> BetterLoka.LOGGER.info("DIAG in lava: clearLava={}", BetterLokaClient.config().clearLava()));
+        shot(5, "lava-clear");
+        step(2, () -> BetterLokaClient.config().setClearLava(false));
+        shot(10, "lava-fog");
+        // The /tl key: K was bound above, and the option is on.
+        step(2, () -> net.minecraft.client.KeyMapping.click(com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD.getOrCreate(com.mojang.blaze3d.platform.InputConstants.KEY_K)));
+        step(20, () -> BetterLoka.LOGGER.info("DIAG pressed the /tl key"));
+        shot(5, "tl-sent");
+        step(2, () -> {
+            BetterLokaClient.config().setTlKeyEnabled(false);
+            BetterLokaClient.tlKey().setKey(com.mojang.blaze3d.platform.InputConstants.UNKNOWN);
+            net.minecraft.client.KeyMapping.resetMapping();
+            BetterLokaClient.config().setCoordsHudPosition(0, 0);
+        });
+        // The market and ranked ladders, warmed up behind the game: how long before they are ready.
+        step(400, () -> {
+            var market = BetterLokaClient.market();
+            var shown = market.shown();
+            BetterLoka.LOGGER.info("DIAG warm-up after 20 s: market shown={} offers, refreshing={}",
+                    shown == null ? -1 : shown.listings().size(), market.refreshing());
+        });
+        step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
+        shot(5, "market-instant");
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> {
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), "Search");
+        });
+        step(1, this::startTimer);
+        step(40, () -> BetterLoka.LOGGER.info("DIAG finder 2 s after search: profile={} best loading={}",
+                field(client().gui.screen(), "profile") != null, field(client().gui.screen(), "arenaHistoryLoading")));
+        shot(2, "finder-2s");
+        step(100, () -> BetterLoka.LOGGER.info("DIAG finder 7 s after search: current={} best={}",
+                field(client().gui.screen(), "arenaCurrent"), field(client().gui.screen(), "arenaBest")));
+        shot(2, "finder-7s");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG helper checks done");
+            client().stop();
+        });
     }
 
     // --- the fights, on the map ---

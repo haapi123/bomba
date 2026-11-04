@@ -5,12 +5,17 @@ import com.betterloka.api.model.Json;
 import com.betterloka.api.model.MarketListing;
 import com.betterloka.api.model.MarketSort;
 import com.betterloka.data.LruCache;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 
+import java.io.IOException;
 import java.net.URLEncoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -135,37 +140,145 @@ public final class MarketApi {
     /** How long a sweep of the whole market is good for before opening the square fetches it again. */
     private static final long SWEEP_TTL_MILLIS = 3 * 60 * 1000L;
 
+    /** The oldest saved market still worth opening on while a fresh one is fetched. */
+    private static final long CACHE_MAX_AGE_MILLIS = 7 * 24 * 60 * 60 * 1000L;
+
+    /** The newest sweep, running or done. */
     private volatile MarketSweep sweep;
 
+    /** The newest sweep that finished with offers in it — what the square shows while another runs. */
+    private volatile MarketSweep lastFinished;
+
+    private volatile Path cacheFile;
+
     /**
-     * The whole market, as far as it has been fetched.
+     * The whole market, fetching it again if the last one is older than a few minutes.
      *
      * <p>Loka's API has no categories and no way to ask for more than twenty offers at once, so the
      * square is built from every page of {@code /market_sales} — about forty requests. They go out
-     * as background work, so a Fight Manager refresh or a search still comes first, and the result
-     * is kept for a few minutes, so walking between stalls costs nothing.
+     * in the background lane, behind anything a player is waiting on.
+     *
+     * <p>Nobody waits for them, though: the market is fetched ahead of time while the player is
+     * online, and the last one is kept on disk, so the square opens full and a refresh replaces it
+     * when it lands — see {@link #shown()}.
      *
      * @param refresh true to fetch it again even if the last sweep is still fresh
      */
     public synchronized MarketSweep sweep(boolean refresh) {
+        return sweep(refresh ? 0 : SWEEP_TTL_MILLIS);
+    }
+
+    /** Fetches the market again if what is held is older than {@code maxAgeMillis}. */
+    public synchronized MarketSweep sweep(long maxAgeMillis) {
         MarketSweep current = sweep;
-        long now = System.currentTimeMillis();
         if (current != null && current.running()) {
             return current;
         }
-        if (current != null && !refresh && !current.failed()
-                && now - current.finishedAt() < SWEEP_TTL_MILLIS) {
-            return current;
+        MarketSweep basis = current != null && !current.failed() ? current : lastFinished;
+        if (basis != null && System.currentTimeMillis() - basis.finishedAt() < maxAgeMillis) {
+            return basis;
         }
-        MarketSweep fresh = new MarketSweep();
+        MarketSweep fresh = new MarketSweep(this::finished);
         sweep = fresh;
-        transport.bulkExecutor().execute(() -> runSweep(fresh));
+        transport.backgroundExecutor().execute(() -> runSweep(fresh));
         return fresh;
     }
 
-    /** The last sweep, finished or not, without starting one. */
+    /**
+     * What the square should show: the newest market that finished, or — the very first time, with
+     * nothing saved — the one coming in, page by page.
+     */
+    public MarketSweep shown() {
+        MarketSweep current = sweep;
+        if (current != null && !current.running() && !current.failed() && !current.listings().isEmpty()) {
+            return current;
+        }
+        MarketSweep finished = lastFinished;
+        return finished != null ? finished : current;
+    }
+
+    /** Whether a fresh market is being fetched behind what is shown. */
+    public boolean refreshing() {
+        MarketSweep current = sweep;
+        return current != null && current.running();
+    }
+
+    /** The newest sweep, finished or not, without starting one. */
     public MarketSweep currentSweep() {
         return sweep;
+    }
+
+    private void finished(MarketSweep done) {
+        if (done.failed() || done.listings().isEmpty()) {
+            return;
+        }
+        lastFinished = done;
+        if (done.whole()) {
+            save(done);
+        }
+    }
+
+    // --- the market on disk ---
+
+    /** Where the last whole market is kept between sessions; read back at once, in the background. */
+    public void useCache(Path file) {
+        this.cacheFile = file;
+        transport.backgroundExecutor().execute(this::restore);
+    }
+
+    private void restore() {
+        Path file = cacheFile;
+        if (file == null || !Files.isRegularFile(file)) {
+            return;
+        }
+        try {
+            JsonObject saved = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            long savedAt = Json.longValue(saved, "savedAt", 0);
+            if (System.currentTimeMillis() - savedAt > CACHE_MAX_AGE_MILLIS) {
+                return;
+            }
+            JsonElement array = saved.get("listings");
+            if (array == null || !array.isJsonArray()) {
+                return;
+            }
+            List<JsonObject> raw = new ArrayList<>();
+            for (JsonElement element : array.getAsJsonArray()) {
+                if (element.isJsonObject()) {
+                    raw.add(element.getAsJsonObject());
+                }
+            }
+            MarketSweep restored = MarketSweep.restored(raw, savedAt);
+            synchronized (this) {
+                if (lastFinished == null) {
+                    lastFinished = restored;
+                }
+            }
+            BetterLoka.LOGGER.info("[betterloka] market restored from disk: {} offers", raw.size());
+        } catch (IOException | RuntimeException e) {
+            BetterLoka.LOGGER.debug("Could not read the saved market", e);
+        }
+    }
+
+    private void save(MarketSweep done) {
+        Path file = cacheFile;
+        if (file == null) {
+            return;
+        }
+        try {
+            JsonObject saved = new JsonObject();
+            saved.addProperty("savedAt", done.finishedAt());
+            JsonArray array = new JsonArray();
+            for (JsonObject raw : done.raw()) {
+                array.add(raw);
+            }
+            saved.add("listings", array);
+            Files.createDirectories(file.getParent());
+            Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.writeString(temp, saved.toString(), StandardCharsets.UTF_8);
+            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException | RuntimeException e) {
+            BetterLoka.LOGGER.debug("Could not save the market", e);
+        }
     }
 
     private void runSweep(MarketSweep target) {
@@ -179,18 +292,46 @@ public final class MarketApi {
         }
         int pages = Math.max(1, Json.integer(Json.object(first, "page"), "totalPages", 1));
         target.start(pages);
-        target.add(readListings(first));
+        List<JsonObject> firstRaw = rawListings(first);
+        target.add(parse(firstRaw), firstRaw);
         for (int page = 1; page < pages; page++) {
             int number = page;
-            transport.bulkExecutor().execute(() -> {
+            transport.backgroundExecutor().execute(() -> {
                 try {
-                    target.add(readListings(getObject(pageUrl(number), true)));
-                } catch (ApiException e) {
+                    List<JsonObject> raw = rawListings(getObject(pageUrl(number), true));
+                    target.add(parse(raw), raw);
+                } catch (ApiException | RuntimeException e) {
                     BetterLoka.LOGGER.debug("Could not fetch market page {}", number, e);
                     target.pageFailed();
                 }
             });
         }
+    }
+
+    /** One page's offers as the API sent them, without the links that would only bloat the save. */
+    private static List<JsonObject> rawListings(JsonObject json) {
+        JsonObject embedded = Json.object(json, "_embedded");
+        JsonElement array = embedded == null ? null : embedded.get("market_sales");
+        if (array == null || !array.isJsonArray()) {
+            return List.of();
+        }
+        List<JsonObject> out = new ArrayList<>();
+        for (JsonElement element : array.getAsJsonArray()) {
+            if (element.isJsonObject()) {
+                JsonObject copy = element.getAsJsonObject().deepCopy();
+                copy.remove("_links");
+                out.add(copy);
+            }
+        }
+        return out;
+    }
+
+    private static List<MarketListing> parse(List<JsonObject> raw) {
+        List<MarketListing> out = new ArrayList<>(raw.size());
+        for (JsonObject object : raw) {
+            out.add(MarketListing.fromJson(object));
+        }
+        return out;
     }
 
     private static String pageUrl(int page) {

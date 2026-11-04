@@ -245,7 +245,7 @@ public class PlayerFinderScreen extends Screen {
 
         // The battle archive is what the format split and the month are taken from, and it is built
         // on demand: a search is the first sign anybody wants it.
-        BetterLokaClient.battleIndex().startIndexing(BetterLokaClient.lokaBulkExecutor());
+        BetterLokaClient.battleIndex().startIndexing(BetterLokaClient.backgroundExecutor());
 
         PlayerStatsService stats = BetterLokaClient.stats();
         stats.lookup(name, headline -> applyOnClientThread(generation, () -> {

@@ -86,6 +86,18 @@ public final class HttpTransport implements AutoCloseable {
     private final ExecutorService httpExecutor;
     private final ExecutorService tileExecutor;
 
+    /**
+     * Threads for the long jobs nobody is watching — the battle archive, the ranked history, a sweep
+     * of the whole market.
+     *
+     * <p>Those used to run in the bulk pool, where one archive build held a worker for minutes and a
+     * market sweep queued forty pages, and the Player Finder's own fan-out — the Loka record behind
+     * its headline, its fight pages — waited behind them. That queue, not the network, is what made
+     * a search take tens of seconds.
+     */
+    private static final int BACKGROUND_THREADS = 4;
+    private final ExecutorService backgroundExecutor;
+
     /** One bucket per host: the services have independent budgets and must not throttle each other. */
     private final Map<String, RateLimiter> limiters = new ConcurrentHashMap<>();
     private final double permitsPerSecond;
@@ -116,6 +128,8 @@ public final class HttpTransport implements AutoCloseable {
         this.bulkExecutor = Executors.newFixedThreadPool(bulkWorkers, daemonFactory("BetterLoka-Bulk-"));
         this.httpExecutor = Executors.newFixedThreadPool(HTTP_THREADS, daemonFactory("BetterLoka-HTTP-"));
         this.tileExecutor = Executors.newFixedThreadPool(TILE_THREADS, daemonFactory("BetterLoka-Tiles-"));
+        this.backgroundExecutor = Executors.newFixedThreadPool(BACKGROUND_THREADS,
+                daemonFactory("BetterLoka-Background-"));
         this.http = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -144,6 +158,11 @@ public final class HttpTransport implements AutoCloseable {
     /** Pool for background fan-out, such as fetching several fight pages at once. */
     public ExecutorService bulkExecutor() {
         return bulkExecutor;
+    }
+
+    /** Pool for long background jobs; see {@link #BACKGROUND_THREADS}. */
+    public ExecutorService backgroundExecutor() {
+        return backgroundExecutor;
     }
 
     /**
@@ -284,6 +303,15 @@ public final class HttpTransport implements AutoCloseable {
                 requestCount.incrementAndGet();
                 HttpResponse<String> response = send(request);
                 int status = response.statusCode();
+                // The server says how much of its budget is left; background work stays off the last
+                // of it, so a click never lands on an empty bucket somebody else's sweep emptied.
+                response.headers().firstValue(REMAINING_HEADER).ifPresent(value -> {
+                    try {
+                        limiter.observeRemaining(Integer.parseInt(value.trim()));
+                    } catch (NumberFormatException ignored) {
+                        // Not a number: nothing learned.
+                    }
+                });
                 if (status == 200) {
                     timing("request", url, startNanos);
                     return response.body();
@@ -386,8 +414,11 @@ public final class HttpTransport implements AutoCloseable {
         return backoff;
     }
 
+    private static final String REMAINING_HEADER = "x-rate-limit-remaining";
+
     @Override
     public void close() {
+        backgroundExecutor.shutdownNow();
         executor.shutdownNow();
         bulkExecutor.shutdownNow();
         tileExecutor.shutdownNow();

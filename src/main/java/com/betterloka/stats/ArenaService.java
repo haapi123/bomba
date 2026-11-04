@@ -74,6 +74,14 @@ public final class ArenaService {
 
     private volatile CompletableFuture<Map<Ladder, Map<String, Best>>> history;
 
+    /**
+     * Whether the index being served came back whole. One that did not — a season that failed to
+     * load — is used for now but neither saved nor kept: the next search builds it again, rather
+     * than a player's best season going missing for the rest of the session and, once written to
+     * disk, the day after.
+     */
+    private volatile boolean historyComplete;
+
     /** Every name each UUID has appeared under across the snapshots, in the order they were read. */
     private final Map<UUID, List<String>> seenNames = new HashMap<>();
 
@@ -175,7 +183,8 @@ public final class ArenaService {
         return name == null ? null : index.get("n:" + name.toLowerCase(Locale.ROOT));
     }
 
-    private CompletableFuture<Void> loadCurrent() {
+    /** Fetches both ladders at once — they are independent, and one after the other doubled the wait. */
+    private synchronized CompletableFuture<Void> loadCurrent() {
         CompletableFuture<Void> running = currentLoad;
         if (running != null && !running.isDone()) {
             return running;
@@ -183,22 +192,44 @@ public final class ArenaService {
         if (System.currentTimeMillis() - currentLoadedAt < CURRENT_TTL_MILLIS && !current.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
-        CompletableFuture<Void> load = CompletableFuture.runAsync(() -> {
-            for (Ladder ladder : Ladder.values()) {
+        List<CompletableFuture<Boolean>> ladders = new ArrayList<>();
+        for (Ladder ladder : Ladder.values()) {
+            ladders.add(CompletableFuture.supplyAsync(() -> {
                 try {
                     List<ArenaEntry> rows = api.fetchCurrent(ladder);
                     rememberNames(rows);
                     synchronized (current) {
                         current.put(ladder, rows);
                     }
+                    return true;
                 } catch (ApiException e) {
                     BetterLoka.LOGGER.debug("Could not load the {} ladder", ladder, e);
+                    return false;
                 }
-            }
-            currentLoadedAt = System.currentTimeMillis();
-        }, api.executor());
+            }, api.executor()));
+        }
+        CompletableFuture<Void> load = CompletableFuture.allOf(ladders.toArray(CompletableFuture[]::new))
+                .thenRun(() -> {
+                    // Only a full answer is kept for the five minutes; a ladder that failed is asked
+                    // for again by the next search.
+                    if (ladders.stream().allMatch(CompletableFuture::join)) {
+                        currentLoadedAt = System.currentTimeMillis();
+                    }
+                });
         currentLoad = load;
         return load;
+    }
+
+    /**
+     * Gets both ladders and the best-rank index ready ahead of the first search.
+     *
+     * <p>The index is read from disk when it is fresh, which is instant; otherwise it is built in
+     * the background, so the Player Finder's Best rank is there when somebody asks rather than
+     * forty requests after.
+     */
+    public void prewarm() {
+        loadCurrent();
+        loadHistory();
     }
 
     private Map<Ladder, Map<String, Best>> historyIfReady() {
@@ -208,14 +239,20 @@ public final class ArenaService {
 
     private CompletableFuture<Map<Ladder, Map<String, Best>>> loadHistory() {
         CompletableFuture<Map<Ladder, Map<String, Best>>> existing = history;
-        if (existing != null) {
+        if (existing != null && !(existing.isDone() && (existing.isCompletedExceptionally() || !historyComplete))) {
             return existing;
         }
         synchronized (this) {
-            if (history == null) {
-                history = CompletableFuture.supplyAsync(this::buildHistory, api.bulkExecutor());
+            CompletableFuture<Map<Ladder, Map<String, Best>>> held = history;
+            if (held == null || held.isDone() && (held.isCompletedExceptionally() || !historyComplete)) {
+                CompletableFuture<Map<Ladder, Map<String, Best>>> build =
+                        CompletableFuture.supplyAsync(this::buildHistory, api.backgroundExecutor());
+                // What an incomplete build found is served to whoever was waiting on it, and the
+                // next caller starts another.
+                history = build;
+                held = build;
             }
-            return history;
+            return held;
         }
     }
 
@@ -231,8 +268,10 @@ public final class ArenaService {
         if (fromDisk != null) {
             // The names come back with it: rebuilding the index just to recover them would undo the
             // whole point of caching it.
+            historyComplete = true;
             return fromDisk;
         }
+        historyComplete = false;
 
         Map<Ladder, Map<String, Best>> index = new EnumMap<>(Ladder.class);
         for (Ladder ladder : Ladder.values()) {
@@ -247,28 +286,56 @@ public final class ArenaService {
             return index;
         }
 
+        // Every season at once, a short task each in the bulk lane: one after the other was forty
+        // round trips end to end, the better part of ten seconds before Best rank could say anything.
+        List<CompletableFuture<Boolean>> tasks = new ArrayList<>();
         for (int season : seasons) {
-            int week;
+            tasks.add(CompletableFuture.supplyAsync(() -> recordSeason(index, season), api.bulkExecutor()));
+        }
+        boolean complete = true;
+        for (CompletableFuture<Boolean> task : tasks) {
             try {
-                List<Integer> weeks = api.fetchWeeks(season);
-                if (weeks.isEmpty()) {
-                    continue;
-                }
-                week = weeks.get(weeks.size() - 1);
-            } catch (ApiException e) {
-                BetterLoka.LOGGER.debug("Could not list weeks of arena season {}", season, e);
-                continue;
-            }
-            for (Ladder ladder : Ladder.values()) {
-                try {
-                    record(index.get(ladder), season, api.fetchHistory(ladder, season, week));
-                } catch (ApiException e) {
-                    BetterLoka.LOGGER.debug("Could not load {} season {} week {}", ladder, season, week, e);
-                }
+                complete &= task.join();
+            } catch (RuntimeException e) {
+                BetterLoka.LOGGER.debug("An arena season failed to index", e);
+                complete = false;
             }
         }
-        writeIndex(index);
+        if (complete) {
+            writeIndex(index);
+        } else {
+            BetterLoka.LOGGER.info("[betterloka] the ranked history came back incomplete; it will be read again");
+        }
+        historyComplete = complete;
         return index;
+    }
+
+    /** One season's final standings on both ladders. @return whether all of it was read. */
+    private boolean recordSeason(Map<Ladder, Map<String, Best>> index, int season) {
+        int week;
+        try {
+            List<Integer> weeks = api.fetchWeeks(season);
+            if (weeks.isEmpty()) {
+                return true;
+            }
+            week = weeks.get(weeks.size() - 1);
+        } catch (ApiException e) {
+            BetterLoka.LOGGER.debug("Could not list weeks of arena season {}", season, e);
+            return false;
+        }
+        boolean complete = true;
+        for (Ladder ladder : Ladder.values()) {
+            try {
+                List<ArenaEntry> rows = api.fetchHistory(ladder, season, week);
+                synchronized (index) {
+                    record(index.get(ladder), season, rows);
+                }
+            } catch (ApiException e) {
+                BetterLoka.LOGGER.debug("Could not load {} season {} week {}", ladder, season, week, e);
+                complete = false;
+            }
+        }
+        return complete;
     }
 
     /** @return the saved index if one is still fresh, otherwise {@code null}. */

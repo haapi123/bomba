@@ -60,7 +60,8 @@ public class MarketStallScreen extends Screen {
     protected void init() {
         int left = contentLeft();
         int width = contentWidth();
-        sweep = BetterLokaClient.market().sweep(false);
+        BetterLokaClient.market().sweep(false);
+        sweep = BetterLokaClient.market().shown();
         int filterWidth = FilterMenu.preferredWidth(this.font);
         filter.place(left + width - filterWidth, BAR_Y, filterWidth);
 
@@ -80,7 +81,7 @@ public class MarketStallScreen extends Screen {
 
     /** What the stall shows, worked out again only when the market, the order or the filter changes. */
     private List<MarketListing> shown() {
-        MarketSweep current = BetterLokaClient.market().currentSweep();
+        MarketSweep current = BetterLokaClient.market().shown();
         if (current != null && current != sweep) {
             sweep = current;
             shownVersion = -1;
