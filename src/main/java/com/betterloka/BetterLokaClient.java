@@ -78,6 +78,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static ArenaService arenaStats;
     private static BattleIndex battleIndex;
     private static NameplateKdService nameplateKd;
+    private static com.betterloka.stats.EloService elo;
     private static TranslationService translations;
     private static ChatLog chatLog;
     private static TownLogger townLogger;
@@ -104,6 +105,13 @@ public class BetterLokaClient implements ClientModInitializer {
         arena = new ArenaApi(transport);
         towns = new TownCache(loka, configDir().resolve("towns.json"));
         stats = new PlayerStatsService(loka, eldritch, towns, configDir().resolve("fights.json"));
+        // Conquest Elo: one static file from loka-elo.pages.dev, kept on disk and checked for a newer
+        // version every half hour. It also knows every name each account has had, which is what finds
+        // a player searched for under an old one.
+        elo = new com.betterloka.stats.EloService(transport, configDir().resolve("elo.json"),
+                transport.backgroundExecutor());
+        elo.start();
+        stats.useElo(elo);
         arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v2.json"));
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
@@ -211,6 +219,7 @@ public class BetterLokaClient implements ClientModInitializer {
         tlKey = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
+        new com.betterloka.helper.ImportantWaypointsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMenuKey.consumeClick()) {
@@ -242,7 +251,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -276,6 +285,15 @@ public class BetterLokaClient implements ClientModInitializer {
     }
 
     /** Guards the nameplate mixin, which runs for every player every frame. */
+    /** Conquest Elo, from loka-elo.pages.dev. */
+    public static com.betterloka.stats.EloService elo() {
+        return elo;
+    }
+
+    public static boolean isNameplateEloEnabled() {
+        return config != null && config.showNameplateElo() && elo != null;
+    }
+
     public static boolean isNameplateKdEnabled() {
         return config != null && config.showNameplateKd() && nameplateKd != null;
     }
@@ -410,8 +428,14 @@ public class BetterLokaClient implements ClientModInitializer {
         return terrainDownload;
     }
 
-    /** How old the market may get, while the player is online, before it is fetched again unasked. */
-    private static final long MARKET_PREFETCH_MILLIS = 5 * 60 * 1000L;
+    /**
+     * How old the market may get, while the player is online, before it is fetched again unasked.
+     *
+     * <p>Ten minutes, not five: a whole market is forty-five requests against Loka's budget of about
+     * one a second, and a sweep nobody asked for every five minutes kept that budget low just when a
+     * player pressed Refresh and wanted all of it.
+     */
+    private static final long MARKET_PREFETCH_MILLIS = 10 * 60 * 1000L;
 
     /**
      * Keeps what the screens open on ready: a minute after another, while connected to a server.
@@ -424,6 +448,7 @@ public class BetterLokaClient implements ClientModInitializer {
             }
             arenaStats.prewarm();
             market.sweep(MARKET_PREFETCH_MILLIS);
+            elo.refreshIfDue();
         } catch (RuntimeException e) {
             BetterLoka.LOGGER.debug("Warm-up failed", e);
         }

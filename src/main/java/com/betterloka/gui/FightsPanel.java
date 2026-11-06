@@ -53,8 +53,11 @@ final class FightsPanel {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT)
             .withZone(ZoneId.systemDefault());
 
-    /** Whether the panel is up, kept for the session: shut it once and it stays shut. */
-    private static boolean open = true;
+    /**
+     * Whether the panel is up. Shut whenever the map opens: the map is for the map, and the list is
+     * one press of Fights away — or opens by itself on a fight picked from the map or the banner.
+     */
+    private boolean open = false;
 
     private record Hit(int x, int y, int width, int height, Runnable action) {
         boolean contains(double px, double py) {

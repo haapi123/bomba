@@ -29,7 +29,6 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.player_finder", PlayerFinderScreen::new);
         y = addModule(x, y, "betterloka.module.translator", TranslatorScreen::new);
         y = addModule(x, y, "betterloka.module.loka_market", LokaMarketScreen::new);
-        y = addModule(x, y, "betterloka.module.town_finder", TownFinderScreen::new);
         y = addModule(x, y, "betterloka.module.town_logger", TownLoggerScreen::new);
         y = addModule(x, y, "betterloka.module.loka_grinder", LokaGrinderScreen::new);
         y = addModule(x, y, "betterloka.module.loka_map", LokaMapScreen::new);

@@ -30,6 +30,8 @@ public final class MarketSweep {
     private volatile boolean failed;
     private volatile long finishedAt;
     private volatile boolean fromDisk;
+    /** Somebody pressed Refresh and is watching it come in: its pages go to the front of the queue. */
+    private volatile boolean urgent;
 
     MarketSweep(Consumer<MarketSweep> onFinish) {
         this.onFinish = onFinish;
@@ -134,6 +136,16 @@ public final class MarketSweep {
     /** Whether it finished with every page in. */
     public boolean whole() {
         return finishedAt != 0 && !failed && pagesFailed == 0;
+    }
+
+    /** Whether somebody is waiting on this sweep, rather than it filling in behind the screen. */
+    public boolean urgent() {
+        return urgent;
+    }
+
+    /** Somebody is now waiting on it: whatever pages are still to come are fetched as such. */
+    void makeUrgent() {
+        urgent = true;
     }
 
     /** Whether this is the last session's market, read back from disk. */

@@ -3,7 +3,6 @@ package com.betterloka;
 import com.betterloka.gui.LokaGrinderScreen;
 import com.betterloka.gui.LokaMapScreen;
 import com.betterloka.gui.PlayerFinderScreen;
-import com.betterloka.gui.TownFinderScreen;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapTerritory;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -59,14 +58,6 @@ public final class DevShots {
         shot(20, "player-finder-identity");
         step(200, () -> { });
         shot(20, "player-finder-names");
-
-        step(5, () -> client().gui.setScreen(new TownFinderScreen(null)));
-        step(5, () -> {
-            type(client().gui.screen(), "Hilo");
-            click(client().gui.screen(), "Search");
-        });
-        step(300, () -> { });
-        shot(20, "town-finder-founded");
 
         // The tutorial toast owns the top right and would sit over the map's card.
         step(5, () -> client().gui.toastManager().clear());

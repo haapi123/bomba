@@ -15,7 +15,7 @@ never talks to the game server and sends nothing about you anywhere.
 | **Player Finder** | Working |
 | **Translator** | Working |
 | **Loka Market** | Working |
-| **Town Finder** | Working |
+| **Loka Map** (with towns) | Working |
 | **Town Logger** | Working |
 | **Loka Grinder** | Working |
 | **Loka Helper** | Working |
@@ -33,6 +33,9 @@ laid out like a market item's profile:
   **IN FIGHT** when they are in one right now), when they first appeared on Loka, and their **K/D** on
   a tag at the foot of the stand.
 - **On the right, the numbers**, in coloured tiles:
+  - **Conquest Elo** — the rating, the place on the leaderboard, the best it has been and how many
+    rated fights it rests on, from [loka-elo.pages.dev](https://loka-elo.pages.dev) (below); the
+    rating hangs on a second tag at the foot of the stand, beside the K/D
   - **Combat** — kills, deaths, K/D, assists, first bloods, close calls, and their nemesis (whoever
     has killed them most)
   - **Conquest record** — wins, losses, fights, win rate, and a bar of wins against losses
@@ -117,25 +120,69 @@ A season's weekly snapshots are cumulative, which is what makes its **last publi
 season's result and keeps this to one table per season rather than one per week. Players are followed
 by UUID, not by name, because names change between seasons.
 
+### Conquest Elo
+
+![Conquest Elo](docs/player-finder-elo.png)
+
+[Loka Elo](https://loka-elo.pages.dev) rates every Conquest player from their fights. The site
+publishes its whole leaderboard as one static file — every rated player with UUID, name, former
+names and rating — which is exactly what its own page loads, and that file is all the mod reads: about
+a megabyte compressed, fetched once per version (the site regenerates it about daily), kept on disk
+(`elo.json`) and checked for a newer one every half hour. The site's `/api/` is behind a challenge
+and disallowed to robots, and is never touched; players the site hides are hidden here too.
+
+Because the whole leaderboard is on disk, a lookup is instant and costs nothing — which is what lets a
+nameplate carry a rating without a request per player.
+
 ### A player who has renamed
 
-EldritchBot answers by name, so somebody who renamed yesterday 302s away from their new one and comes
-back as "no such player" — even while they are standing on the server. Loka tracks renames, so when
-the name misses, the mod looks the career up by **UUID** instead, which EldritchBot answers to
-whatever they are called today. The card then shows Loka's current name.
+EldritchBot answers by name, so somebody who renamed yesterday 302s away from their new one, and an
+old name finds nobody at all — even while they are standing on the server. The mod finds the
+**account** behind the name instead and asks EldritchBot by UUID, which it answers whatever the
+player is called today. The account comes from the Elo leaderboard, which lists **every name each
+account has had** — so a search for `jagardumm` finds Blissterz, `Rezorie` finds spookyrezor and
+`xPabloFights_YT` finds babisoy, none of which Loka's own lookup could — or else from Loka. The card
+shows the current name.
+
+### Why a search is quick, every time
+
+Searching the same names over and over against the live services, with everything the game runs in
+the background running too, turned up the stall that came and went: **api.lokamc.com** sits behind
+several nodes, each with a budget of about thirty requests refilling at about one a second, and when
+background work spent a node's budget it answered 429 with a wait of up to **33 seconds**. The mod
+held every request to the host for all of it — and the Player Finder's headline waited on Loka's
+record of the player, so a search sat on "Searching" for half a minute with EldritchBot's numbers long
+since in. Now:
+
+- **The headline does not wait on Loka.** EldritchBot's numbers go out the moment they are in; Loka's
+  rank and account age follow when Loka answers.
+- **A 429 on background work holds back only background work.** One on a request somebody is waiting
+  on holds it at most a second and a half, since the retry may well reach another node.
+- **Background work stays under Loka's refill**: at most one and a half requests a second, and it stops
+  while any node reports its budget low — the lowest reading of the last five seconds, not the last
+  one, since readings alternate between nodes.
+
+Sixteen searches in a row (renamed players included) under that load: every headline in 0.3–1.5 s.
+
+### K/D and Elo above nameplates
+
+The two switches at the bottom of the Player Finder put each player's K/D, and their Conquest Elo,
+beside their name tag in the world — `Name | 3.58 | 2068 ELO` — each coloured by its band:
 
 ### K/D above nameplates
 
-The toggle at the bottom of the Player Finder puts each player's K/D beside their name tag in the
-world, coloured the way Loka players already read it:
+| K/D | Colour | | Elo | Colour |
+| --- | --- | --- | --- | --- |
+| below 1.0 | red to orange | | below 650 | red-orange |
+| 1.0 – 3.0 | orange to yellow | | 650 – 849 (where everyone starts) | grey |
+| 3.0 – 5.0 | yellow-green to green | | 850 – 1399 | yellow, light green |
+| 5.0 – 10 | light blue, blue | | 1400 – 2199 | green, light blue |
+| 10 – 20 | purple | | 2200 – 2999 | blue, purple |
+| past 20 | gold | | 3000 and above | gold |
 
-| K/D | Colour |
-| --- | --- |
-| below 1.0 | red |
-| 1.0 and above | yellow |
-| 3.0 and above | gold |
+The Elo is looked up by the player's account in the leaderboard on disk, so it costs no request.
 
-Ratios are fetched in the background as players come into view, cached for fifteen minutes, and
+K/D ratios are fetched in the background as players come into view, cached for fifteen minutes, and
 capped at a handful of requests in flight, so a full fight fills in over a few seconds rather than
 all at once.
 
@@ -190,8 +237,11 @@ Loka's own items — Recall Stones, Reinforced Hoppers, Void Storage markers —
 type of Loka's over an ordinary material, and go to **Loka & Misc** with a *Loka* badge.
 
 The square is the whole market: every page of `/market_sales` (the API hands out twenty offers a
-page, so about forty requests), fetched in the background when the Market opens, filling in as it
-goes, and kept for three minutes. **Refresh** fetches it again.
+page, so about forty-five requests), fetched ahead of time in the background and kept for ten
+minutes. **Refresh** fetches it again now — on threads of its own and as a request somebody is waiting
+on, which brings it in within a few seconds (measured: 45 pages in 3.7 s with the battle archive,
+the ranked history and a stream of searches all running alongside). It used to queue behind those
+in the shared background lane, paced as work nobody was watching, and took minutes.
 
 ![A stall and its Filter](docs/market-stall.png)
 
@@ -216,66 +266,6 @@ offers** searches the same item; **Copy seller** puts the seller's name on the c
 Prices are read as Loka's API documents them: `price` is for one unit, a stack of `stackSize`
 items, of which `quantity` are left. A stack of sixty-four gunpowder at 390 is about six shards a
 powder, and orders by price compare the price of one item, so a stack and a single can be compared.
-
-## Town Finder
-
-![Towns recruiting](docs/town-finder-recruiting.png)
-
-Opens on **every town currently recruiting**, filterable by continent, with level, member count,
-vulnerability hour and slogan. Click any of them to open it.
-
-![Town Finder](docs/town-finder.png)
-
-A town, whether searched for or clicked:
-
-- **Founded** — the date and time the town was made. Loka publishes no founding date, but every
-  town's ID is a MongoDB ObjectID, which begins with the second the record was created. Sixteen of
-  the eighty-odd live towns carry IDs stamped inside the same five seconds in May 2021 — Loka's
-  oldest towns, given new records when the database they live in was built — so those read **"On
-  record since"** rather than "Founded". Presenting an import as a founding would be inventing a
-  fact.
-- **Active members**, and how long the town has left — see below
-- **Level, strength, members, recruiting**
-- **Vulnerable from** — the eight hours it is attackable for, in your own clock. Loka publishes the
-  opening hour and publishes it in **UTC**: the API says 19 for a town whose in-game panel reads
-  "9pm – 5am", so the number is converted rather than printed as it comes. The eight-hour length is
-  the server's rule, confirmed against that panel.
-- **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as, one per
-  line so a town with five of them shows all five
-- **Alliance** it belongs to now, and **who it has been allied with, longest first**
-- Every **territory it holds**, with number and beacon coordinates
-
-A name with no living town behind it is usually a town that is gone rather than one that never
-existed, so the search falls back to the deleted-town roster and says so.
-
-### When a town will be deleted
-
-Loka deletes a town once it has gone **a month with no active members**. That makes the deletion date
-knowable in advance, and the active count is the one number that decides it.
-
-It is published nowhere. Every field of the town record was checked, on both the list and the
-single-town endpoint, and on all 11,338 member entries across the live roster: a member entry carries
-`subowner` and nothing else. The count exists only on the panel `/town info` opens.
-
-So the mod reads it off that panel. Open `/town info <town>` yourself and the reading is recorded —
-name, members, active, and when it was read. Nothing is sent: the mod never runs the command, it
-looks at a screen you opened, which is the same screen you are looking at.
-
-With a reading in hand the Town Finder shows the active count, when it was taken, and — once the
-count is at zero — how many days it has been there and the date Loka could remove it.
-
-That date is deliberately labelled **"no earlier than"**. The mod can only count from the first zero
-*it* saw, and a town may have been at zero for weeks before anybody opened its panel, which would
-bring the real date forward. Checking a town every few days tightens the estimate; any reading above
-zero resets the clock, because the town was alive that day.
-
-### Who they usually ally with
-
-Loka's API publishes the alliances that exist right now and keeps **no history at all**, and nothing
-else publishes one either — so this is the one thing here that cannot be answered on the spot. The
-Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
-each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
-then it says so rather than showing nothing.
 
 ## Loka Grinder
 
@@ -377,7 +367,8 @@ not cosmetic either: the geometric centre of Kalros is bare sea floor with no ti
 The fights Loka has on its books are on the map — the list the Fight Manager used to be. The
 territory being fought over **blinks red**, with a sword on it and a countdown to the start, and the
 continent tabs carry how many fights each has, so on opening the map it is plain where the fighting
-is. **Fights** over the map's top right shows or hides the list.
+is. The list itself starts **hidden**, so the map opens as a map: **Fights** over its top right
+opens it, and picking a blinking territory or the banner of a new fight opens it on that fight.
 
 Each fight in the list says who is fighting whom, their towns, where, whether reinforcements may be
 called, when it starts and how many are warping in on each side. Clicking one flies the map to it
@@ -399,6 +390,67 @@ anywhere else.
 It is live: while the map is open the fights are asked for every fifteen seconds — one small request
 — so a fight declared now is on the map within a quarter of a minute, announced across its top, and
 the warping counts and names fill in as people sign up. Nothing is fetched while the map is shut.
+
+### Towns
+
+![A town](docs/map-town.png)
+
+The Town Finder is gone; towns live on the map now. Click a territory — or search a town's name —
+and **Town info** opens the town that holds it: its banner on the left, waving in the town's own map
+colour with its initial on it, its name, standing (*Capital of Ascalon*), continent, alliance,
+whether it is recruiting and its motto, with its level and members on tags at the foot; and on the
+right, in tiles and cards:
+
+- **Founded** — the date and time the town was made. Loka publishes no founding date, but every
+  town's ID is a MongoDB ObjectID, which begins with the second the record was created. Sixteen of
+  the eighty-odd live towns carry IDs stamped inside the same five seconds in May 2021 — Loka's
+  oldest towns, given new records when the database they live in was built — so those read **"On
+  record since"** rather than "Founded". Presenting an import as a founding would be inventing a
+  fact.
+- **Active members**, and how long the town has left — see below
+- **Level, strength, members, territories**
+- **Vulnerable from** — the eight hours it is attackable for, in your own clock, and **right now**:
+  open with how long it has left, or closed with how long until it opens. Loka publishes the
+  opening hour and publishes it in **UTC**: the API says 19 for a town whose in-game panel reads
+  "9pm – 5am", so the number is converted rather than printed as it comes. The eight-hour length is
+  the server's rule, confirmed against that panel.
+- **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as, three to
+  a row so a town with thirty of them still fits
+- **Alliance** it belongs to now, and **who it has been allied with, longest first**
+- Every **territory it holds** — its seat first — with number, area, coordinates and what it is
+  worth; clicking one goes back to the map and flies to it, and **Show on map** does that for the
+  seat.
+
+A town that is gone is recognised from the deleted-town roster and says so.
+
+#### When a town will be deleted
+
+Loka deletes a town once it has gone **a month with no active members**. That makes the deletion date
+knowable in advance, and the active count is the one number that decides it.
+
+It is published nowhere. Every field of the town record was checked, on both the list and the
+single-town endpoint, and on all 11,338 member entries across the live roster: a member entry carries
+`subowner` and nothing else. The count exists only on the panel `/town info` opens.
+
+So the mod reads it off that panel. Open `/town info <town>` yourself and the reading is recorded —
+name, members, active, and when it was read. Nothing is sent: the mod never runs the command, it
+looks at a screen you opened, which is the same screen you are looking at.
+
+With a reading in hand the town shows the active count, when it was taken, and — once the
+count is at zero — how many days it has been there and the date Loka could remove it.
+
+That date is deliberately labelled **"no earlier than"**. The mod can only count from the first zero
+*it* saw, and a town may have been at zero for weeks before anybody opened its panel, which would
+bring the real date forward. Checking a town every few days tightens the estimate; any reading above
+zero resets the clock, because the town was alive that day.
+
+#### Who they usually ally with
+
+Loka's API publishes the alliances that exist right now and keeps **no history at all**, and nothing
+else publishes one either — so this is the one thing here that cannot be answered on the spot. The
+Town Logger takes a reading of every alliance on each sweep (one small request) and counts the days
+each pair of towns has been allied, so the list fills in from the day the mod is first run. Until
+then it says so rather than showing nothing.
 
 ## Discord bot
 
@@ -512,12 +564,19 @@ roster and the battles running right now — the things EldritchBot does not tra
 **Loka's ranked ladders** at `webapi.lokamc.com` are what the leaderboard page on the site reads, so
 the mod reads them directly rather than scraping the page around them.
 
+**Loka Elo** at `loka-elo.pages.dev` supplies the Conquest Elo and every name each account has had —
+its public `meta.json` and `leaderboard.json`, the two files its own page loads, and nothing else.
+
+**Mojang's session server** supplies a searched player's skin, through the game's own skin manager —
+the same request the game makes for every player it meets.
+
 A full profile is about ten requests and lands in roughly a second. The card appears as soon as the
 career totals arrive; the fight rows fill in behind it.
 
 Several things are done deliberately in the HTTP layer, all measured against the live services:
 
-- Requests are paced by a token bucket, one per host, and a 429 backs every thread off at once.
+- Requests are paced by a token bucket, one per host. A 429 holds background work back for as long
+  as the server asked, and a request somebody is waiting on for at most a second and a half.
 - The client speaks **HTTP/1.1 on purpose**. Over HTTP/2 the JDK client multiplexes every request
   onto one connection per host and parallel work serialises behind it — the same sweep measured 8x
   slower, with rate-limit backoff on top.
@@ -540,6 +599,24 @@ Several things are done deliberately in the HTTP layer, all measured against the
   Off until you turn it on.
 - **/tl on a key** — press the key and `/tl` is sent, once per press and only with no menu open. Off,
   and with no key, until you set both: **Key:** waits for the next key you press, Esc clears it.
+- **Important Waypoints** — a marker with a picture over each place that matters, on the continent
+  you are standing on and only there: each continent's **docks**, **resource island** and **boss**
+  (Kalros' Witch Hunter, Balak's Warden), and at spawn, Aladra, the **Town Portal, Loka Market, End
+  Portal, Zyre Portal, Gambling, Nether Portal, Balak & Reins Teleports, Rivi Portal and the
+  Continent Portals**. Each continent has its own switch and **every one starts off**. The picture
+  says what the place is — a boat, a diamond pickaxe, the boss's egg, a house, a market stall, a
+  roulette wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker
+  nearest the crosshair.
+
+![Important Waypoints](docs/helper-important.png)
+
+![Important Waypoints at spawn](docs/helper-important-hud.png)
+
+Which continent you are on is worked out from the world the server puts you in: its name if Loka
+names its worlds after the continents, otherwise its **spawn point** — the game is told it on
+arrival, every continent's is its docks (the map's own centres put them there to within forty
+blocks), and Aladra's is near the middle of the world. When it cannot be told, nothing is drawn,
+and the screen says so.
 
 ![Coordinates, placed and sized](docs/helper-coords.png)
 
@@ -548,8 +625,8 @@ Several things are done deliberately in the HTTP layer, all measured against the
 ## What it costs a connection
 
 Three of the things the mod reads are large and barely change, and re-fetching them every session was
-most of what it cost — enough that on a home connection the Player Finder and Town Finder could look
-like they were not loading at all. They are cached to disk in `config/betterloka/`:
+most of what it cost — enough that on a home connection the Player Finder and the town pages could
+look like they were not loading at all. They are cached to disk in `config/betterloka/`:
 
 | Cached | Size | Kept for | Why that is safe |
 | --- | --- | --- | --- |
@@ -557,12 +634,13 @@ like they were not loading at all. They are cached to disk in `config/betterloka
 | `fights.json` | ~110 KB per fight | 30 days | A finished fight's numbers never change again. |
 | `arena-history-v2.json` | ~1.8 MB | 24 hours | A finished season's final table never changes again; only a complete index is saved. |
 | `market-cache.json` | ~0.6 MB | until replaced (7 days at most) | Shown only until the background refresh lands. |
+| `elo.json` | ~1.5 MB | until a newer version (14 days at most) | Replaced whenever the site publishes a new leaderboard. |
 
-Measured end to end, opening the Player Finder and then the Town Finder:
+Measured end to end, opening the Player Finder and then the town roster:
 
 | | Before | After (cold) | After (cached) |
 | --- | --- | --- | --- |
-| Town Finder roster | 6755 ms | 99 ms | **99 ms** |
+| Town roster | 6755 ms | 99 ms | **99 ms** |
 | Player Finder, complete | 2750 ms | 2153 ms | **1894 ms** |
 | Downloaded | ~4 MB | ~1.2 MB | **~0.2 MB** |
 
@@ -573,7 +651,7 @@ that is exactly when somebody opens the first screen.
 ### Nothing waits for a sweep
 
 - **The market** is fetched ahead of time while you are online — straight after joining, then every
-  five minutes — and the last whole market is kept on disk (`market-cache.json`), so the square opens
+  ten minutes — and the last whole market is kept on disk (`market-cache.json`), so the square opens
   full at once, even on a fresh start, and a refresh replaces it when it lands. A search shows the
   offers already in hand immediately and swaps in the current ones a moment later.
 - **The ranked ladders** are read straight after joining as well, both at once, and the best-rank
@@ -584,8 +662,8 @@ that is exactly when somebody opens the first screen.
   on background threads of their own, so the Player Finder's own requests — the Loka record behind its
   headline, the fight pages — no longer queue behind minutes of somebody else's sweep.
 - **The server's own budget is respected.** api.lokamc.com reports what is left of its rate limit with
-  every answer; background work stops short of the last ten, so a sweep can no longer draw a 429 —
-  which held every request to the host off, the one a player was waiting on included.
+  every answer; background work stays below its refill and stops short of the last ten on any node,
+  so a sweep rarely draws a 429 — and when one does, only background work waits it out.
 
 ### What is not shown
 
@@ -628,6 +706,12 @@ Some of those live checks are load-bearing assumptions rather than parsing:
 - the vulnerability window is only an hour of the day if it reads as one, so the test asserts it;
 - the RIVI split rests on the map naming, so the test classifies a real player's recent fights and
   asserts no Conquest territory is ever filed as RIVI and no RIVI fight is a hundred players.
+
+`FinderLatencyLiveTest` (live) is the Player Finder searched sixteen times in a row — renamed players
+included — while the battle archive, the market, the ranked history and a stream of nameplate
+lookups run alongside, as they do in the game. It prints each search's time, every 429 by host and
+every request that took over a second and a half, which is how the stall described under *Why a
+search is quick, every time* was found.
 
 The offline suite covers the log's persistence too. Its baseline, its already-reported towns and its
 alliance history are all written as records, and a serialiser that could not read them back would

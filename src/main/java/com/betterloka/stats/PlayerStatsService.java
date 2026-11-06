@@ -67,6 +67,21 @@ public final class PlayerStatsService {
     private final LokaApi loka;
     private final EldritchApi eldritch;
     private final TownCache towns;
+    /** Conquest Elo, and every name each rated account has had; {@code null} when not in use. */
+    private volatile EloService elo;
+
+    /**
+     * How long the headline waits for Loka's record before going out without it.
+     *
+     * <p>Loka's record is the rank and the account's age, and it used to hold the whole headline:
+     * when Loka was asking the mod to slow down — up to half a minute, after a background sweep
+     * spent its budget — a search sat on "Searching" for all of it, with EldritchBot's numbers long
+     * since in. The numbers go out now, and the rank follows when Loka answers.
+     */
+    private static final long HEADLINE_LOKA_WAIT_MILLIS = 700;
+
+    /** How long the finished profile waits for Loka's record; a profile without a rank still shows. */
+    private static final long PROFILE_LOKA_WAIT_MILLIS = 15_000;
 
     private final JsonStore<Map<String, FightDetail>> fightDisk;
     private final Map<String, FightDetail> fightCache = new ConcurrentHashMap<>();
@@ -90,6 +105,11 @@ public final class PlayerStatsService {
                 fightCache.putAll(saved);
             }
         }
+    }
+
+    /** Lets lookups use Conquest Elo's names and accounts. */
+    public void useElo(EloService elo) {
+        this.elo = elo;
     }
 
     /** One player's line in one fight; both halves are needed, since the breakdown is per player. */
@@ -142,22 +162,8 @@ public final class PlayerStatsService {
      * EldritchBot nor Loka knows the name.
      */
     public CompletableFuture<PlayerProfile> lookup(String name, Consumer<PlayerProfile> onHeadline) {
-        CompletableFuture<PlayerProfile> headline = CompletableFuture.supplyAsync(() -> {
-            try {
-                return buildHeadline(name);
-            } catch (ApiException e) {
-                throw new CompletionException(e);
-            }
-        }, eldritch.executor());
-
-        headline.thenAccept(onHeadline);
-
-        return headline.thenApplyAsync(this::withFightDetail, eldritch.executor());
-    }
-
-    private PlayerProfile buildHeadline(String name) throws ApiException {
-        // Loka's record (rank, account age) is fetched alongside EldritchBot's rather than after it:
-        // the two services are independent, and the headline is only as fast as the slower one.
+        // Loka's record (rank, account age) is asked for alongside EldritchBot's rather than after
+        // it: the two services are independent.
         CompletableFuture<LokaPlayer> lokaLookup = CompletableFuture.supplyAsync(() -> {
             try {
                 return loka.findPlayerByName(name);
@@ -166,29 +172,78 @@ public final class PlayerStatsService {
                 BetterLoka.LOGGER.debug("Loka has no player record for {}", name, e);
                 return null;
             }
-        }, eldritch.bulkExecutor());
+        }, loka.executor());
+
+        CompletableFuture<PlayerProfile> headline = CompletableFuture.supplyAsync(() -> {
+            try {
+                return buildHeadline(name, lokaLookup);
+            } catch (ApiException e) {
+                throw new CompletionException(e);
+            }
+        }, eldritch.executor());
+
+        headline.thenAccept(onHeadline);
+
+        return headline.thenApplyAsync(profile -> withFightDetail(withLokaRecord(profile, lokaLookup)),
+                eldritch.executor());
+    }
+
+    /** What a future holds if it is done within {@code millis}, otherwise {@code null}. */
+    private static <T> T await(CompletableFuture<T> future, long millis) {
+        try {
+            return future.get(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private PlayerProfile buildHeadline(String name, CompletableFuture<LokaPlayer> lokaLookup) throws ApiException {
+        EloService board = elo;
+        EloService.Entry rated = board == null ? null : board.byName(name);
 
         // EldritchBot is keyed on whatever a player was called when they last fought, so a rename
-        // makes it 302 away from the new name — which is how somebody who is standing on the server
-        // right now came back as "no such player". Loka knows the new name, so when the name misses,
-        // its UUID is used instead: EldritchBot answers to that whatever they are called today.
+        // makes it 302 away from the new name, and an old name finds nobody at all. The account
+        // behind the name answers either way: from Conquest Elo's list of every name each account
+        // has had — instant, and it knows names Loka no longer does — or else from Loka.
         EldritchStats stats;
-        LokaPlayer lokaPlayer;
+        boolean byAccount = false;
         try {
             stats = eldritch.fetchStats(name);
-            lokaPlayer = lokaLookup.join();
         } catch (ApiException byName) {
             if (!byName.notFound()) {
                 throw byName;
             }
-            lokaPlayer = lokaLookup.join();
-            if (lokaPlayer == null || lokaPlayer.uuid() == null) {
+            UUID account = rated != null ? rated.uuid() : null;
+            if (account == null) {
+                LokaPlayer known = await(lokaLookup, 10_000);
+                account = known != null ? known.uuid() : null;
+            }
+            if (account == null) {
                 throw byName;
             }
-            stats = eldritch.fetchStats(undashed(lokaPlayer.uuid()));
+            stats = eldritch.fetchStats(undashed(account));
+            byAccount = true;
+        }
+        // A rated player found under a former name is only the same person as EldritchBot's if the
+        // career was fetched through their account, or carries their name.
+        if (rated != null && !byAccount && stats.name() != null && !rated.name().equalsIgnoreCase(stats.name())
+                && !rated.name().equalsIgnoreCase(name)) {
+            rated = null;
         }
 
-        UUID uuid = lokaPlayer != null ? lokaPlayer.uuid() : null;
+        LokaPlayer lokaPlayer = await(lokaLookup, HEADLINE_LOKA_WAIT_MILLIS);
+        if (lokaPlayer != null && rated != null && lokaPlayer.uuid() != null
+                && !lokaPlayer.uuid().equals(rated.uuid())) {
+            // Loka's answer for the name is somebody else than the career found: an old name now
+            // worn by another account. The career is the one asked about.
+            lokaPlayer = byAccount ? null : lokaPlayer;
+        }
+
+        UUID uuid = lokaPlayer != null && lokaPlayer.uuid() != null ? lokaPlayer.uuid()
+                : rated != null ? rated.uuid() : null;
         Instant firstSeen = lokaPlayer != null ? lokaPlayer.firstSeen() : null;
         String rank = lokaPlayer != null ? lokaPlayer.rank() : null;
 
@@ -208,17 +263,42 @@ public final class PlayerStatsService {
         }
 
         // Loka's name wins over EldritchBot's: Loka tracks renames, EldritchBot files a career under
-        // whatever the player was called at their last fight. Showing the stale one as the headline
-        // would answer a search for xPabloFights_YT with somebody else's name.
+        // whatever the player was called at their last fight. Conquest Elo's is next best.
         String current = lokaPlayer != null && lokaPlayer.name() != null && !lokaPlayer.name().isBlank()
                 ? lokaPlayer.name()
-                : stats.name();
+                : rated != null ? rated.name() : stats.name();
 
         // Town details and the live-battle check are deliberately absent here: they are several more
         // requests for decoration, and the headline should not wait on them.
         return new PlayerProfile(current, stats.name(), rank, uuid, firstSeen, null, stats.town(), stats,
                 fightingFor, false, List.copyOf(pending),
                 pending.isEmpty() ? PlayerProfile.FightsState.READY : PlayerProfile.FightsState.LOADING);
+    }
+
+    /** Fills in Loka's rank and account age, when the headline went out before Loka answered. */
+    private PlayerProfile withLokaRecord(PlayerProfile profile, CompletableFuture<LokaPlayer> lokaLookup) {
+        if (profile.rank() != null && profile.firstSeen() != null && profile.uuid() != null) {
+            return profile;
+        }
+        LokaPlayer record = await(lokaLookup, PROFILE_LOKA_WAIT_MILLIS);
+        if (record != null && profile.uuid() != null && record.uuid() != null && !record.uuid().equals(profile.uuid())) {
+            record = null;
+        }
+        if (record == null && profile.uuid() != null) {
+            try {
+                record = loka.findPlayerByUuid(profile.uuid());
+            } catch (ApiException e) {
+                BetterLoka.LOGGER.debug("No Loka record for {}", profile.uuid(), e);
+            }
+        }
+        if (record == null) {
+            return profile;
+        }
+        String name = record.name() != null && !record.name().isBlank() ? record.name() : profile.name();
+        return new PlayerProfile(name, profile.careerName(), record.rank(),
+                profile.uuid() != null ? profile.uuid() : record.uuid(), record.firstSeen(), profile.town(),
+                profile.townName(), profile.stats(), profile.fightingFor(), profile.inFightNow(),
+                profile.recentFights(), profile.fightsState());
     }
 
     /** The town roster and the in-fight flag, both off the headline's critical path. */

@@ -22,6 +22,8 @@ import net.minecraft.network.chat.Component;
  *   <li>Coordinates and facing on screen, wherever the player puts them — P moves them.</li>
  *   <li>Clear lava: lava seen through rather than as a wall of fog. Off until turned on.</li>
  *   <li>A key for /tl. Off, and with no key, until the player sets both.</li>
+ *   <li>Important waypoints: each continent's docks, resource island and boss, and everything at
+ *       spawn, marked on the continent being stood on. Every continent starts off.</li>
  * </ul>
  */
 public class LokaHelperScreen extends Screen {
@@ -43,6 +45,7 @@ public class LokaHelperScreen extends Screen {
     private Button lavaButton;
     private Button tlButton;
     private Button tlKeyButton;
+    private Button importantButton;
 
     /** Waiting for the key to bind /tl to. */
     private boolean listeningForKey;
@@ -51,6 +54,7 @@ public class LokaHelperScreen extends Screen {
     private int coordsLabelY;
     private int lavaLabelY;
     private int tlLabelY;
+    private int importantLabelY;
     private int scaleHintY;
 
     public LokaHelperScreen(Screen parent) {
@@ -134,6 +138,14 @@ public class LokaHelperScreen extends Screen {
                     refreshLabels();
                 })
                 .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build());
+        y += BUTTON_HEIGHT + SECTION_GAP;
+
+        // Important waypoints: the places worth a marker, per continent.
+        importantLabelY = y;
+        y += ROW_HEIGHT;
+        importantButton = addRenderableWidget(Button.builder(importantLabel(),
+                        button -> this.minecraft.gui.setScreen(new ImportantWaypointsScreen(this)))
+                .bounds(left, y, width, BUTTON_HEIGHT).build());
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
                 .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
@@ -152,6 +164,7 @@ public class LokaHelperScreen extends Screen {
         lavaButton.setMessage(lavaLabel());
         tlButton.setMessage(tlLabel());
         tlKeyButton.setMessage(tlKeyLabel());
+        importantButton.setMessage(importantLabel());
     }
 
     private static Component onOff(boolean on) {
@@ -182,6 +195,18 @@ public class LokaHelperScreen extends Screen {
         return key == null || key.isUnbound()
                 ? Component.translatable("betterloka.helper.coords_move")
                 : Component.translatable("betterloka.helper.coords_move_key", key.getTranslatedKeyMessage());
+    }
+
+    private Component importantLabel() {
+        int on = 0;
+        for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+            if (config().importantRegionEnabled(region)) {
+                on++;
+            }
+        }
+        return Component.translatable("betterloka.helper.important_open",
+                Component.literal(on + "/" + com.betterloka.helper.ImportantPlaces.Region.values().length)
+                        .withStyle(on > 0 ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
     private Component lavaLabel() {
@@ -242,6 +267,8 @@ public class LokaHelperScreen extends Screen {
         context.text(this.font, Component.translatable("betterloka.helper.lava"), left, lavaLabelY,
                 GuiTheme.MUTED);
         context.text(this.font, Component.translatable("betterloka.helper.tl"), left, tlLabelY, GuiTheme.MUTED);
+        context.text(this.font, Component.translatable("betterloka.helper.important"), left, importantLabelY,
+                GuiTheme.MUTED);
     }
 
     @Override

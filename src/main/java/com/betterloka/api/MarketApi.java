@@ -55,6 +55,23 @@ public final class MarketApi {
 
     private volatile List<String> types;
 
+    /**
+     * The market's own threads, for the pages of a sweep.
+     *
+     * <p>A sweep used to run in the shared background pool, so a Refresh — forty-five pages a player
+     * is sitting watching — queued behind the battle archive and the ranked history, four threads
+     * between all of them, and paced as work nobody was waiting on. It took minutes. The pages now
+     * have threads of their own, and a sweep somebody asked for is fetched as a request somebody is
+     * waiting on: measured, Loka hands out all forty-five in about a second.
+     */
+    private static final int PAGE_THREADS = 6;
+    private final java.util.concurrent.ExecutorService pageExecutor =
+            java.util.concurrent.Executors.newFixedThreadPool(PAGE_THREADS, runnable -> {
+                Thread thread = new Thread(runnable, "BetterLoka-Market-" + System.identityHashCode(runnable));
+                thread.setDaemon(true);
+                return thread;
+            });
+
     public MarketApi(HttpTransport transport) {
         this.transport = transport;
     }
@@ -137,8 +154,11 @@ public final class MarketApi {
     /** The API hands the market out twenty offers a page, whatever size is asked for. */
     private static final int PAGE_SIZE = 20;
 
-    /** How long a sweep of the whole market is good for before opening the square fetches it again. */
-    private static final long SWEEP_TTL_MILLIS = 3 * 60 * 1000L;
+    /**
+     * How long a sweep of the whole market is good for before opening the square fetches it again.
+     * The square opens on what it has either way, and Refresh fetches it now whatever its age.
+     */
+    private static final long SWEEP_TTL_MILLIS = 10 * 60 * 1000L;
 
     /** The oldest saved market still worth opening on while a fresh one is fetched. */
     private static final long CACHE_MAX_AGE_MILLIS = 7 * 24 * 60 * 60 * 1000L;
@@ -165,13 +185,25 @@ public final class MarketApi {
      * @param refresh true to fetch it again even if the last sweep is still fresh
      */
     public synchronized MarketSweep sweep(boolean refresh) {
-        return sweep(refresh ? 0 : SWEEP_TTL_MILLIS);
+        return sweep(refresh ? 0 : SWEEP_TTL_MILLIS, refresh);
     }
 
-    /** Fetches the market again if what is held is older than {@code maxAgeMillis}. */
+    /** Fetches the market again, in the background, if what is held is older than {@code maxAgeMillis}. */
     public synchronized MarketSweep sweep(long maxAgeMillis) {
+        return sweep(maxAgeMillis, false);
+    }
+
+    /**
+     * @param urgent true when somebody pressed Refresh and is watching: the pages are fetched as
+     *               requests somebody is waiting on, and a background sweep already running is
+     *               hurried along rather than waited out
+     */
+    private synchronized MarketSweep sweep(long maxAgeMillis, boolean urgent) {
         MarketSweep current = sweep;
         if (current != null && current.running()) {
+            if (urgent) {
+                current.makeUrgent();
+            }
             return current;
         }
         MarketSweep basis = current != null && !current.failed() ? current : lastFinished;
@@ -179,8 +211,11 @@ public final class MarketApi {
             return basis;
         }
         MarketSweep fresh = new MarketSweep(this::finished);
+        if (urgent) {
+            fresh.makeUrgent();
+        }
         sweep = fresh;
-        transport.backgroundExecutor().execute(() -> runSweep(fresh));
+        pageExecutor.execute(() -> runSweep(fresh));
         return fresh;
     }
 
@@ -284,7 +319,7 @@ public final class MarketApi {
     private void runSweep(MarketSweep target) {
         JsonObject first;
         try {
-            first = getObject(pageUrl(0), false);
+            first = getObject(pageUrl(0), !target.urgent());
         } catch (ApiException e) {
             BetterLoka.LOGGER.debug("Could not fetch the first market page", e);
             target.fail();
@@ -296,9 +331,11 @@ public final class MarketApi {
         target.add(parse(firstRaw), firstRaw);
         for (int page = 1; page < pages; page++) {
             int number = page;
-            transport.backgroundExecutor().execute(() -> {
+            pageExecutor.execute(() -> {
                 try {
-                    List<JsonObject> raw = rawListings(getObject(pageUrl(number), true));
+                    // Read when the page's turn comes, so a Refresh pressed half way through
+                    // hurries the rest.
+                    List<JsonObject> raw = rawListings(getObject(pageUrl(number), !target.urgent()));
                     target.add(parse(raw), raw);
                 } catch (ApiException | RuntimeException e) {
                     BetterLoka.LOGGER.debug("Could not fetch market page {}", number, e);

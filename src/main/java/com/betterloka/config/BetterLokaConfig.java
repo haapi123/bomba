@@ -20,6 +20,8 @@ public final class BetterLokaConfig {
 
     /** Show each player's K/D beside their nameplate in the world. */
     private boolean showNameplateKd = false;
+    /** Conquest Elo beside each player's name tag, like the K/D. Off until turned on. */
+    private boolean showNameplateElo = false;
 
     /** The language chat is translated into in the Translator: the player's own. */
     private String nativeLanguage = "pl";
@@ -95,6 +97,11 @@ public final class BetterLokaConfig {
     private boolean clearLava = false;
     /** Whether the /tl key does anything; off, and with no key, until the player sets both. */
     private boolean tlKeyEnabled = false;
+    /**
+     * The continents whose important places are marked, by id. Empty until the player switches one
+     * on: every continent starts off.
+     */
+    private java.util.List<String> importantRegions = new java.util.ArrayList<>();
 
     /** How long a purged shrine takes to come back, in minutes. */
     private int shrineCooldownMinutes = 20;
@@ -226,6 +233,26 @@ public final class BetterLokaConfig {
         save();
     }
 
+    public boolean importantRegionEnabled(com.betterloka.helper.ImportantPlaces.Region region) {
+        return importantRegions != null && importantRegions.contains(region.id());
+    }
+
+    /** Whether any continent's important places are switched on — the marker layer's quick exit. */
+    public boolean anyImportantRegion() {
+        return importantRegions != null && !importantRegions.isEmpty();
+    }
+
+    public void setImportantRegionEnabled(com.betterloka.helper.ImportantPlaces.Region region, boolean enabled) {
+        if (importantRegions == null) {
+            importantRegions = new java.util.ArrayList<>();
+        }
+        importantRegions.remove(region.id());
+        if (enabled) {
+            importantRegions.add(region.id());
+        }
+        save();
+    }
+
     /** The smallest and largest the coordinates box can be, in percent, and the step between. */
     public static final int COORDS_SCALE_MIN = 50;
     public static final int COORDS_SCALE_MAX = 150;
@@ -286,6 +313,15 @@ public final class BetterLokaConfig {
     /** Whether a kind's waypoints are drawn: its own switch and the master one both on. */
     public boolean shrineShown(ShrineKind kind) {
         return shrineWaypointsEnabled && shrineKindEnabled(kind);
+    }
+
+    public boolean showNameplateElo() {
+        return showNameplateElo;
+    }
+
+    public void setShowNameplateElo(boolean showNameplateElo) {
+        this.showNameplateElo = showNameplateElo;
+        save();
     }
 
     public boolean showNameplateKd() {

@@ -9,6 +9,7 @@ import com.betterloka.map.MapHighlight;
 import com.betterloka.map.MapSearch;
 import com.betterloka.map.MapTerrain;
 import com.betterloka.map.MapTerritory;
+import com.betterloka.map.TownPalette;
 import com.betterloka.map.MapTown;
 import com.betterloka.map.TerrainDownload;
 import com.betterloka.map.Waypoint;
@@ -172,6 +173,10 @@ public class LokaMapScreen extends Screen {
 
     private EditBox searchField;
     private Button listButton;
+    /** Opens the selected territory's town; only lit when a town holds what is selected. */
+    private Button townButton;
+    /** A territory to select and fly to, asked for by the town screen, once the map is drawn. */
+    private String pendingTerritoryNumber;
     private MapSearch search;
     private MapDataStore.Snapshot searchBuiltFrom;
     private Found found;
@@ -267,20 +272,25 @@ public class LokaMapScreen extends Screen {
         // One row, so the map gets the rest of the screen. What is selected is described on the map
         // itself the way Loka's own does it, rather than in a panel eating half the height.
         int bottomY = this.height - 26;
-        int quarter = (width - 12) / 4;
+        int fifth = (width - 16) / 5;
         // Every waypoint, on every continent, is managed there. Adding one is the Waypoint button in
         // the right-click bubble, or the Add button the list offers for what is selected here.
         listButton = addRenderableWidget(Button.builder(listLabel(), button -> openWaypointList())
-                .bounds(left, bottomY, quarter, 20).build());
+                .bounds(left, bottomY, fifth, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.map.copy"),
                         button -> copyCoordinates())
-                .bounds(left + quarter + 4, bottomY, quarter, 20).build());
+                .bounds(left + fifth + 4, bottomY, fifth, 20).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.map.recenter"),
                         button -> fitToContinent())
-                .bounds(left + (quarter + 4) * 2, bottomY, quarter, 20).build());
+                .bounds(left + (fifth + 4) * 2, bottomY, fifth, 20).build());
+        // The town that holds what is selected — click a territory, or search a town — in full.
+        townButton = addRenderableWidget(Button.builder(Component.translatable("betterloka.map.town_info"),
+                        button -> openTownInfo())
+                .bounds(left + (fifth + 4) * 3, bottomY, fifth, 20).build());
+        townButton.active = selectedTown() != null;
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(left + (quarter + 4) * 3, bottomY,
-                        left + width - (left + (quarter + 4) * 3), 20).build());
+                .bounds(left + (fifth + 4) * 4, bottomY,
+                        left + width - (left + (fifth + 4) * 4), 20).build());
 
         // The search sits on the map's top right corner, the way a web map carries one. A child but
         // not a renderable: it is drawn after the map, which would otherwise paint over it.
@@ -316,6 +326,63 @@ public class LokaMapScreen extends Screen {
         int count = BetterLokaClient.map().waypoints().size();
         return count == 0 ? Component.translatable("betterloka.map.waypoint_list")
                 : Component.translatable("betterloka.map.waypoint_list_count", count);
+    }
+
+    /** The town that holds the selected territory, or the town the search found; {@code null} if none. */
+    private String selectedTown() {
+        if (selected != null && !selected.neutral() && selected.owner() != null && !selected.owner().isBlank()) {
+            return selected.owner();
+        }
+        if (found != null && found.continent() == continent && found.kind() == MapSearch.Kind.TOWN) {
+            return found.key();
+        }
+        return null;
+    }
+
+    /** Opens the town that holds what is selected, with what the map already knows of it. */
+    private void openTownInfo() {
+        String town = selectedTown();
+        if (town == null || this.minecraft == null) {
+            return;
+        }
+        List<MapTerritory> held = new ArrayList<>();
+        int color = TownPalette.UNCLAIMED;
+        for (MapTerritory territory : territories()) {
+            if (!territory.neutral() && town.equalsIgnoreCase(territory.owner())) {
+                held.add(territory);
+                color = territory.fillColor();
+            }
+        }
+        MapTown mapTown = null;
+        for (MapTown candidate : snapshot.towns()) {
+            if (candidate.name().equalsIgnoreCase(town)) {
+                mapTown = candidate;
+            }
+        }
+        this.minecraft.gui.setScreen(new TownInfoScreen(this, town, continent, mapTown, held, color));
+    }
+
+    /**
+     * Selects a territory on this continent and flies to it, as soon as the map is drawn again — how
+     * the town screen hands one back.
+     */
+    public void showTerritory(String number) {
+        pendingTerritoryNumber = number;
+    }
+
+    private void applyPendingTerritory() {
+        for (MapTerritory territory : territories()) {
+            if (territory.number().equals(pendingTerritoryNumber)) {
+                pendingTerritoryNumber = null;
+                found = null;
+                selectedNumber = territory.number();
+                selected = territory;
+                closePin();
+                flyTo(new MapSearch.Hit(MapSearch.Kind.TERRITORY, territory.label(), territory, List.of(territory),
+                        territory.centerX(), territory.centerZ()));
+                return;
+            }
+        }
     }
 
     /** Opens the list, offering whatever is selected here as the waypoint its Add button makes. */
@@ -747,6 +814,12 @@ public class LokaMapScreen extends Screen {
         takeOrigin();
         if (pendingFightId != null) {
             applyPendingFight();
+        }
+        if (pendingTerritoryNumber != null) {
+            applyPendingTerritory();
+        }
+        if (townButton != null) {
+            townButton.active = selectedTown() != null;
         }
         placeFightsUi();
         hovered = dragging || devNoHover || overSearch(mouseX, mouseY) || overFightsUi(mouseX, mouseY)

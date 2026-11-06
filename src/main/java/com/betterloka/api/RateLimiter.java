@@ -27,13 +27,50 @@ public final class RateLimiter {
     /** Set when the server pushes back, to hold every thread off at once. */
     private long resumeAtNanos;
 
+    /**
+     * Background work's own, slower pace, on top of the shared one.
+     *
+     * <p>api.lokamc.com sits behind several nodes, each with a bucket of thirty that refills at
+     * about one a second — measured: one node's {@code x-rate-limit-remaining} fell steadily from 29
+     * to 2 under four requests a second while the others stayed full, and a 429 asks for up to 33
+     * seconds. A sweep at the shared pace drained a node in seconds, and the wait it then asked for
+     * landed on whatever a player clicked next. Paced below the refill, background work leaves the
+     * buckets for the clicks.
+     */
+    private final double backgroundPermitsPerSecond;
+    private double backgroundTokens;
+    private long backgroundRefillNanos;
+    /** Set when the server pushes back on background work: only background work waits it out. */
+    private long backgroundResumeAtNanos;
+
     public RateLimiter(double permitsPerSecond, double burst) {
+        this(permitsPerSecond, burst, permitsPerSecond);
+    }
+
+    public RateLimiter(double permitsPerSecond, double burst, double backgroundPermitsPerSecond) {
         this.permitsPerSecond = permitsPerSecond;
         this.burst = burst;
         this.tokens = burst;
         this.lastRefillNanos = System.nanoTime();
         this.resumeAtNanos = System.nanoTime();
+        this.backgroundPermitsPerSecond = backgroundPermitsPerSecond;
+        this.backgroundTokens = backgroundBurst();
+        this.backgroundRefillNanos = System.nanoTime();
+        this.backgroundResumeAtNanos = System.nanoTime();
     }
+
+    private double backgroundBurst() {
+        return Math.max(1.0, backgroundPermitsPerSecond);
+    }
+
+    /**
+     * The longest a 429 holds back a request somebody is waiting on.
+     *
+     * <p>The server's own retry-after is for the node that said it, and the next request may well
+     * land on another with room to spare; a player's click waits a moment and tries, rather than
+     * sitting out half a minute that only one node asked for.
+     */
+    static final long INTERACTIVE_BACKOFF_CAP_MILLIS = 1500;
 
     /** How long a background caller waits at the back of the queue before taking its permit. */
     private static final long BACKGROUND_YIELD_MILLIS = 120;
@@ -61,21 +98,30 @@ public final class RateLimiter {
      */
     private static final int SERVER_RESERVE = 10;
 
-    /** How long a reading of the server's budget is trusted; it refills between requests. */
-    private static final long REMAINING_TRUSTED_NANOS = 2_000_000_000L;
+    /**
+     * How long the lowest reading of the server's budget is kept.
+     *
+     * <p>The lowest, not the last: each node behind the host has its own bucket, and readings
+     * alternate between a node that is nearly empty and one that is full. Trusting the last one let
+     * a sweep see "28" half the time and run the empty node into a 429.
+     */
+    private static final long REMAINING_WINDOW_NANOS = 5_000_000_000L;
 
-    private int serverRemaining = Integer.MAX_VALUE;
-    private long serverRemainingAt;
+    private int lowestRemaining = Integer.MAX_VALUE;
+    private long lowestRemainingAt;
 
     /** What the server last said was left of its budget. */
     public synchronized void observeRemaining(int remaining) {
-        serverRemaining = remaining;
-        serverRemainingAt = System.nanoTime();
+        long now = System.nanoTime();
+        if (remaining <= lowestRemaining || now - lowestRemainingAt > REMAINING_WINDOW_NANOS) {
+            lowestRemaining = remaining;
+            lowestRemainingAt = now;
+        }
     }
 
     /** Whether the server's budget is low enough that background work should hold back. */
     private boolean serverBudgetLow(long now) {
-        return serverRemaining < SERVER_RESERVE && now - serverRemainingAt < REMAINING_TRUSTED_NANOS;
+        return lowestRemaining < SERVER_RESERVE && now - lowestRemainingAt < REMAINING_WINDOW_NANOS;
     }
 
     /** Blocks until this caller is allowed to send one request. */
@@ -100,9 +146,13 @@ public final class RateLimiter {
                 long now = System.nanoTime();
                 // Background work waits for a real permit rather than reserving one it has not got,
                 // so it can never put an interactive caller into its debt.
-                if (background && (tokens < INTERACTIVE_RESERVE || serverBudgetLow(now))) {
+                if (background && (tokens < INTERACTIVE_RESERVE || serverBudgetLow(now)
+                        || now < backgroundResumeAtNanos || backgroundTokens < 1.0)) {
                     sleepNanos = -1;
                 } else {
+                    if (background) {
+                        backgroundTokens -= 1.0;
+                    }
                     long waitForTokenNanos = tokens >= 1.0
                             ? 0L
                             : (long) Math.ceil((1.0 - tokens) / permitsPerSecond * 1_000_000_000.0);
@@ -128,13 +178,34 @@ public final class RateLimiter {
         double elapsedSeconds = Math.max(0, now - lastRefillNanos) / 1_000_000_000.0;
         lastRefillNanos = now;
         tokens = Math.min(burst, tokens + elapsedSeconds * permitsPerSecond);
+        double backgroundElapsed = Math.max(0, now - backgroundRefillNanos) / 1_000_000_000.0;
+        backgroundRefillNanos = now;
+        backgroundTokens = Math.min(backgroundBurst(),
+                backgroundTokens + backgroundElapsed * backgroundPermitsPerSecond);
     }
 
     /** Holds all callers off for at least {@code duration}, after the server answered 429. */
     public synchronized void backOff(Duration duration) {
-        long until = System.nanoTime() + Math.max(0L, duration.toNanos());
-        if (until > resumeAtNanos) {
-            resumeAtNanos = until;
+        backOff(duration, false);
+    }
+
+    /**
+     * After a 429. Background work sits out all of what the server asked for; requests somebody is
+     * waiting on hold off for at most {@link #INTERACTIVE_BACKOFF_CAP_MILLIS}, and only when it was
+     * one of theirs that was turned away — a sweep's 429 is the sweep's to wait out.
+     */
+    public synchronized void backOff(Duration duration, boolean background) {
+        long now = System.nanoTime();
+        long full = now + Math.max(0L, duration.toNanos());
+        if (full > backgroundResumeAtNanos) {
+            backgroundResumeAtNanos = full;
+        }
+        if (background) {
+            return;
+        }
+        long capped = now + Math.min(Math.max(0L, duration.toNanos()), INTERACTIVE_BACKOFF_CAP_MILLIS * 1_000_000L);
+        if (capped > resumeAtNanos) {
+            resumeAtNanos = capped;
         }
         // Drain the bucket too, so the burst allowance does not immediately undo the penalty.
         tokens = Math.min(tokens, 0.0);

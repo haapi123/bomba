@@ -1,7 +1,9 @@
 package com.betterloka.mixin;
 
 import com.betterloka.BetterLokaClient;
+import com.betterloka.gui.EloColors;
 import com.betterloka.gui.GuiTheme;
+import com.betterloka.stats.EloService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -20,7 +22,8 @@ import java.util.Locale;
 import java.util.OptionalDouble;
 
 /**
- * Appends a player's Conquest K/D to the nameplate drawn above their head.
+ * Appends a player's Conquest K/D, and their Conquest Elo, to the nameplate drawn above their head —
+ * each when its switch in the Player Finder is on.
  *
  * <p>Hooks the label at its source — {@link EntityRenderer#getNameTag} is what every renderer
  * asks for the text above an entity — so the badge inherits the game's own nameplate placement,
@@ -32,22 +35,38 @@ public abstract class PlayerNameplateKdMixin {
     @Inject(method = "getNameTag(Lnet/minecraft/world/entity/Entity;)Lnet/minecraft/network/chat/Component;",
             at = @At("RETURN"), cancellable = true)
     private void betterloka$appendKillDeath(Entity entity, CallbackInfoReturnable<Component> cir) {
-        if (!(entity instanceof Player) || !BetterLokaClient.isNameplateKdEnabled()) {
+        if (!(entity instanceof Player)) {
+            return;
+        }
+        boolean showKd = BetterLokaClient.isNameplateKdEnabled();
+        boolean showElo = BetterLokaClient.isNameplateEloEnabled();
+        if (!showKd && !showElo) {
             return;
         }
         Component original = cir.getReturnValue();
         if (original == null) {
             return;
         }
-        String account = accountNameOf(entity);
-        if (account == null) {
-            return;
+        MutableComponent label = null;
+        if (showKd) {
+            String account = accountNameOf(entity);
+            OptionalDouble ratio = account == null ? OptionalDouble.empty()
+                    : BetterLokaClient.nameplateKd().killDeathOf(account);
+            if (ratio.isPresent()) {
+                label = original.copy().append(badge(ratio.getAsDouble()));
+            }
         }
-        OptionalDouble ratio = BetterLokaClient.nameplateKd().killDeathOf(account);
-        if (ratio.isEmpty()) {
-            return;
+        if (showElo) {
+            // By account rather than by name: the leaderboard is keyed on UUIDs, and the lookup is
+            // local, so a nameplate costs no request at all.
+            EloService.Entry rated = BetterLokaClient.elo().byUuid(entity.getUUID());
+            if (rated != null) {
+                label = (label != null ? label : original.copy()).append(eloBadge(rated.elo()));
+            }
         }
-        cir.setReturnValue(original.copy().append(badge(ratio.getAsDouble())));
+        if (label != null) {
+            cir.setReturnValue(label);
+        }
     }
 
     /**
@@ -71,6 +90,13 @@ public abstract class PlayerNameplateKdMixin {
         }
         String fallback = entity.getScoreboardName();
         return fallback == null || fallback.isBlank() ? null : fallback;
+    }
+
+    /** {@code  | 2068 ELO}, the rating coloured by its band. */
+    private static MutableComponent eloBadge(double elo) {
+        return Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY)
+                .append(Component.literal(String.valueOf(Math.round(elo))).withColor(EloColors.color(elo)))
+                .append(Component.literal(" ELO").withStyle(ChatFormatting.GRAY));
     }
 
     /** {@code  | 3.30}, coloured by how good the ratio is. */

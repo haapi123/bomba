@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -103,6 +104,12 @@ public final class HttpTransport implements AutoCloseable {
     private final double permitsPerSecond;
 
     private final AtomicLong requestCount = new AtomicLong();
+
+    /** The last few requests that took longer than {@link #SLOW_MILLIS}, newest last, for diagnostics. */
+    private static final long SLOW_MILLIS = 1500;
+    private final java.util.Deque<String> slowRequests = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    /** How many 429s each host answered, for diagnostics. */
+    private final Map<String, AtomicLong> throttledByHost = new ConcurrentHashMap<>();
     private final AtomicLong throttleCount = new AtomicLong();
     private final AtomicLong cancelledCount = new AtomicLong();
 
@@ -275,6 +282,47 @@ public final class HttpTransport implements AutoCloseable {
     }
 
     /**
+     * A large text file, asked for compressed and unpacked here: a three-megabyte JSON file comes
+     * down as under one. One attempt; the callers keep what they had and try again later.
+     */
+    public String getCompressed(String url, boolean background) throws ApiException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Accept", "application/json")
+                .header("Accept-Encoding", "gzip")
+                .header("User-Agent", "BetterLoka/" + BetterLoka.VERSION + " (Minecraft mod)")
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+        try {
+            limiterFor(URI.create(url).getHost()).acquire(background);
+            requestCount.incrementAndGet();
+            HttpResponse<java.io.InputStream> response;
+            inFlight.acquire();
+            try {
+                response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            } finally {
+                inFlight.release();
+            }
+            try (java.io.InputStream raw = response.body()) {
+                if (response.statusCode() != 200) {
+                    throw new ApiException("HTTP " + response.statusCode() + " from " + url,
+                            response.statusCode() == 404);
+                }
+                boolean gzip = response.headers().firstValue("Content-Encoding")
+                        .map(value -> value.toLowerCase(java.util.Locale.ROOT).contains("gzip")).orElse(false);
+                try (java.io.InputStream body = gzip ? new java.util.zip.GZIPInputStream(raw) : raw) {
+                    return new String(body.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException("Interrupted fetching " + url, e);
+        } catch (IOException e) {
+            throw new ApiException("Could not reach " + url, e);
+        }
+    }
+
+    /**
      * @param background true for a sweep or an index build — work nobody is watching, which then
      *                   yields its place in the queue to anything a player is waiting on
      */
@@ -314,6 +362,7 @@ public final class HttpTransport implements AutoCloseable {
                 });
                 if (status == 200) {
                     timing("request", url, startNanos);
+                    noteIfSlow(url, startNanos, attempt, background, "200");
                     return response.body();
                 }
                 if (status == 404) {
@@ -328,10 +377,25 @@ public final class HttpTransport implements AutoCloseable {
                 }
                 last = new ApiException("HTTP " + status + " from " + url, false);
                 backoffMillis = backoffFor(response, status, attempt);
+                long asked = backoffMillis;
+                if (status == 429 && !background) {
+                    // The node that said it may not be the node the retry reaches; see RateLimiter.
+                    backoffMillis = Math.min(backoffMillis, RateLimiter.INTERACTIVE_BACKOFF_CAP_MILLIS);
+                }
                 if (status == 429) {
                     throttleCount.incrementAndGet();
-                    // Hold every other thread on this host off too — the budget is shared.
-                    limiter.backOff(Duration.ofMillis(backoffMillis));
+                    throttledByHost.computeIfAbsent(URI.create(url).getHost(), key -> new AtomicLong())
+                            .incrementAndGet();
+                    BetterLoka.LOGGER.info("[betterloka] {} asked to slow down (429) for {} ms; {} waits {} ms",
+                            URI.create(url).getHost(), asked, background ? "background" : "interactive",
+                            backoffMillis);
+                    slowRequests.addLast("429 after " + (System.nanoTime() - startNanos) / 1_000_000
+                            + " ms, retry-after " + response.headers().firstValue(RETRY_AFTER_HEADER).orElse("-")
+                            + ", remaining " + response.headers().firstValue(REMAINING_HEADER).orElse("-")
+                            + ", waiting " + backoffMillis + " ms: " + url);
+                    // Hold the host's background work off for all of what was asked, and anything
+                    // interactive for a moment when it was one of theirs that was turned away.
+                    limiter.backOff(Duration.ofMillis(asked), background);
                 }
             } catch (IOException e) {
                 last = new ApiException("Could not reach " + url, e);
@@ -357,7 +421,32 @@ public final class HttpTransport implements AutoCloseable {
             }
         }
         timing("failed", url, startNanos);
+        noteIfSlow(url, startNanos, MAX_ATTEMPTS, background, "failed: " + last.getMessage());
         throw last;
+    }
+
+    private void noteIfSlow(String url, long startNanos, int attempts, boolean background, String outcome) {
+        long millis = (System.nanoTime() - startNanos) / 1_000_000;
+        if (millis < SLOW_MILLIS) {
+            return;
+        }
+        slowRequests.addLast(millis + " ms, " + attempts + " attempt(s), "
+                + (background ? "background" : "interactive") + ", " + outcome + ": " + url);
+        while (slowRequests.size() > 40) {
+            slowRequests.pollFirst();
+        }
+    }
+
+    /** The recent slow requests, for diagnostics. */
+    public List<String> slowRequests() {
+        return List.copyOf(slowRequests);
+    }
+
+    /** How many 429s each host answered, for diagnostics. */
+    public Map<String, Long> throttledByHost() {
+        Map<String, Long> out = new java.util.TreeMap<>();
+        throttledByHost.forEach((host, count) -> out.put(host, count.get()));
+        return out;
     }
 
     /** One attempt, counted against the ceiling on requests in flight. */
@@ -393,7 +482,23 @@ public final class HttpTransport implements AutoCloseable {
 
     private RateLimiter limiterFor(String host) {
         return limiters.computeIfAbsent(host == null ? "" : host,
-                key -> new RateLimiter(permitsPerSecond, Math.min(BURST, permitsPerSecond)));
+                key -> new RateLimiter(permitsPerSecond, Math.min(BURST, permitsPerSecond),
+                        backgroundPermitsPerSecond(key)));
+    }
+
+    /**
+     * How fast background work may go to one host.
+     *
+     * <p>Loka's REST API is the one with the tight budget — several nodes with thirty requests each,
+     * refilling at about one a second — so its sweeps go well below that. The others keep the shared
+     * pace.
+     */
+    static double backgroundPermitsPerSecond(String host) {
+        return switch (host) {
+            case "api.lokamc.com" -> 1.5;
+            case "webapi.lokamc.com" -> 3.0;
+            default -> DEFAULT_PERMITS_PER_SECOND;
+        };
     }
 
     /** Exponential backoff with jitter, floored by whatever the server asked for. */

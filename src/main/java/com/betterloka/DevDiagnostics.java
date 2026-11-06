@@ -62,6 +62,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("v41".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            v41Input();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("finder".equals(System.getenv("BETTERLOKA_DIAG"))) {
             finderInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1111,6 +1116,152 @@ public final class DevDiagnostics {
         shot(2, "finder-7s");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG helper checks done");
+            client().stop();
+        });
+    }
+
+    // --- 0.41: the map's fights and towns, Elo, important places, the market's Refresh ---
+
+    private long marketRefreshStart;
+
+    /** A button's label in whatever language the game is in, for pressing it by name. */
+    private static String tr(String key) {
+        return net.minecraft.network.chat.Component.translatable(key).getString();
+    }
+
+    private void v41Input() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+        });
+        // The map opens with the fights panel shut; Fights opens it.
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devNoHover = true;
+            client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null));
+        });
+        step(200, () -> BetterLoka.LOGGER.info("DIAG v41 map open, fights {}",
+                client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map ? map.devFightsState() : "?"));
+        shot(5, "v41-map-closed");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightsButton(), left);
+            }
+        });
+        shot(10, "v41-map-fights");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightsButton(), left);
+            }
+        });
+        // A town, found by the map's search, opened in full. Tyralnia is on Ascalon.
+        step(2, () -> click(client().gui.screen(), "Ascalon"));
+        step(100, () -> { });
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                map.devSearch("Tyralnia");
+            }
+        });
+        step(60, () -> BetterLoka.LOGGER.info("DIAG v41 searched a town: selected {}",
+                client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map ? map.devSelectedLabel() : "?"));
+        shot(5, "v41-map-town-selected");
+        step(2, () -> click(client().gui.screen(), tr("betterloka.map.town_info")));
+        step(200, () -> BetterLoka.LOGGER.info("DIAG v41 town screen: {}",
+                client().gui.screen() == null ? "none" : client().gui.screen().getClass().getSimpleName()));
+        shot(5, "v41-town-info");
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (int i = 0; i < 8; i++) {
+                screen.mouseScrolled(screen.width / 2.0 + 60, screen.height / 2.0, 0, -1);
+            }
+        });
+        shot(5, "v41-town-info-scrolled");
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (int i = 0; i < 40; i++) {
+                screen.mouseScrolled(screen.width / 2.0 + 60, screen.height / 2.0, 0, -1);
+            }
+        });
+        shot(5, "v41-town-info-bottom");
+        step(2, () -> click(client().gui.screen(), tr("betterloka.town.show_on_map")));
+        step(80, () -> BetterLoka.LOGGER.info("DIAG v41 back on the map at {}",
+                client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map ? map.devSelectedLabel() : "?"));
+        shot(5, "v41-town-on-map");
+
+        // The Player Finder with Elo, and a player found under an old name.
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> {
+            var elo = BetterLokaClient.elo();
+            BetterLoka.LOGGER.info("DIAG v41 elo ready={} players={}", elo.ready(), elo.size());
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), tr("betterloka.finder.search"));
+        });
+        step(1, this::startTimer);
+        step(200, () -> BetterLoka.LOGGER.info("DIAG v41 finder haapi profile={}",
+                field(client().gui.screen(), "profile") != null));
+        shot(2, "v41-finder-elo");
+        step(2, () -> {
+            type(client().gui.screen(), "jagardumm");
+            click(client().gui.screen(), tr("betterloka.finder.search"));
+        });
+        step(160, () -> {
+            Object profile = field(client().gui.screen(), "profile");
+            BetterLoka.LOGGER.info("DIAG v41 finder jagardumm -> {}",
+                    profile instanceof com.betterloka.stats.PlayerProfile p ? p.name() : String.valueOf(profile));
+        });
+        shot(2, "v41-finder-renamed");
+
+        // Loka Helper's important waypoints: the section, the screen, and the markers at spawn.
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null)));
+        shot(10, "v41-helper");
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.ImportantWaypointsScreen(null)));
+        shot(10, "v41-important-off");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.ImportantWaypointsScreen screen) {
+                screen.devToggle(com.betterloka.helper.ImportantPlaces.Region.ALADRA);
+                screen.devToggle(com.betterloka.helper.ImportantPlaces.Region.KALROS);
+            }
+        });
+        shot(5, "v41-important-on");
+        step(2, () -> {
+            client().gui.setScreen(null);
+            server("time set noon");
+            server("gamemode creative @a");
+            server("fill -126 79 54 -114 79 66 minecraft:stone");
+            server("tp @a -120 80 60 -40 0");
+        });
+        step(60, () -> BetterLoka.LOGGER.info("DIAG v41 region here: {}",
+                com.betterloka.helper.ImportantWaypointsHud.currentRegion(client())));
+        shot(10, "v41-important-hud-east");
+        step(2, () -> server("tp @a -120 80 60 100 0"));
+        shot(20, "v41-important-hud-west");
+        step(2, () -> server("tp @a -150 80 60 160 0"));
+        shot(20, "v41-important-hud-north");
+
+        // The market's Refresh, timed to the last page.
+        step(2, () -> client().gui.setScreen(new LokaMarketScreen(null)));
+        step(40, () -> {
+            marketRefreshStart = System.currentTimeMillis();
+            click(client().gui.screen(), tr("betterloka.market.refresh"));
+        });
+        for (int i = 0; i < 30; i++) {
+            step(10, () -> {
+                var sweep = BetterLokaClient.market().currentSweep();
+                if (sweep != null && marketRefreshStart > 0 && !sweep.running()) {
+                    BetterLoka.LOGGER.info("DIAG v41 market refresh done in {} ms: {} offers, {}/{} pages",
+                            System.currentTimeMillis() - marketRefreshStart, sweep.listings().size(),
+                            sweep.pagesDone(), sweep.pagesTotal());
+                    marketRefreshStart = 0;
+                }
+            });
+        }
+        shot(2, "v41-market-refreshed");
+        step(2, () -> {
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region, false);
+            }
+            BetterLoka.LOGGER.info("DIAG v41 checks done");
             client().stop();
         });
     }

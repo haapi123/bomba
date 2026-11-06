@@ -13,6 +13,7 @@ import com.betterloka.stats.FightSummary;
 import com.betterloka.stats.PlayerProfile;
 import com.betterloka.stats.PlayerStatsService;
 import com.betterloka.stats.PlayerTrait;
+import com.betterloka.stats.EloService;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -196,15 +197,23 @@ public class PlayerFinderScreen extends Screen {
             tabX += share + 4;
         }
 
-        int half = Math.min(200, (width - 4) / 2);
+        // The two nameplate switches and Back, in one row under everything.
+        int third = Math.min(160, (width - 8) / 3);
+        int rowLeft = this.width / 2 - (third * 3 + 8) / 2;
         addRenderableWidget(Button.builder(kdToggleLabel(), button -> {
                     BetterLokaClient.config().setShowNameplateKd(!BetterLokaClient.config().showNameplateKd());
                     button.setMessage(kdToggleLabel());
                 })
-                .bounds(this.width / 2 - half - 2, this.height - 25, half, 20)
+                .bounds(rowLeft, this.height - 25, third, 20)
+                .build());
+        addRenderableWidget(Button.builder(eloToggleLabel(), button -> {
+                    BetterLokaClient.config().setShowNameplateElo(!BetterLokaClient.config().showNameplateElo());
+                    button.setMessage(eloToggleLabel());
+                })
+                .bounds(rowLeft + third + 4, this.height - 25, third, 20)
                 .build());
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 + 2, this.height - 25, half, 20).build());
+                .bounds(rowLeft + (third + 4) * 2, this.height - 25, third, 20).build());
 
         if (wideModel == null) {
             EntityModelSet models = this.minecraft.getEntityModels();
@@ -229,6 +238,23 @@ public class PlayerFinderScreen extends Screen {
         for (int i = 0; i < tabButtons.size(); i++) {
             tabButtons.get(i).setMessage(tabLabel(Tab.values()[i]));
         }
+    }
+
+    private Component eloToggleLabel() {
+        boolean on = BetterLokaClient.config().showNameplateElo();
+        return Component.translatable("betterloka.finder.elo_toggle",
+                Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
+                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+    }
+
+    /** The player's Conquest Elo, if they are rated; looked up locally, so it costs nothing. */
+    private EloService.Entry rating() {
+        EloService service = BetterLokaClient.elo();
+        if (service == null || profile == null) {
+            return null;
+        }
+        EloService.Entry entry = service.byUuid(profile.uuid());
+        return entry != null || profile.uuid() != null ? entry : service.byName(profile.name());
     }
 
     private Component kdToggleLabel() {
@@ -526,19 +552,17 @@ public class PlayerFinderScreen extends Screen {
             y += LINE;
         }
 
-        // The K/D on a tag at the foot of the stand, when there is room for one.
+        // The K/D and the Elo on two tags at the foot of the stand, when there is room for them.
         if (tagY > y + 2) {
-            int tagX = left + 8;
-            int tagW = STAND_WIDTH - 16;
-            MapStyle.card(context, tagX, tagY, tagW, TAG_HEIGHT, glow);
-            String value = String.format(Locale.ROOT, "%.2f", ratio);
-            context.pose().pushMatrix();
-            context.pose().translate(centreX - this.font.width(value), tagY + 6);
-            context.pose().scale(2, 2);
-            context.text(this.font, value, 0, 0, glow);
-            context.pose().popMatrix();
-            context.centeredText(this.font, Component.translatable("betterloka.finder.stat.kd"), centreX,
-                    tagY + 25, GuiTheme.MUTED);
+            int tagW = (STAND_WIDTH - 20) / 2;
+            int leftTag = left + 8;
+            int rightTag = left + STAND_WIDTH - 8 - tagW;
+            tag(context, leftTag, tagY, tagW, String.format(Locale.ROOT, "%.2f", ratio),
+                    Component.translatable("betterloka.finder.stat.kd"), glow);
+            EloService.Entry rated = rating();
+            tag(context, rightTag, tagY, tagW, rated == null ? "—" : String.valueOf(rated.shown()),
+                    Component.translatable("betterloka.finder.elo"),
+                    rated == null ? GuiTheme.MUTED : EloColors.argb(rated.elo()));
         }
 
         if (!turning && mouseX >= skinX0 && mouseX < skinX1 && mouseY >= skinY0 && mouseY < skinY1) {
@@ -546,6 +570,18 @@ public class PlayerFinderScreen extends Screen {
                     List.of(Component.translatable("betterloka.finder.skin_hint").getVisualOrderText()),
                     mouseX, mouseY);
         }
+    }
+
+    /** A tag hung at the foot of the stand: one number, large, and what it is under it. */
+    private void tag(GuiGraphicsExtractor context, int x, int y, int width, String value, Component label, int color) {
+        MapStyle.card(context, x, y, width, TAG_HEIGHT, color);
+        int scale = this.font.width(value) * 2 <= width - 6 ? 2 : 1;
+        context.pose().pushMatrix();
+        context.pose().translate(x + width / 2f - this.font.width(value) * scale / 2f, y + (scale == 2 ? 6 : 10));
+        context.pose().scale(scale, scale);
+        context.text(this.font, value, 0, 0, color);
+        context.pose().popMatrix();
+        context.centeredText(this.font, label, x + width / 2, y + 25, GuiTheme.MUTED);
     }
 
     /** A filled circle, a row at a time. */
@@ -576,6 +612,10 @@ public class PlayerFinderScreen extends Screen {
     private int renderProfile(GuiGraphicsExtractor context, int x, int top, int width) {
         EldritchStats stats = profile.stats();
         int y = renderTraits(context, x, top, width);
+
+        y = section(context, x, y, width, Component.translatable("betterloka.finder.section.elo"));
+        y = renderElo(context, x, y, width);
+        y += SECTION_GAP - TILE_GAP;
 
         y = section(context, x, y, width, Component.translatable("betterloka.finder.section.combat"));
         double ratio = stats.killDeathRatio();
@@ -709,6 +749,33 @@ public class PlayerFinderScreen extends Screen {
     private boolean hovering(int x, int y, int width, int height) {
         return lastMouseX >= x && lastMouseX < x + width && lastMouseY >= y && lastMouseY < y + height
                 && lastMouseY >= VIEWPORT_TOP && lastMouseY < bottom();
+    }
+
+    /**
+     * Conquest Elo, from loka-elo.pages.dev: the rating, the place on the leaderboard, the best it
+     * has been, and how many rated fights it rests on.
+     */
+    private int renderElo(GuiGraphicsExtractor context, int x, int y, int width) {
+        EloService service = BetterLokaClient.elo();
+        EloService.Entry rated = rating();
+        if (rated == null) {
+            boolean loading = service == null || !service.ready();
+            return card(context, x, y, width, 1, (textX, textY, inner) ->
+                    context.text(this.font, Component.translatable(loading
+                            ? "betterloka.finder.elo_loading" : "betterloka.finder.elo_unrated"),
+                            textX, textY, GuiTheme.MUTED));
+        }
+        y = tiles(context, x, y, width, 4, List.of(
+                new Tile(number((int) rated.shown()), label("betterloka.finder.elo"), EloColors.argb(rated.elo())),
+                new Tile("#" + number(rated.rank()), label("betterloka.finder.elo_rank"), GuiTheme.LIVE),
+                new Tile(number((int) Math.round(rated.peakElo())), label("betterloka.finder.elo_peak"),
+                        EloColors.argb(rated.peakElo())),
+                new Tile(number(rated.games()), label("betterloka.finder.elo_games"), GuiTheme.TEXT)));
+        String source = Component.translatable("betterloka.finder.elo_source").getString()
+                + (rated.lastActive() == null ? ""
+                : "  ·  " + Component.translatable("betterloka.finder.elo_active", rated.lastActive()).getString());
+        context.text(this.font, this.font.plainSubstrByWidth(source, width), x + 2, y, GuiTheme.MUTED);
+        return y + LINE + TILE_GAP;
     }
 
     /** A heading: an accent mark, the title in bold, and a rule under it. */
