@@ -22,6 +22,8 @@ public final class BetterLokaConfig {
     private boolean showNameplateKd = false;
     /** Conquest Elo beside each player's name tag, like the K/D. Off until turned on. */
     private boolean showNameplateElo = false;
+    /** Each player's ping beside their name tag, live from the player list. Off until turned on. */
+    private boolean showNameplatePing = false;
 
     /** The language chat is translated into in the Translator: the player's own. */
     private String nativeLanguage = "pl";
@@ -313,6 +315,15 @@ public final class BetterLokaConfig {
     /** Whether a kind's waypoints are drawn: its own switch and the master one both on. */
     public boolean shrineShown(ShrineKind kind) {
         return shrineWaypointsEnabled && shrineKindEnabled(kind);
+    }
+
+    public boolean showNameplatePing() {
+        return showNameplatePing;
+    }
+
+    public void setShowNameplatePing(boolean showNameplatePing) {
+        this.showNameplatePing = showNameplatePing;
+        save();
     }
 
     public boolean showNameplateElo() {

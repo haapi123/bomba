@@ -6,7 +6,7 @@ import java.util.Locale;
 
 /**
  * The places on Loka worth a marker whatever you are doing: each continent's docks, its resource
- * island and its boss, and everything at spawn.
+ * island and its boss — Kalros' Witch Hunter, Balak's Warden, Garama's Golem — and everything at spawn.
  *
  * <p>Plain Java, so which continent you are on is worked out — and tested — outside the game.
  */
@@ -64,7 +64,7 @@ public final class ImportantPlaces {
 
     /** What a place's marker shows. */
     public enum Icon {
-        DOCKS, RESOURCE_ISLAND, WITCH, WARDEN, HOUSE, MARKET, END_PORTAL, ZYRE, ROULETTE, NETHER_PORTAL,
+        DOCKS, RESOURCE_ISLAND, WITCH, WARDEN, GOLEM, HOUSE, MARKET, END_PORTAL, ZYRE, ROULETTE, NETHER_PORTAL,
         BIG_FIGHTS, SMALL_FIGHTS, COMPASS
     }
 
@@ -99,6 +99,7 @@ public final class ImportantPlaces {
 
             new Place(Region.GARAMA, "garama_docks", 4386, 83, 2061, Icon.DOCKS),
             new Place(Region.GARAMA, "garama_ri", 3342, 109, 1221, Icon.RESOURCE_ISLAND),
+            new Place(Region.GARAMA, "golem", 3043, 85, 679, Icon.GOLEM),
 
             new Place(Region.BALAK, "balak_docks", 2300, 80, 3012, Icon.DOCKS),
             new Place(Region.BALAK, "warden", 3870, 100, 2482, Icon.WARDEN),

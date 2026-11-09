@@ -19,6 +19,7 @@ never talks to the game server and sends nothing about you anywhere.
 | **Town Logger** | Working |
 | **Loka Grinder** | Working |
 | **Loka Helper** | Working |
+| **Lore Creator** | Working |
 
 
 ## Player Finder
@@ -164,12 +165,11 @@ since in. Now:
 
 Sixteen searches in a row (renamed players included) under that load: every headline in 0.3–1.5 s.
 
-### K/D and Elo above nameplates
+### K/D, Elo and ping above nameplates
 
-The two switches at the bottom of the Player Finder put each player's K/D, and their Conquest Elo,
-beside their name tag in the world — `Name | 3.58 | 2068 ELO` — each coloured by its band:
-
-### K/D above nameplates
+The three switches along the bottom of the Player Finder — **Above nameplates: K/D, ELO, Ping** — put
+each player's K/D, their Conquest Elo and their **current ping** beside their name tag in the world —
+`Name | 3.58 | 2068 ELO | 45ms` — each coloured by its band:
 
 | K/D | Colour | | Elo | Colour |
 | --- | --- | --- | --- | --- |
@@ -181,6 +181,10 @@ beside their name tag in the world — `Name | 3.58 | 2068 ELO` — each coloure
 | past 20 | gold | | 3000 and above | gold |
 
 The Elo is looked up by the player's account in the leaderboard on disk, so it costs no request.
+The ping is the one the server keeps the player list up to date with, read as the nameplate is
+drawn — green to 60 ms, yellow-green to 120, yellow to 200, orange to 300, red past that — and costs
+nothing either. A searched player who is on the same server shows **Online** and their ping, live,
+on the Player Finder's stand.
 
 K/D ratios are fetched in the background as players come into view, cached for fifteen minutes, and
 capped at a handful of requests in flight, so a full fight fills in over a few seconds rather than
@@ -601,10 +605,10 @@ Several things are done deliberately in the HTTP layer, all measured against the
   and with no key, until you set both: **Key:** waits for the next key you press, Esc clears it.
 - **Important Waypoints** — a marker with a picture over each place that matters, on the continent
   you are standing on and only there: each continent's **docks**, **resource island** and **boss**
-  (Kalros' Witch Hunter, Balak's Warden), and at spawn, Aladra, the **Town Portal, Loka Market, End
+  (Kalros' Witch Hunter, Balak's Warden, Garama's Golem), and at spawn, Aladra, the **Town Portal, Loka Market, End
   Portal, Zyre Portal, Gambling, Nether Portal, Balak & Reins Teleports, Rivi Portal and the
   Continent Portals**. Each continent has its own switch and **every one starts off**. The picture
-  says what the place is — a boat, a diamond pickaxe, the boss's egg, a house, a market stall, a
+  says what the place is — a boat, a diamond pickaxe, the boss's egg (witch, warden, iron golem), a house, a market stall, a
   roulette wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker
   nearest the crosshair.
 
@@ -621,6 +625,34 @@ and the screen says so.
 ![Coordinates, placed and sized](docs/helper-coords.png)
 
 ![Clear lava](docs/helper-clear-lava.png)
+
+## Lore Creator
+
+![Lore Creator](docs/lore-creator.png)
+
+Describe an item — *a sword forged in dragon fire*, *lodowy łuk z północy* — pick a colour scheme,
+and the mod writes its lore, in English or Polish, and shows it the way the game will: in a tooltip
+under the item, in the game's own lore purple and italics wherever the lore does not say otherwise.
+
+- **What it is about** decides what the lore says. The words in it — in either language — pick the
+  motifs it is written from: fire, ice, shadow, blood, the wild, the sea, storms, holy light, the
+  void, death, kings, war, ages past, the heart. Several at once are mixed. The kind of thing it is
+  (sword, bow, axe, shield, crown, book...) decides the title's noun: *Blade of Embers*, *Ostrze
+  Żaru*. **Write it again** writes another version of the same.
+- **Text: my own** keeps your text instead and only styles it.
+- **Colours**: twelve schemes — fire, ice, shadow, blood, nature, ocean, royal gold, holy light,
+  void, storm, toxic and rainbow — each a gradient for the title, a colour for the text and an
+  accent.
+- Name, number of sentences, a **rarity** line (*Rare* to *Mythic*), a title line, dividers and
+  italics on or off.
+
+The lore is written in **MiniMessage**, the markup Loka's lore editor takes (it is Adventure's
+MiniMessage Viewer): `<gradient:#ff4500:#ffd700><bold>`, `<#ffb066>`, `<!i>`, struck-through spaces
+for a divider. It sits in an editable box under the preview — change anything and the preview
+follows — and **Copy** puts it on the clipboard to paste into Loka's editor, the link Loka gives
+you in game. The preview reads the same markup back with a MiniMessage reader of the mod's own
+(colours, hex, decorations and their negations, gradients, rainbow, reset, new lines), so what it
+shows is what the editor will make of it. Nothing is sent anywhere.
 
 ## What it costs a connection
 

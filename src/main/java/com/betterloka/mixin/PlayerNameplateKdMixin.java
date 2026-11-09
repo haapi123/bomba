@@ -3,6 +3,7 @@ package com.betterloka.mixin;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.gui.EloColors;
 import com.betterloka.gui.GuiTheme;
+import com.betterloka.gui.PingColors;
 import com.betterloka.stats.EloService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -22,8 +23,8 @@ import java.util.Locale;
 import java.util.OptionalDouble;
 
 /**
- * Appends a player's Conquest K/D, and their Conquest Elo, to the nameplate drawn above their head —
- * each when its switch in the Player Finder is on.
+ * Appends a player's Conquest K/D, their Conquest Elo and their ping to the nameplate drawn above
+ * their head — each when its switch in the Player Finder is on.
  *
  * <p>Hooks the label at its source — {@link EntityRenderer#getNameTag} is what every renderer
  * asks for the text above an entity — so the badge inherits the game's own nameplate placement,
@@ -40,7 +41,8 @@ public abstract class PlayerNameplateKdMixin {
         }
         boolean showKd = BetterLokaClient.isNameplateKdEnabled();
         boolean showElo = BetterLokaClient.isNameplateEloEnabled();
-        if (!showKd && !showElo) {
+        boolean showPing = BetterLokaClient.isNameplatePingEnabled();
+        if (!showKd && !showElo && !showPing) {
             return;
         }
         Component original = cir.getReturnValue();
@@ -64,9 +66,30 @@ public abstract class PlayerNameplateKdMixin {
                 label = (label != null ? label : original.copy()).append(eloBadge(rated.elo()));
             }
         }
+        if (showPing) {
+            // Live from the player list the server keeps the client up to date with: no request.
+            int ping = pingOf(entity);
+            if (ping >= 0) {
+                label = (label != null ? label : original.copy()).append(pingBadge(ping));
+            }
+        }
         if (label != null) {
             cir.setReturnValue(label);
         }
+    }
+
+    /** The player's ping as the server last reported it, or -1 when they are not on the player list. */
+    private static int pingOf(Entity entity) {
+        Minecraft client = Minecraft.getInstance();
+        ClientPacketListener network = client == null ? null : client.getConnection();
+        PlayerInfo listed = network == null ? null : network.getPlayerInfo(entity.getUUID());
+        return listed == null ? -1 : listed.getLatency();
+    }
+
+    /** {@code  | 45ms}, coloured by how much it will be felt. */
+    private static MutableComponent pingBadge(int ping) {
+        return Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY)
+                .append(Component.literal(ping + "ms").withColor(PingColors.color(ping)));
     }
 
     /**

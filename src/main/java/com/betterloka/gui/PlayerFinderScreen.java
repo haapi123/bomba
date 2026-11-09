@@ -197,23 +197,38 @@ public class PlayerFinderScreen extends Screen {
             tabX += share + 4;
         }
 
-        // The two nameplate switches and Back, in one row under everything.
-        int third = Math.min(160, (width - 8) / 3);
-        int rowLeft = this.width / 2 - (third * 3 + 8) / 2;
-        addRenderableWidget(Button.builder(kdToggleLabel(), button -> {
+        // The nameplate switches and Back, in one row under everything: "Above nameplates:" and
+        // a short switch each for the K/D, the Elo and the ping.
+        int rowWidth = Math.min(width, 470);
+        int rowLeft = this.width / 2 - rowWidth / 2;
+        int labelWidth = this.font.width(Component.translatable("betterloka.finder.nameplates")) + 6;
+        int backWidth = Math.min(90, rowWidth / 5);
+        int each = (rowWidth - labelWidth - backWidth - 4 * 3) / 3;
+        nameplatesLabelX = rowLeft;
+        int x = rowLeft + labelWidth;
+        addRenderableWidget(Button.builder(switchLabel("betterloka.finder.kd_short",
+                        BetterLokaClient.config().showNameplateKd()), button -> {
                     BetterLokaClient.config().setShowNameplateKd(!BetterLokaClient.config().showNameplateKd());
-                    button.setMessage(kdToggleLabel());
+                    button.setMessage(switchLabel("betterloka.finder.kd_short", BetterLokaClient.config().showNameplateKd()));
                 })
-                .bounds(rowLeft, this.height - 25, third, 20)
-                .build());
-        addRenderableWidget(Button.builder(eloToggleLabel(), button -> {
+                .bounds(x, this.height - 25, each, 20).build());
+        x += each + 4;
+        addRenderableWidget(Button.builder(switchLabel("betterloka.finder.elo",
+                        BetterLokaClient.config().showNameplateElo()), button -> {
                     BetterLokaClient.config().setShowNameplateElo(!BetterLokaClient.config().showNameplateElo());
-                    button.setMessage(eloToggleLabel());
+                    button.setMessage(switchLabel("betterloka.finder.elo", BetterLokaClient.config().showNameplateElo()));
                 })
-                .bounds(rowLeft + third + 4, this.height - 25, third, 20)
-                .build());
+                .bounds(x, this.height - 25, each, 20).build());
+        x += each + 4;
+        addRenderableWidget(Button.builder(switchLabel("betterloka.finder.ping",
+                        BetterLokaClient.config().showNameplatePing()), button -> {
+                    BetterLokaClient.config().setShowNameplatePing(!BetterLokaClient.config().showNameplatePing());
+                    button.setMessage(switchLabel("betterloka.finder.ping", BetterLokaClient.config().showNameplatePing()));
+                })
+                .bounds(x, this.height - 25, each, 20).build());
+        x += each + 4;
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(rowLeft + (third + 4) * 2, this.height - 25, third, 20).build());
+                .bounds(x, this.height - 25, rowLeft + rowWidth - x, 20).build());
 
         if (wideModel == null) {
             EntityModelSet models = this.minecraft.getEntityModels();
@@ -240,11 +255,26 @@ public class PlayerFinderScreen extends Screen {
         }
     }
 
-    private Component eloToggleLabel() {
-        boolean on = BetterLokaClient.config().showNameplateElo();
-        return Component.translatable("betterloka.finder.elo_toggle",
+    /** {@code K/D: ON}, the state in green or grey. */
+    private static Component switchLabel(String key, boolean on) {
+        return Component.translatable(key).append(": ").append(
                 Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
                         .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+    }
+
+    /** Where "Above nameplates:" is written, left of its switches. */
+    private int nameplatesLabelX;
+
+    /**
+     * The searched player's ping, if they are on this server's player list right now; -1 if not.
+     * Live: read every frame from the list the server keeps the game up to date with.
+     */
+    private int livePing() {
+        if (profile == null || profile.uuid() == null || this.minecraft == null || this.minecraft.getConnection() == null) {
+            return -1;
+        }
+        net.minecraft.client.multiplayer.PlayerInfo listed = this.minecraft.getConnection().getPlayerInfo(profile.uuid());
+        return listed == null ? -1 : listed.getLatency();
     }
 
     /** The player's Conquest Elo, if they are rated; looked up locally, so it costs nothing. */
@@ -257,12 +287,6 @@ public class PlayerFinderScreen extends Screen {
         return entry != null || profile.uuid() != null ? entry : service.byName(profile.name());
     }
 
-    private Component kdToggleLabel() {
-        boolean on = BetterLokaClient.config().showNameplateKd();
-        return Component.translatable("betterloka.finder.kd_toggle",
-                Component.translatable(on ? "betterloka.toggle.on" : "betterloka.toggle.off")
-                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
-    }
 
     private void search() {
         String name = nameField.getValue().trim();
@@ -415,6 +439,8 @@ public class PlayerFinderScreen extends Screen {
         hoveredTrait = null;
 
         context.centeredText(this.font, this.title, this.width / 2, TITLE_Y, GuiTheme.TEXT);
+        context.text(this.font, Component.translatable("betterloka.finder.nameplates"), nameplatesLabelX,
+                this.height - 19, GuiTheme.MUTED);
 
         long now = System.currentTimeMillis();
         float seconds = lastFrame == 0 ? 0 : Math.min(0.25f, (now - lastFrame) / 1000f);
@@ -538,6 +564,17 @@ public class PlayerFinderScreen extends Screen {
         context.centeredText(this.font, this.font.plainSubstrByWidth(when, STAND_WIDTH - 12), centreX, y,
                 GuiTheme.TEXT);
         y += LINE + 3;
+
+        // On this server right now: their ping, live.
+        int ping = livePing();
+        if (ping >= 0) {
+            Component online = Component.translatable("betterloka.finder.online_ping",
+                    Component.literal(ping + " ms").withColor(PingColors.color(ping)));
+            int dot = this.font.width(online) + 8;
+            context.fill(centreX - dot / 2, y + 2, centreX - dot / 2 + 4, y + 6, GuiTheme.GOOD);
+            context.text(this.font, online, centreX - dot / 2 + 7, y, GuiTheme.GOOD);
+            y += LINE + 2;
+        }
 
         // Their town, while there is room above the tag for it.
         String townName = profile.displayTown();

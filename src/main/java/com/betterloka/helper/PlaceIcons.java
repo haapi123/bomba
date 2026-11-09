@@ -17,7 +17,7 @@ import java.util.Map;
  * The pictures on the important places' markers.
  *
  * <p>Where the game already has the right picture it is used — a boat for the docks, a diamond
- * pickaxe for a resource island, the witch's and the warden's eggs for their bosses, an eye of ender
+ * pickaxe for a resource island, the witch's, the warden's and the iron golem's eggs for their bosses, an eye of ender
  * for the End portal, a diamond sword for Zyre, a compass for the continent portals, crossed swords
  * for the big fights and one for the small. The four it has nothing for — a house, a market stall,
  * a roulette wheel and a Nether portal — are drawn here, sixteen pixels square in the game's own
@@ -36,6 +36,7 @@ public final class PlaceIcons {
             case RESOURCE_ISLAND -> new ItemStack(Items.DIAMOND_PICKAXE);
             case WITCH -> new ItemStack(Items.WITCH_SPAWN_EGG);
             case WARDEN -> new ItemStack(Items.WARDEN_SPAWN_EGG);
+            case GOLEM -> new ItemStack(Items.IRON_GOLEM_SPAWN_EGG);
             case END_PORTAL -> new ItemStack(Items.ENDER_EYE);
             case ZYRE -> new ItemStack(Items.DIAMOND_SWORD);
             case BIG_FIGHTS, SMALL_FIGHTS -> new ItemStack(Items.IRON_SWORD);

@@ -62,6 +62,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("v42".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            v42Input();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("v41".equals(System.getenv("BETTERLOKA_DIAG"))) {
             v41Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1116,6 +1121,53 @@ public final class DevDiagnostics {
         shot(2, "finder-7s");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG helper checks done");
+            client().stop();
+        });
+    }
+
+    // --- 0.42: Lore Creator, the ping switch, Garama's boss ---
+
+    private void v42Input() {
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
+        shot(10, "v42-menu");
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LoreCreatorScreen(null)));
+        shot(10, "v42-lore-first");
+        String[][] cases = {
+                {"Miecz wykuty w smoczym ogniu, który pamięta wojnę o Kalros", "FIRE", "pl"},
+                {"A frozen bow from the far north, cold as winter", "ICE", "en"},
+                {"Pradawna korona królów pustki i gwiazd", "VOID", "pl"},
+                {"A lucky charm for my friend", "RAINBOW", "en"}};
+        for (String[] lore : cases) {
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LoreCreatorScreen screen) {
+                    screen.devWrite(lore[0], com.betterloka.lore.LoreScheme.valueOf(lore[1]), lore[2].equals("pl"));
+                    BetterLoka.LOGGER.info("DIAG v42 lore for '{}':\n{}", lore[0], screen.devCode());
+                }
+            });
+            shot(5, "v42-lore-" + lore[1].toLowerCase(java.util.Locale.ROOT));
+        }
+        step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
+        step(2, () -> {
+            type(client().gui.screen(), "haapi");
+            click(client().gui.screen(), tr("betterloka.finder.search"));
+        });
+        step(160, () -> { });
+        shot(2, "v42-finder");
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.ImportantWaypointsScreen(null)));
+        step(2, () -> {
+            var screen = client().gui.screen();
+            for (int i = 0; i < 20; i++) {
+                screen.mouseScrolled(screen.width / 2.0, screen.height / 2.0, 0, -1);
+            }
+        });
+        shot(5, "v42-important-garama");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG v42 checks done");
             client().stop();
         });
     }

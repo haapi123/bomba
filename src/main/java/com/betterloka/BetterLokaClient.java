@@ -251,7 +251,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -288,6 +288,10 @@ public class BetterLokaClient implements ClientModInitializer {
     /** Conquest Elo, from loka-elo.pages.dev. */
     public static com.betterloka.stats.EloService elo() {
         return elo;
+    }
+
+    public static boolean isNameplatePingEnabled() {
+        return config != null && config.showNameplatePing();
     }
 
     public static boolean isNameplateEloEnabled() {
