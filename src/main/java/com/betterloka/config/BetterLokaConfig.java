@@ -123,6 +123,14 @@ public final class BetterLokaConfig {
      */
     private boolean coordsHudDefaultMigrated = false;
 
+    /**
+     * The Loka Assistant server, such as {@code http://203.0.113.5:8787}. Empty: the assistant asks
+     * for one. Nothing is sent to it until the player asks a question.
+     */
+    private String assistantServer = "";
+    /** Whether the player has read where their questions go. */
+    private boolean assistantNoticeAccepted = false;
+
 
     private transient Path file;
 
@@ -323,6 +331,24 @@ public final class BetterLokaConfig {
 
     public void setShowNameplatePing(boolean showNameplatePing) {
         this.showNameplatePing = showNameplatePing;
+        save();
+    }
+
+    public String assistantServer() {
+        return assistantServer == null ? "" : assistantServer;
+    }
+
+    public void setAssistantServer(String assistantServer) {
+        this.assistantServer = assistantServer == null ? "" : assistantServer.strip();
+        save();
+    }
+
+    public boolean assistantNoticeAccepted() {
+        return assistantNoticeAccepted;
+    }
+
+    public void setAssistantNoticeAccepted(boolean assistantNoticeAccepted) {
+        this.assistantNoticeAccepted = assistantNoticeAccepted;
         save();
     }
 

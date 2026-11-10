@@ -33,7 +33,8 @@ public class BetterLokaMenuScreen extends Screen {
         y = addModule(x, y, "betterloka.module.loka_grinder", LokaGrinderScreen::new);
         y = addModule(x, y, "betterloka.module.loka_map", LokaMapScreen::new);
         y = addModule(x, y, "betterloka.module.loka_helper", LokaHelperScreen::new);
-        addModule(x, y, "betterloka.module.lore_creator", LoreCreatorScreen::new);
+        y = addModule(x, y, "betterloka.module.lore_creator", LoreCreatorScreen::new);
+        addModule(x, y, "betterloka.module.assistant", AssistantScreen::new);
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> onClose())
                 .bounds(x, this.height - 30, BUTTON_WIDTH, BUTTON_HEIGHT).build());

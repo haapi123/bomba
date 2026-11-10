@@ -1,0 +1,56 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = project.maven_group
+version = project.mod_version
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.anthropic:anthropic-java:3.7.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    // Reads Loka's web pages into plain text for the knowledge base.
+    implementation 'org.jsoup:jsoup:1.18.3'
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass = 'com.betterloka.assistantserver.AssistantServer'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+}
+
+/** One runnable jar: deploying the assistant is copying a file and running it. */
+tasks.register('assistantJar', Jar) {
+    archiveBaseName = 'betterloka-assistant'
+    manifest {
+        attributes 'Main-Class': 'com.betterloka.assistantserver.AssistantServer'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class', 'META-INF/versions/*/module-info.class'
+}
+
+build.dependsOn assistantJar
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed'
+    }
+}

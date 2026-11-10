@@ -5,6 +5,7 @@ import com.betterloka.api.EldritchApi;
 import com.betterloka.api.HttpTransport;
 import com.betterloka.api.LokaApi;
 import com.betterloka.api.MarketApi;
+import com.betterloka.assistant.AssistantClient;
 import com.betterloka.fights.FightWatch;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.data.TownCache;
@@ -44,6 +45,8 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
 import net.minecraft.resources.Identifier;
 
 import java.nio.file.Path;
@@ -251,7 +254,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -304,6 +307,26 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static BetterLokaConfig config() {
         return config;
+    }
+
+    private static AssistantClient assistant;
+
+    /**
+     * The Loka Assistant client. It logs in by telling Mojang the player is "joining" the assistant
+     * server's one-time id, as joining any server does; the token goes only to Mojang.
+     */
+    public static synchronized AssistantClient assistant() {
+        if (assistant == null) {
+            assistant = new AssistantClient(
+                    () -> config.assistantServer(),
+                    () -> Minecraft.getInstance().getUser().getName(),
+                    serverId -> {
+                        Minecraft client = Minecraft.getInstance();
+                        User user = client.getUser();
+                        client.services().sessionService().joinServer(user.getProfileId(), user.getAccessToken(), serverId);
+                    });
+        }
+        return assistant;
     }
 
     public static MarketApi market() {

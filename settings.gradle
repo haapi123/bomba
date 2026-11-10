@@ -12,3 +12,4 @@ pluginManagement {
 rootProject.name = 'BetterLoka'
 
 include 'bot'
+include 'assistant'

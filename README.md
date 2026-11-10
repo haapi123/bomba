@@ -4,7 +4,8 @@ A client-side Fabric mod for **[Loka](https://lokamc.com)** (`play.lokamc.com`),
 
 BetterLoka adds an in-game menu, opened with a key you bind yourself, that pulls live data from
 Loka's public API and from [EldritchBot](https://eldritchbot.com). It is entirely client-side: it
-never talks to the game server and sends nothing about you anywhere.
+never talks to the game server and sends nothing about you anywhere — with one exception you opt
+into: a question you ask **Loka Assistant** goes, with your name, to the assistant server you set.
 
 ## Modules
 
@@ -20,6 +21,7 @@ never talks to the game server and sends nothing about you anywhere.
 | **Loka Grinder** | Working |
 | **Loka Helper** | Working |
 | **Lore Creator** | Working |
+| **Loka Assistant** | Working (needs an assistant server) |
 
 
 ## Player Finder
@@ -574,6 +576,9 @@ its public `meta.json` and `leaderboard.json`, the two files its own page loads,
 **Mojang's session server** supplies a searched player's skin, through the game's own skin manager —
 the same request the game makes for every player it meets.
 
+**The assistant server you set** answers Loka Assistant's questions, and only those; see
+[Loka Assistant](#loka-assistant) for what is sent.
+
 A full profile is about ten requests and lands in roughly a second. The card appears as soon as the
 career totals arrive; the fight rows fill in behind it.
 
@@ -654,6 +659,35 @@ you in game. The preview reads the same markup back with a MiniMessage reader of
 (colours, hex, decorations and their negations, gradients, rainbow, reset, new lines), so what it
 shows is what the editor will make of it. Nothing is sent anywhere.
 
+## Loka Assistant
+
+![Loka Assistant](docs/assistant.png)
+
+Ask anything about Loka — towns, conquest, bosses, the market, places, events — and an AI (Claude,
+by Anthropic) answers in your language from what Loka has published and what players have taught it.
+Each answer can be marked **✔ Good** or **✘ Wrong**.
+
+![Help it learn](docs/assistant-help.png)
+
+**Help it learn** lists what the assistant could not answer, and answers players marked wrong, most
+asked first. Anyone can pick one and write the answer; it waits for the assistant's admins, who see
+a **Review** tab the others do not, and only an approved answer goes into the knowledge base — from
+the next question on. Nothing a player writes is learned on its own.
+
+![Review](docs/assistant-review.png)
+
+The answering happens on a **separate server** ([`assistant/`](assistant/README.md)), which holds the
+Claude API key, the knowledge base, the budget and the per-player limits. The key is never in the mod,
+where anyone could take it. The server's address is set once in the screen.
+
+What is sent, and when: nothing until you open Loka Assistant and agree to the note it shows first.
+From then on, opening it logs you in (your name, checked with Mojang as below), and asking, rating or
+proposing an answer sends that — your question with the last few for context, and your game
+language — to the assistant server, which asks Claude. Nothing goes to Loka's server. Your
+account is checked with Mojang the way any Minecraft server checks it: the game tells Mojang you are
+"joining" a one-time id from the assistant server, which then asks Mojang whether you did — your
+password and Minecraft token never leave the game.
+
 ## What it costs a connection
 
 Three of the things the mod reads are large and barely change, and re-fetching them every session was
@@ -706,6 +740,13 @@ every fight that player has ever been in.
 **Total currency on the server** is not available either — Loka's market endpoints cover listings,
 not balances.
 
+## Assistant server
+
+[`assistant/`](assistant/README.md) is the server behind Loka Assistant: one jar that builds the
+knowledge base (it reads Loka's website, the forum's announcements and the wiki, politely and within
+their `robots.txt`, then has Claude write it up by topic) and answers players from it, within a
+monthly budget it never goes over. Its README has the setup, the settings and what a question costs.
+
 ## Building
 
 Requires JDK 25 — the version Minecraft 26.3 itself runs on, and the one the Fabric build tooling
@@ -715,6 +756,8 @@ no mappings to download and the code reads the same as the game.
 ```bash
 ./gradlew build          # jar lands in build/libs/
 ```
+
+`./gradlew build` also builds the Discord bot (`bot/`) and the assistant server (`assistant/`).
 
 ## Testing
 

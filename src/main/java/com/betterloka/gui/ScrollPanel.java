@@ -63,6 +63,15 @@ public final class ScrollPanel {
         return needsBar() ? width - BAR_WIDTH : width;
     }
 
+    /** Scrolls to the end of the content, as a chat does when a new line comes in. */
+    public void scrollToEnd() {
+        scroll = maxScroll();
+    }
+
+    public boolean atEnd() {
+        return scroll >= maxScroll();
+    }
+
     public void reset() {
         scroll = 0;
         dragging = false;

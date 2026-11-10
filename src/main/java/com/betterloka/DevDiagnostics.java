@@ -62,6 +62,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("v43".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            v43Input();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("v42".equals(System.getenv("BETTERLOKA_DIAG"))) {
             v42Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1126,6 +1131,78 @@ public final class DevDiagnostics {
     }
 
     // --- 0.42: Lore Creator, the ping switch, Garama's boss ---
+
+    /**
+     * 0.43: Loka Assistant against a local assistant server in demo mode (canned answers from its
+     * knowledge base, no API key): the first-run panels, a chat, rating, teaching and approving.
+     */
+    private void v43Input() {
+        // Questions in the game's language (known only once the game is up); for the README
+        // (English) the wrong-answer step is left out.
+        java.util.function.BooleanSupplier polish = () -> client().options.languageCode.startsWith("pl");
+        java.util.function.Supplier<String> known = () -> polish.getAsBoolean() ? "Gdzie jest boss Warden?" : "Where is the Warden boss?";
+        java.util.function.Supplier<String> unknown = () -> polish.getAsBoolean() ? "Ile kosztuje założenie townu?" : "When is the Festival of Flame?";
+        java.util.function.Supplier<String> teach = () -> polish.getAsBoolean()
+                ? "Town zakłada się w Aladrze przy Town Portalu (-145 67 21). Koszt podaje strona Loki w zakładce Towns."
+                : "Festival of Flame 2026 is announced on lokamc.com/news, with its dates and rewards.";
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+            BetterLokaClient.config().setAssistantServer("");
+            BetterLokaClient.config().setAssistantNoticeAccepted(false);
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
+        shot(10, "v43-menu");
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.AssistantScreen(null)));
+        shot(10, "v43-server");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devServer(String.valueOf(System.getenv().getOrDefault("BETTERLOKA_ASSISTANT", "127.0.0.1:8787"))));
+        shot(10, "v43-notice");
+        step(2, com.betterloka.gui.AssistantScreen::devAccept);
+        step(60, () -> BetterLoka.LOGGER.info("DIAG v43 logged in as {} (admin {}, left {})",
+                BetterLokaClient.assistant().loggedInAs(), BetterLokaClient.assistant().admin(),
+                BetterLokaClient.assistant().questionsLeft()));
+        shot(5, "v43-welcome");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devAsk(known.get()));
+        shot(1, "v43-thinking");
+        step(60, () -> { });
+        shot(2, "v43-answer");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devAsk(unknown.get()));
+        step(60, () -> { });
+        shot(2, "v43-unknown");
+        step(2, () -> {
+            if (polish.getAsBoolean()) {
+                com.betterloka.gui.AssistantScreen.devRate(0, false);
+            }
+        });
+        step(40, () -> { });
+        shot(2, "v43-rated");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devTab("HELP"));
+        step(40, () -> { });
+        shot(2, "v43-help");
+        step(2, () -> {
+            com.betterloka.gui.AssistantScreen.devSelectOpen(unknown.get().substring(0, 12));
+            com.betterloka.gui.AssistantScreen.devWriteAnswer(teach.get());
+        });
+        shot(5, "v43-help-writing");
+        step(2, com.betterloka.gui.AssistantScreen::devPropose);
+        step(40, () -> { });
+        shot(2, "v43-help-sent");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devTab("REVIEW"));
+        step(40, () -> { });
+        shot(2, "v43-review");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devReview(true));
+        step(40, () -> { });
+        shot(2, "v43-review-approved");
+        step(2, () -> com.betterloka.gui.AssistantScreen.devTab("ASK"));
+        step(2, () -> com.betterloka.gui.AssistantScreen.devAsk(unknown.get()));
+        step(60, () -> { });
+        shot(2, "v43-learned");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG v43 checks done");
+            client().stop();
+        });
+    }
 
     private void v42Input() {
         step(2, () -> {
