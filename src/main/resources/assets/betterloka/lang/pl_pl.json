@@ -561,6 +561,7 @@
   "betterloka.assistant.server_title": "Serwer asystenta",
   "betterloka.assistant.server_hint": "adres, np. 203.0.113.5:8787",
   "betterloka.assistant.server_help": "Asystent działa na osobnym serwerze. Wpisz adres, który dostałeś.",
+  "betterloka.assistant.server_help_default": "Mod sam łączy się z serwerem asystenta BetterLoka. Inny adres wpisz tylko, jeśli go dostałeś; zostaw puste pole, żeby wrócić do wbudowanego serwera.",
   "betterloka.assistant.save": "Zapisz",
   "betterloka.assistant.cancel": "Anuluj",
   "betterloka.assistant.notice_title": "Zanim zapytasz",

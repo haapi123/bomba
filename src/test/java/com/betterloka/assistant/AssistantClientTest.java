@@ -82,6 +82,21 @@ class AssistantClientTest {
     }
 
     @Test
+    void theBuiltInServerIsUsedUntilThePlayerEntersTheirOwn() {
+        String builtIn = "assistant.example.com:25570";
+        assertEquals("http://assistant.example.com:25570", AssistantClient.effectiveServer("", builtIn));
+        assertEquals("http://assistant.example.com:25570", AssistantClient.effectiveServer(null, builtIn));
+        assertEquals("http://1.2.3.4:8787", AssistantClient.effectiveServer("1.2.3.4:8787", builtIn));
+        assertEquals("", AssistantClient.effectiveServer("", ""), "no built-in server: the screen asks for one");
+
+        // Entering the built-in address, or nothing, saves nothing: a later version can move it.
+        assertEquals("", AssistantClient.serverToStore("http://assistant.example.com:25570/", builtIn));
+        assertEquals("", AssistantClient.serverToStore("  ", builtIn));
+        assertEquals("http://1.2.3.4:8787", AssistantClient.serverToStore("1.2.3.4:8787", builtIn));
+        assertEquals("http://1.2.3.4:8787", AssistantClient.serverToStore("1.2.3.4:8787", ""));
+    }
+
+    @Test
     void normalizesAddresses() {
         assertEquals("http://1.2.3.4:8787", AssistantClient.normalize(" 1.2.3.4:8787/ "));
         assertEquals("https://example.com", AssistantClient.normalize("https://example.com//"));

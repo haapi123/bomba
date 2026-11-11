@@ -561,6 +561,7 @@
   "betterloka.assistant.server_title": "Assistant server",
   "betterloka.assistant.server_hint": "address, e.g. 203.0.113.5:8787",
   "betterloka.assistant.server_help": "The assistant runs on a server of its own. Enter the address you were given.",
+  "betterloka.assistant.server_help_default": "The mod connects to the BetterLoka assistant server on its own. Enter another address only if you were given one; leave the field empty to go back to the built-in server.",
   "betterloka.assistant.save": "Save",
   "betterloka.assistant.cancel": "Cancel",
   "betterloka.assistant.notice_title": "Before you ask",

@@ -1,6 +1,7 @@
 package com.betterloka.config;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.assistant.AssistantClient;
 import com.betterloka.grind.ShrineKind;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -124,8 +125,9 @@ public final class BetterLokaConfig {
     private boolean coordsHudDefaultMigrated = false;
 
     /**
-     * The Loka Assistant server, such as {@code http://203.0.113.5:8787}. Empty: the assistant asks
-     * for one. Nothing is sent to it until the player asks a question.
+     * The Loka Assistant server the player entered, such as {@code http://203.0.113.5:8787}. Empty:
+     * the mod's built-in server ({@link AssistantClient#DEFAULT_SERVER}), or, without one, the
+     * assistant asks for an address. Nothing is sent to it before the player accepts the notice.
      */
     private String assistantServer = "";
     /** Whether the player has read where their questions go. */
@@ -334,12 +336,14 @@ public final class BetterLokaConfig {
         save();
     }
 
+    /** The assistant server to use: the player's own, else the built-in one; empty if neither. */
     public String assistantServer() {
-        return assistantServer == null ? "" : assistantServer;
+        return AssistantClient.effectiveServer(assistantServer, AssistantClient.DEFAULT_SERVER);
     }
 
+    /** Sets the player's own server; empty (or the built-in address) goes back to the built-in one. */
     public void setAssistantServer(String assistantServer) {
-        this.assistantServer = assistantServer == null ? "" : assistantServer.strip();
+        this.assistantServer = AssistantClient.serverToStore(assistantServer, AssistantClient.DEFAULT_SERVER);
         save();
     }
 

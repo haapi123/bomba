@@ -230,11 +230,12 @@ public class AssistantScreen extends Screen {
 
     private void saveServer() {
         String address = AssistantClient.normalize(serverField.getValue());
-        if (address.isEmpty()) {
+        if (address.isEmpty() && AssistantClient.DEFAULT_SERVER.isBlank()) {
             return;
         }
-        if (!address.equals(AssistantClient.normalize(BetterLokaClient.config().assistantServer()))) {
-            BetterLokaClient.config().setAssistantServer(address);
+        String before = BetterLokaClient.config().assistantServer();
+        BetterLokaClient.config().setAssistantServer(address);
+        if (!BetterLokaClient.config().assistantServer().equals(before)) {
             client.logout();
             open = List.of();
             pending = List.of();
@@ -706,7 +707,10 @@ public class AssistantScreen extends Screen {
         context.text(this.font, Component.translatable("betterloka.assistant.server_title").withStyle(ChatFormatting.BOLD),
                 x, y - 50, GuiTheme.ACCENT);
         int textY = y - 36;
-        for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.assistant.server_help"), panelWidth)) {
+        Component help = AssistantClient.DEFAULT_SERVER.isBlank()
+                ? Component.translatable("betterloka.assistant.server_help")
+                : Component.translatable("betterloka.assistant.server_help_default");
+        for (FormattedCharSequence line : this.font.split(help, panelWidth)) {
             context.text(this.font, line, x, textY, GuiTheme.MUTED);
             textY += LINE;
         }
