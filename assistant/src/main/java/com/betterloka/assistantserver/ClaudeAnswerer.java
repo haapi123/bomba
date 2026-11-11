@@ -43,11 +43,12 @@ final class ClaudeAnswerer implements Answerer {
             player market, quests, bosses and its own custom items. BetterLoka is made by players, \
             not by Loka's staff.
 
-            Answer the player's question from the knowledge base below. It was gathered from Loka's \
-            website, its forum announcements and its wiki, plus answers players wrote that the \
-            BetterLoka team approved (community.md). When sources disagree, trust community.md and \
-            the website over the forum and the wiki, and newer over older; say so when an answer may \
-            be out of date.
+            Answer the player's question from the knowledge base below. The documents under \
+            generated/ were written from Loka's website, its forum announcements and its wiki; every \
+            other document was written or chosen by the BetterLoka team, and community.md holds \
+            answers players wrote that the team approved. When sources disagree, trust the team's \
+            documents and community.md first, then the website, then the forum and the wiki, and \
+            newer over older; say so when an answer may be out of date.
 
             - If the knowledge base does not answer a question about Loka, say briefly that you \
             don't know that yet, and set status to UNKNOWN. Never guess numbers, prices, \

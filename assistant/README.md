@@ -72,7 +72,9 @@ The model does not learn from conversations. The knowledge base is files, and it
 ways, none of which needs a restart (the folder is looked at again every ten seconds):
 
 - **`build-kb` again** after Loka publishes something new.
-- **Edit or add `.md` files in `kb/`** — anything there is part of the knowledge base.
+- **Edit or add `.md` or `.txt` files in `kb/`** — anything there is part of the knowledge base, and
+  the assistant trusts it over what `build-kb` wrote from the forum and the wiki (`kb/generated/`)
+  when the two disagree.
 - **Players**: a question the assistant could not answer, or an answer a player marked wrong, shows
   up in the game's *Help it learn* tab. Any player can write an answer; it waits in *Review*, which
   only the `admins` see, and goes into `kb/community.md` only once one of them approves it (edited
