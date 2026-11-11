@@ -64,6 +64,25 @@ public final class ServerConfig {
 
     public Crawl crawl = new Crawl();
     public Distill distill = new Distill();
+    public DiscordQuestions discordQuestions = new DiscordQuestions();
+
+    /**
+     * Questions the assistant could not answer, posted to a Discord channel with an "Answer" button.
+     * It talks to Discord as the bot in {@code betterloka-bot.json} (its {@code botToken}), over the
+     * same connection the fallen-town bot uses, so both can run in one process.
+     */
+    public static final class DiscordQuestions {
+        /** The channel to post in (Developer Mode, right-click the channel, Copy Channel ID). Empty: off. */
+        public String channelId = "";
+        /** Roles that may answer. Their answers wait for approval, in the game or on Discord. */
+        public List<String> answerRoleIds = new ArrayList<>();
+        /** Roles that may approve, reject and dismiss. Their own answers go straight into the knowledge base. */
+        public List<String> approveRoleIds = new ArrayList<>();
+        /** Optional: a role pinged when a new question is posted. */
+        public String pingRoleId = "";
+        /** The language of the messages and buttons: pl or en. */
+        public String language = "pl";
+    }
 
     /** What {@code crawl} reads. Every source can be turned off. */
     public static final class Crawl {
@@ -101,11 +120,37 @@ public final class ServerConfig {
         if (config.prices == null) {
             config.prices = new LinkedHashMap<>();
         }
+        if (config.discordQuestions == null) {
+            config.discordQuestions = new DiscordQuestions();
+        }
+        if (config.discordQuestions.answerRoleIds == null) {
+            config.discordQuestions.answerRoleIds = new ArrayList<>();
+        }
+        if (config.discordQuestions.approveRoleIds == null) {
+            config.discordQuestions.approveRoleIds = new ArrayList<>();
+        }
         if (!Files.exists(file)) {
             Json.write(file, config);
             Log.info("Wrote default settings to " + file.toAbsolutePath());
+        } else if (lacks(file, "discordQuestions")) {
+            // A file from an older version: add the new section so there is something to fill in.
+            Json.write(file, config);
+            Log.info("Added the discordQuestions settings to " + file.toAbsolutePath());
         }
         return config;
+    }
+
+    /**
+     * Whether a settings file from an older version has no such section yet. A file that does not
+     * parse is never rewritten: it holds the owner's settings with a typo, not an old version.
+     */
+    private static boolean lacks(Path file, String key) {
+        try {
+            com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString(Files.readString(file));
+            return json.isJsonObject() && !json.getAsJsonObject().has(key);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**

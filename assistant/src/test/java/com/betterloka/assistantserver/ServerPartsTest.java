@@ -46,6 +46,23 @@ class ServerPartsTest {
     }
 
     @Test
+    void anOlderSettingsFileGetsTheDiscordSectionAndABrokenOneIsLeftAlone(@TempDir Path dir) throws Exception {
+        Path old = dir.resolve("assistant.json");
+        Files.writeString(old, "{\"admins\": [\"Steve\"], \"model\": \"claude-sonnet-5-5\"}");
+        ServerConfig config = ServerConfig.load(old);
+        assertEquals("", config.discordQuestions.channelId);
+        String rewritten = Files.readString(old);
+        assertTrue(rewritten.contains("\"discordQuestions\""), rewritten);
+        assertTrue(rewritten.contains("\"Steve\"") && rewritten.contains("claude-sonnet-5-5"), "the owner's settings stay");
+
+        Path broken = dir.resolve("broken.json");
+        String typo = "{\"admins\": [\"Steve\"],, }";
+        Files.writeString(broken, typo);
+        ServerConfig.load(broken);
+        assertEquals(typo, Files.readString(broken), "a file with a typo is the owner's to fix, not ours to replace");
+    }
+
+    @Test
     void pricesCacheReadsWritesAndOutput() {
         // 10k cached read + 1k fresh input + 500 output on the default model.
         double warm = Pricing.cost("claude-opus-5-5", new Pricing.Usage(1000, 500, 10_000, 0, 0), null);

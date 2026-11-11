@@ -37,6 +37,39 @@ be spent by strangers.
 Bez klucza da się obejrzeć ekran w grze: `java -jar ... serve --demo` odpowiada linijkami z bazy
 wiedzy, bez Claude i za darmo.
 
+### Discord: bot od townów i pytania z „Pomóż mu się uczyć” (po polsku)
+
+Ten sam jar uruchamia też **bota od upadłych townów** (`/sprawdz` też działa), więc na panelu typu
+Pterodactyl wystarczy **jeden serwer**. Bot i asystent używają jednego połączenia z Discordem.
+
+1. **Bot na Discordzie** (jeśli jeszcze go nie masz): discord.com/developers/applications →
+   New Application → **Bot** → Reset Token. Token wklej do **`betterloka-bot.json`** jako
+   `botToken` (plik tworzy się sam przy pierwszym starcie). Tokenu nie wysyłaj nikomu. Wyłącz tam
+   **Public Bot**, żeby tylko Ty mogłeś go dodawać do serwerów.
+2. **Zaproszenie**: OAuth2 → URL Generator → zaznacz `bot` i `applications.commands`, uprawnienia:
+   View Channels, Send Messages, Embed Links. Otwórz link i dodaj bota na swój serwer.
+3. **Kanał i rangi**: włącz Ustawienia → Zaawansowane → Tryb dewelopera. Prawy klik na kanał →
+   Kopiuj ID kanału, prawy klik na rangę → Kopiuj ID roli. Wpisz w `assistant.json`:
+   ```json
+   "discordQuestions": {
+     "channelId": "ID kanału z pytaniami",
+     "answerRoleIds": ["ID rangi, która może odpowiadać"],
+     "approveRoleIds": ["ID rangi, która zatwierdza"],
+     "pingRoleId": "",
+     "language": "pl"
+   }
+   ```
+   - **answerRoleIds**: odpowiadają przyciskiem **Odpowiedz**; ich odpowiedź czeka na zatwierdzenie.
+   - **approveRoleIds**: zatwierdzają, poprawiają i odrzucają (także propozycje graczy z gry), a ich
+     własne odpowiedzi trafiają od razu do bazy. Administratorzy serwera Discord mogą to samo.
+   - **pingRoleId** (opcjonalnie): ranga pingowana przy każdym nowym pytaniu.
+4. **Bot od townów**: w `betterloka-bot.json` zostaw swój `webhookUrl` i `roleId` jak dotąd (albo
+   zamiast webhooka podaj `channelId`). Jeśli bot chodził wcześniej gdzie indziej, **wyłącz go tam** i
+   przenieś `betterloka-bot.json` oraz `betterloka-bot-state.json` do folderu asystenta. Dwa
+   programy z tym samym tokenem podbierałyby sobie kliknięcia, a alerty szłyby podwójnie.
+5. Uruchom ponownie. W konsoli zobaczysz `Unanswered questions go to Discord channel ...` i
+   `Watching Loka every 30s`.
+
 ## Commands
 
 | Command | What it does |
@@ -81,6 +114,38 @@ ways, none of which needs a restart (the folder is looked at again every ten sec
   if need be). Nothing a player writes reaches the knowledge base on its own — one troll could
   otherwise teach everyone something false. With `discordWebhookUrl` set, new unanswered questions
   and new proposals are posted to that channel.
+- **Discord**: with `discordQuestions` set, the same questions are answered on Discord — see below.
+
+## Answering on Discord
+
+With `discordQuestions.channelId` set and a bot token in `betterloka-bot.json`, every open question
+is posted to that channel with an **Answer** button (and **Dismiss question**). Answer opens a form
+with the question filled in (it can be corrected) and a box for the answer.
+
+- Members with an **`answerRoleIds`** role may answer. Their answer becomes a proposal, posted under
+  the question with **Approve**, **Edit and approve** and **Reject** — and it is in the game's
+  *Review* tab too.
+- Members with an **`approveRoleIds`** role — and the Discord server's administrators — may approve,
+  edit, reject and dismiss, players' proposals from the game included. Their own answers go straight
+  into `kb/community.md`.
+- Whichever side acts, the other follows: approve in the game and the Discord message turns green and
+  loses its buttons; answer on Discord and the question leaves the game's *Help it learn* list.
+- Who may do what comes from the roles Discord reports with each click, and only clicks in that one
+  channel count. Replies to the clicker are visible to them alone.
+- Questions are posted without the asker's name. Proposals carry the name of whoever wrote them, as
+  `community.md` does. Player text is shown inside code blocks, so it cannot ping, link or format;
+  only `pingRoleId` is ever pinged.
+- When the channel is first set up, the 20 most asked open questions and the waiting proposals are
+  posted once. A message deleted by hand stays deleted. Which message is which is kept in
+  `data/discord-questions.json`.
+
+## One process for the assistant and the fallen-town bot
+
+`serve` also runs the [fallen-town bot](../bot/README.md) from `betterloka-bot.json` in the same
+folder (written on first start), so a panel that runs one program per server hosts both. They share
+one Discord gateway connection: Discord hands each click to one connection, so two programs with the
+same token would take each other's. Without a webhook or channel for it, the town watch stays off with
+a line saying why and the assistant carries on; the bot's own jar still runs on its own as before.
 
 ## Settings — `assistant.json`
 
@@ -103,6 +168,7 @@ Written with defaults on first start.
 | `concurrentAnswers` | `4` | Claude calls at once; the rest wait. |
 | `admins` | `[]` | Minecraft UUIDs (or names) who may approve answers. |
 | `discordWebhookUrl` | `""` | Optional. Treat it as a secret. |
+| `discordQuestions` | | `channelId`, `answerRoleIds`, `approveRoleIds`, `pingRoleId`, `language` (`pl` or `en`): see *Answering on Discord*. Added to an older `assistant.json` on start. |
 | `skipMojangCheck` | `false` | **Testing only**: trusts any name. Anyone could then pose as anyone. |
 | `trustForwardedFor` | `false` | Behind Caddy/nginx on the same machine. |
 | `crawl` | | What `crawl` reads and how politely: `userAgent`, `delayMillis` (1200), `site`, `forum`, `forumIds` (`[5]`, the announcements), `maxForumThreads`, `wiki`, `maxWikiPages`. |
@@ -144,6 +210,9 @@ limits hang on the verified UUID, and admins are recognised by it.
 | `data/community.json` | Open questions and proposals. |
 | `data/secret.key` | Signs the tickets. Deleting it logs everyone out. |
 | `data/distill/` | `distill`'s notes, so a rerun only pays for what changed. |
+| `data/discord-questions.json` | Which Discord message shows which question and proposal. |
+| `betterloka-bot.json` | The fallen-town bot's settings, and the bot token the Discord questions use. A secret. |
+| `betterloka-bot-state.json` | Fallen towns already announced. |
 
 ## Where the knowledge comes from
 
@@ -174,7 +243,8 @@ Anything that runs Java 21 and has one open TCP port will do:
 - **A game-server panel** (Pterodactyl and the like) with a Java or "generic" image: upload the jar,
   its start command is `java -jar betterloka-assistant.jar`, and the port the panel assigns arrives in
   `SERVER_PORT`. Its console takes `status` and `stop`. Upload `api-key.txt` through the panel's file
-  manager. Use its own server, not one that already runs your Minecraft world.
+  manager. Use its own server, not one that already runs your Minecraft world. The fallen-town bot
+  runs in the same process, so it needs no server of its own.
 
 ## Building
 
@@ -185,4 +255,5 @@ Anything that runs Java 21 and has one open TCP port will do:
 
 The tests run the whole server over HTTP — log in, ask, rate, propose, approve, budget — and check
 the request sent to the Claude API (cached knowledge base, fallback, structured output, effort)
-against a stand-in for the API.
+against a stand-in for the API, and the Discord questions channel (posting, buttons, forms, roles,
+approvals from either side) against a stand-in for Discord.

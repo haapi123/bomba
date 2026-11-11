@@ -747,6 +747,10 @@ knowledge base (it reads Loka's website, the forum's announcements and the wiki,
 their `robots.txt`, then has Claude write it up by topic) and answers players from it, within a
 monthly budget it never goes over. Its README has the setup, the settings and what a question costs.
 
+It also runs the Discord bot in the same process, so one panel server hosts both, and it can post the
+questions it could not answer to a Discord channel, where members with a chosen role answer them
+through a form and members with an approving role approve them into the knowledge base.
+
 ## Building
 
 Requires JDK 25 — the version Minecraft 26.3 itself runs on, and the one the Fabric build tooling

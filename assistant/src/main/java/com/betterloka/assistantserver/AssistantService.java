@@ -321,7 +321,7 @@ final class AssistantService {
         if (!admin(session)) {
             return error(403, "not_admin", "Only the assistant's admins can review.");
         }
-        return community.dismiss(string(request, "id")) ? new Response(200, ok())
+        return community.dismiss(string(request, "id"), session.name()) ? new Response(200, ok())
                 : error(404, "unknown_question", "Already gone.");
     }
 

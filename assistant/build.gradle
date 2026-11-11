@@ -11,6 +11,8 @@ repositories {
 }
 
 dependencies {
+    // The fallen-town Discord bot runs inside the assistant server, so one process hosts both.
+    implementation project(':bot')
     implementation 'com.anthropic:anthropic-java:3.7.0'
     implementation 'com.google.code.gson:gson:2.11.0'
     // Reads Loka's web pages into plain text for the knowledge base.

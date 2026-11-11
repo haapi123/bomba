@@ -2,6 +2,9 @@ package com.betterloka.assistantserver;
 
 import com.anthropic.client.AnthropicClient;
 
+import com.betterloka.bot.BetterLokaBot;
+import com.betterloka.bot.BotConfig;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -99,10 +102,32 @@ public final class AssistantServer {
         }
         KnowledgeBase knowledge = new KnowledgeBase(dir.resolve("kb"));
         Ledger ledger = new Ledger(data.resolve("ledger.json"), config, clock);
+        Community community = new Community(data.resolve("community.json"),
+                dir.resolve("kb").resolve(KnowledgeBase.COMMUNITY), clock);
         AssistantService service = new AssistantService(config, knowledge, answerer, ledger,
-                new Sessions(Sessions.loadSecret(data.resolve("secret.key")), clock), mojang,
-                new Community(data.resolve("community.json"), dir.resolve("kb").resolve(KnowledgeBase.COMMUNITY), clock),
+                new Sessions(Sessions.loadSecret(data.resolve("secret.key")), clock), mojang, community,
                 new Discord(config.discordWebhookUrl), data.resolve("questions.jsonl"), clock);
+
+        // The fallen-town bot runs in this same process, over one Discord connection, so a panel
+        // that runs one program per server can host both.
+        BotConfig botConfig = BetterLokaBot.loadEmbeddedConfig(dir);
+        DiscordQuestions questions = null;
+        if (!config.discordQuestions.channelId.isBlank()) {
+            if (botConfig.botToken.isBlank()) {
+                Log.warn("discordQuestions.channelId is set, but posting questions needs a bot: put its botToken in "
+                        + dir.resolve(BetterLokaBot.CONFIG_NAME).toAbsolutePath());
+            } else {
+                questions = new DiscordQuestions(config, community, ledger, knowledge,
+                        new DiscordRest(null, botConfig.botToken), data.resolve("discord-questions.json"));
+            }
+        }
+        BetterLokaBot.Embedded bot = BetterLokaBot.startEmbedded(botConfig, questions == null ? null : questions::handle);
+        if (questions != null) {
+            questions.start();
+            Log.info("Unanswered questions go to Discord channel " + config.discordQuestions.channelId
+                    + (config.discordQuestions.answerRoleIds.isEmpty() && config.discordQuestions.approveRoleIds.isEmpty()
+                    ? " (no roles set yet: only server administrators can answer)" : ""));
+        }
         HttpApi api = new HttpApi(service, config.trustForwardedFor);
         int port = config.effectivePort();
         api.start(config.bind, port);
@@ -143,6 +168,10 @@ public final class AssistantServer {
         console.setDaemon(true);
         console.start();
         stopped.await();
+        if (questions != null) {
+            questions.stop();
+        }
+        bot.stop();
         api.stop();
         Log.info("Stopped.");
         System.exit(0);

@@ -19,6 +19,15 @@ Several towns in one sweep are batched into a single message, ten to a post, whi
 
 ## Running it
 
+**Inside the assistant server.** The [Loka Assistant server](../assistant/README.md) runs this bot
+in the same process, from the same `betterloka-bot.json` in its folder, so a hosting panel that runs
+one program per server can host both. Everything below applies unchanged; the one difference is that
+a config with nowhere to post turns the watch off instead of stopping the process. Run the bot in one
+place only: two copies with the same token would take each other's command clicks and post every
+fall twice.
+
+**On its own:**
+
 Runs on Java 21 or newer. Building it needs JDK 25, because the bot lives in the same Gradle build
 as the mod and the mod's build tooling will not start on anything older:
 

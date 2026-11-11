@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 /**
  * Watches Loka for towns that have fallen and pings a Discord role when one does.
@@ -117,38 +118,155 @@ public final class BetterLokaBot {
                 postTestMessage(poster, config);
             }
 
-            DiscordGateway gateway = startCommands(config, api, transport);
-
-            LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
-                            + "{} territory record(s) already announced",
-                    config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
-            if (state.isFirstRun() && !config.announceBacklogOnFirstRun) {
-                LOG.info("First run: the towns that have already fallen will be recorded quietly, "
-                        + "and only new ones announced from here.");
+            DiscordGateway gateway = startCommands(config, api, transport, null);
+            watch(watcher, state, poster, config, once);
+            if (gateway != null) {
+                gateway.stop();
             }
+        }
+    }
 
-            while (true) {
+    /**
+     * The bot, running inside another program: the Loka Assistant server starts it this way, so a
+     * game panel that runs one program per server can host both. Same config file, same state file,
+     * same behaviour, with two differences: a missing or half-filled config turns the town watch off
+     * with a line saying why instead of stopping the whole process, and the host can answer
+     * interactions of its own over the same Discord connection (Discord delivers each interaction to
+     * one connection, so two programs with the same token would steal each other's clicks).
+     */
+    public static final class Embedded {
+        private final BotConfig config;
+        private final HttpTransport transport;
+        private final DiscordGateway gateway;
+        private final Thread watch;
+
+        private Embedded(BotConfig config, HttpTransport transport, DiscordGateway gateway, Thread watch) {
+            this.config = config;
+            this.transport = transport;
+            this.gateway = gateway;
+            this.watch = watch;
+        }
+
+        public BotConfig config() {
+            return config;
+        }
+
+        public boolean watching() {
+            return watch != null;
+        }
+
+        public boolean connected() {
+            return gateway != null;
+        }
+
+        public void stop() {
+            if (watch != null) {
+                watch.interrupt();
+            }
+            if (gateway != null) {
+                gateway.stop();
+            }
+            if (transport != null) {
+                transport.close();
+            }
+        }
+    }
+
+    /** The config file's name, in the folder the bot runs in. */
+    public static final String CONFIG_NAME = "betterloka-bot.json";
+
+    /**
+     * Reads {@code betterloka-bot.json} from {@code dir}, writing a template first if there is none,
+     * so the owner of a combined server has the file to fill in.
+     */
+    public static BotConfig loadEmbeddedConfig(Path dir) {
+        Path file = dir.resolve(CONFIG_NAME);
+        if (!Files.exists(file)) {
+            new BotConfig().writeTemplate(file);
+            LOG.info("Wrote {}: fill in webhookUrl (or botToken and channelId) and roleId to turn on "
+                    + "fallen-town alerts", file.toAbsolutePath());
+        }
+        BotConfig config = BotConfig.load(file);
+        if (!config.unknownKeys().isEmpty()) {
+            LOG.warn("{} has setting(s) this bot does not know, and they were ignored: {}",
+                    file.toAbsolutePath(), String.join(", ", config.unknownKeys()));
+        }
+        Path state = Path.of(config.stateFile);
+        if (!state.isAbsolute()) {
+            config.stateFile = dir.resolve(state).toString();
+        }
+        return config;
+    }
+
+    /**
+     * Starts the town watch (when the config says where to post) and the Discord connection (when
+     * it has a bot token) on background threads, and returns at once.
+     *
+     * @param extra interactions the host answers itself, returning true for each one it took; or null
+     */
+    public static Embedded startEmbedded(BotConfig config, Predicate<JsonObject> extra) {
+        String problem = config.validate();
+        boolean wantsGateway = !config.botToken.isBlank() && (config.enableCommands || extra != null);
+        if (problem != null && !wantsGateway) {
+            LOG.info("Fallen-town alerts are off: {} (in {})", problem, CONFIG_NAME);
+            return new Embedded(config, null, null, null);
+        }
+        HttpTransport transport = new HttpTransport();
+        LokaApi api = new LokaApi(transport);
+        DiscordGateway gateway = wantsGateway ? startCommands(config, api, transport, extra) : null;
+
+        Thread watchThread = null;
+        if (problem == null) {
+            BotState state = new BotState(Path.of(config.stateFile));
+            state.load();
+            FallenTownWatcher watcher = new FallenTownWatcher(api, state);
+            DiscordPoster poster = new DiscordPoster(config);
+            watchThread = new Thread(() -> {
+                if (config.testOnStart) {
+                    postTestMessage(poster, config);
+                }
                 try {
-                    FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
-                            config.fullSweepIntervalMillis());
-                    if (result.sweptFully()) {
-                        LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
-                                result.deletedCount(), result.announce().size());
-                    }
-                    announce(result.announce(), poster, config);
-                } catch (ApiException e) {
-                    LOG.warn("Could not check Loka: {}", e.getMessage());
-                } catch (RuntimeException e) {
-                    LOG.warn("Check failed", e);
+                    watch(watcher, state, poster, config, false);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
-                if (once) {
-                    if (gateway != null) {
-                        gateway.stop();
-                    }
-                    return;
+            }, "betterloka-watch");
+            watchThread.setDaemon(true);
+            watchThread.start();
+        } else {
+            LOG.info("Fallen-town alerts are off: {} (in {})", problem, CONFIG_NAME);
+        }
+        return new Embedded(config, transport, gateway, watchThread);
+    }
+
+    /** Checks Loka for fallen towns until interrupted, or once. */
+    private static void watch(FallenTownWatcher watcher, BotState state, DiscordPoster poster,
+                              BotConfig config, boolean once) throws InterruptedException {
+        LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
+                        + "{} territory record(s) already announced",
+                config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
+        if (state.isFirstRun() && !config.announceBacklogOnFirstRun) {
+            LOG.info("First run: the towns that have already fallen will be recorded quietly, "
+                    + "and only new ones announced from here.");
+        }
+        while (true) {
+            try {
+                FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
+                        config.fullSweepIntervalMillis());
+                if (result.sweptFully()) {
+                    LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
+                            result.deletedCount(), result.announce().size());
                 }
-                TimeUnit.SECONDS.sleep(config.intervalSeconds());
+                announce(result.announce(), poster, config);
+            } catch (ApiException e) {
+                LOG.warn("Could not check Loka: {}", e.getMessage());
+            } catch (RuntimeException e) {
+                LOG.warn("Check failed", e);
             }
+            if (once) {
+                return;
+            }
+            TimeUnit.SECONDS.sleep(config.intervalSeconds());
         }
     }
 
@@ -199,8 +317,10 @@ public final class BetterLokaBot {
      *
      * @return the connection, or {@code null} if commands are not being served
      */
-    private static DiscordGateway startCommands(BotConfig config, LokaApi api, HttpTransport transport) {
-        if (!config.servesCommands()) {
+    private static DiscordGateway startCommands(BotConfig config, LokaApi api, HttpTransport transport,
+                                                Predicate<JsonObject> extra) {
+        boolean commandsOn = config.servesCommands();
+        if (!commandsOn && (extra == null || config.botToken.isBlank())) {
             if (config.enableCommands) {
                 LOG.info("/sprawdz is off: it needs botToken (a webhook can only post, not listen). "
                         + "The fallen-town watch does not need one.");
@@ -209,27 +329,36 @@ public final class BetterLokaBot {
         }
 
         SlashCommands commands = new SlashCommands(config.botToken);
-        if (config.maxMembersChecked <= 0) {
-            LOG.warn("maxMembersChecked is 0, so /sprawdz will check every member of a town. "
-                    + "Loka's largest has over 1200, which is a long report and a lot of traffic.");
+        TownCheckCommand check = null;
+        if (commandsOn) {
+            if (config.maxMembersChecked <= 0) {
+                LOG.warn("maxMembersChecked is 0, so /sprawdz will check every member of a town. "
+                        + "Loka's largest has over 1200, which is a long report and a lot of traffic.");
+            }
+            check = new TownCheckCommand(
+                    new TownReport(api, new EldritchApi(transport), config.maxMembersChecked), commands);
         }
-        TownCheckCommand check = new TownCheckCommand(
-                new TownReport(api, new EldritchApi(transport), config.maxMembersChecked), commands);
+        TownCheckCommand townCheck = check;
 
         // The application ID arrives with READY, so registration waits for the connection rather
         // than guessing it: it is not the same number as the bot token's prefix on every account.
         DiscordGateway gateway = new DiscordGateway(config.botToken, interaction -> {
+            if (extra != null && extra.test(interaction)) {
+                return;
+            }
             String applicationId = interactionApplicationId(interaction);
-            if (applicationId != null) {
-                check.handle(interaction, applicationId);
+            if (townCheck != null && applicationId != null) {
+                townCheck.handle(interaction, applicationId);
             }
         });
         gateway.start();
 
-        Thread registrar = new Thread(() -> registerWhenReady(gateway, commands, config),
-                "betterloka-register");
-        registrar.setDaemon(true);
-        registrar.start();
+        if (commandsOn) {
+            Thread registrar = new Thread(() -> registerWhenReady(gateway, commands, config),
+                    "betterloka-register");
+            registrar.setDaemon(true);
+            registrar.start();
+        }
         return gateway;
     }
 

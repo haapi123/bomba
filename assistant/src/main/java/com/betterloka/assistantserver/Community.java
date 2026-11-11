@@ -56,10 +56,47 @@ final class Community {
         Map<String, Proposal> proposals = new LinkedHashMap<>();
     }
 
+    /** An open question as it was at one moment, safe to hand to another thread. */
+    record OpenView(String id, String question, String kind, String botAnswer, int count) {
+    }
+
+    /** A proposal as it was at one moment. */
+    record ProposalView(String id, String openId, String question, String answer, String byName,
+                        String status, String reviewedBy) {
+        boolean pending() {
+            return "pending".equals(status);
+        }
+    }
+
+    /**
+     * Told about every change, from the game or from Discord, so both show the same thing. Called
+     * while the change is being made: an implementation only queues work, it never waits.
+     */
+    interface Listener {
+        /** A new open question, or one asked again or newly marked wrong. */
+        default void opened(OpenView open, boolean isNew) {
+        }
+
+        default void proposed(ProposalView proposal) {
+        }
+
+        /** Approved or rejected, including the ones closed because another answer was approved. */
+        default void decided(ProposalView proposal) {
+        }
+
+        /** An open question went away: {@code answered}, {@code dismissed} or {@code expired}. */
+        default void closed(String openId, String question, String reason, String by) {
+        }
+    }
+
+    private static final Listener NOBODY = new Listener() {
+    };
+
     private final Path file;
     private final Path communityFile;
     private final Clock clock;
     private final State state;
+    private volatile Listener listener = NOBODY;
 
     Community(Path file, Path communityFile, Clock clock) {
         this.file = file;
@@ -75,6 +112,29 @@ final class Community {
         this.state = loaded;
     }
 
+    /** What was already there when a listener started: it hears about everything after. */
+    record Backlog(List<OpenView> open, List<ProposalView> pending) {
+    }
+
+    /**
+     * Starts telling {@code listener} about changes and returns what is already waiting, in one
+     * step, so nothing falls between the two and nothing is reported twice.
+     */
+    synchronized Backlog listen(Listener listener, int limit) {
+        this.listener = listener == null ? NOBODY : listener;
+        List<ProposalView> pending = pendingViews();
+        return new Backlog(openViews(limit), pending.subList(0, Math.min(limit, pending.size())));
+    }
+
+    static OpenView view(OpenQuestion open) {
+        return new OpenView(open.id, open.question, open.kind, open.botAnswer, open.count);
+    }
+
+    static ProposalView view(Proposal proposal) {
+        return new ProposalView(proposal.id, proposal.openId, proposal.question, proposal.answer, proposal.byName,
+                proposal.status, proposal.reviewedBy);
+    }
+
     /** Notes a question the assistant could not answer; the same question asked again counts up. */
     synchronized OpenQuestion noteOpen(String question, String kind, String botAnswer) {
         String key = normalize(question);
@@ -88,6 +148,7 @@ final class Community {
                     open.botAnswer = botAnswer;
                 }
                 save();
+                listener.opened(view(open), false);
                 return open;
             }
         }
@@ -100,13 +161,22 @@ final class Community {
         open.firstAsked = now;
         open.lastAsked = now;
         state.open.put(open.id, open);
+        OpenQuestion forgotten = null;
         if (state.open.size() > MAX_OPEN) {
             // Forget the least asked, oldest ones first.
-            state.open.values().stream()
+            forgotten = state.open.values().stream()
+                    .filter(q -> q != open)
                     .min(Comparator.comparingInt((OpenQuestion q) -> q.count).thenComparingLong(q -> q.lastAsked))
-                    .ifPresent(oldest -> state.open.remove(oldest.id));
+                    .orElse(null);
+            if (forgotten != null) {
+                state.open.remove(forgotten.id);
+            }
         }
         save();
+        if (forgotten != null) {
+            listener.closed(forgotten.id, forgotten.question, "expired", null);
+        }
+        listener.opened(view(open), true);
         return open;
     }
 
@@ -118,16 +188,39 @@ final class Community {
                 .toList();
     }
 
+    /** The most asked open questions, as views. */
+    synchronized List<OpenView> openViews(int limit) {
+        return open(limit).stream().map(Community::view).toList();
+    }
+
     synchronized Optional<OpenQuestion> openQuestion(String id) {
         return Optional.ofNullable(state.open.get(id));
     }
 
+    synchronized Optional<OpenView> openView(String id) {
+        return Optional.ofNullable(state.open.get(id)).map(Community::view);
+    }
+
+    synchronized Optional<ProposalView> proposal(String id) {
+        return Optional.ofNullable(state.proposals.get(id)).map(Community::view);
+    }
+
+    synchronized List<ProposalView> pendingViews() {
+        return pending().stream().map(Community::view).toList();
+    }
+
     synchronized boolean dismiss(String openId) {
-        boolean removed = state.open.remove(openId) != null;
-        if (removed) {
-            save();
+        return dismiss(openId, null);
+    }
+
+    synchronized boolean dismiss(String openId, String by) {
+        OpenQuestion removed = openId == null ? null : state.open.remove(openId);
+        if (removed == null) {
+            return false;
         }
-        return removed;
+        save();
+        listener.closed(removed.id, removed.question, "dismissed", by);
+        return true;
     }
 
     synchronized Proposal propose(String openId, String question, String answer, String byUuid, String byName) {
@@ -142,6 +235,7 @@ final class Community {
         proposal.status = "pending";
         state.proposals.put(proposal.id, proposal);
         save();
+        listener.proposed(view(proposal));
         return proposal;
     }
 
@@ -166,18 +260,28 @@ final class Community {
         }
         proposal.status = approve ? "approved" : "rejected";
         proposal.reviewedBy = admin;
+        List<Proposal> moot = new ArrayList<>();
+        OpenQuestion answered = null;
         if (approve) {
             appendToKnowledge(proposal);
             if (proposal.openId != null) {
-                state.open.remove(proposal.openId);
+                answered = state.open.remove(proposal.openId);
             }
             // Other proposals for the same question are now moot.
             for (Proposal other : state.proposals.values()) {
                 if ("pending".equals(other.status) && proposal.openId != null && proposal.openId.equals(other.openId)) {
                     other.status = "rejected";
                     other.reviewedBy = admin + " (answered)";
+                    moot.add(other);
                 }
             }
+        }
+        listener.decided(view(proposal));
+        for (Proposal other : moot) {
+            listener.decided(view(other));
+        }
+        if (answered != null) {
+            listener.closed(answered.id, answered.question, "answered", admin);
         }
         // Keep only recent decisions; pending ones always stay.
         List<Proposal> decided = new ArrayList<>(state.proposals.values().stream()
