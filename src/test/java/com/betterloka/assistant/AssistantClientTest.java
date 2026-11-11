@@ -82,18 +82,12 @@ class AssistantClientTest {
     }
 
     @Test
-    void theBuiltInServerIsUsedUntilThePlayerEntersTheirOwn() {
-        String builtIn = "assistant.example.com:25570";
-        assertEquals("http://assistant.example.com:25570", AssistantClient.effectiveServer("", builtIn));
-        assertEquals("http://assistant.example.com:25570", AssistantClient.effectiveServer(null, builtIn));
-        assertEquals("http://1.2.3.4:8787", AssistantClient.effectiveServer("1.2.3.4:8787", builtIn));
-        assertEquals("", AssistantClient.effectiveServer("", ""), "no built-in server: the screen asks for one");
-
-        // Entering the built-in address, or nothing, saves nothing: a later version can move it.
-        assertEquals("", AssistantClient.serverToStore("http://assistant.example.com:25570/", builtIn));
-        assertEquals("", AssistantClient.serverToStore("  ", builtIn));
-        assertEquals("http://1.2.3.4:8787", AssistantClient.serverToStore("1.2.3.4:8787", builtIn));
-        assertEquals("http://1.2.3.4:8787", AssistantClient.serverToStore("1.2.3.4:8787", ""));
+    void everyCopyTalksToTheBetterLokaServerAndOnlyATestRunCanPointElsewhere() {
+        assertEquals("http://ent-8.icehost.pl:40076", AssistantClient.server(java.util.Map.of()));
+        assertEquals(AssistantClient.SERVER, AssistantClient.server(java.util.Map.of("BETTERLOKA_ASSISTANT", "127.0.0.1:8787")),
+                "an address alone changes nothing");
+        assertEquals("http://127.0.0.1:8787", AssistantClient.server(
+                java.util.Map.of("BETTERLOKA_DIAG", "v43", "BETTERLOKA_ASSISTANT", "127.0.0.1:8787")));
     }
 
     @Test

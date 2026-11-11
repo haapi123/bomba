@@ -318,7 +318,7 @@ public class BetterLokaClient implements ClientModInitializer {
     public static synchronized AssistantClient assistant() {
         if (assistant == null) {
             assistant = new AssistantClient(
-                    () -> config.assistantServer(),
+                    () -> AssistantClient.server(System.getenv()),
                     () -> Minecraft.getInstance().getUser().getName(),
                     serverId -> {
                         Minecraft client = Minecraft.getInstance();

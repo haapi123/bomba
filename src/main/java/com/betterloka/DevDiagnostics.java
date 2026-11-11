@@ -1149,14 +1149,12 @@ public final class DevDiagnostics {
             client().options.guiScale().set(2);
             client().resizeGui();
             client().gui.toastManager().clear();
-            BetterLokaClient.config().setAssistantServer("");
             BetterLokaClient.config().setAssistantNoticeAccepted(false);
         });
         step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
         shot(10, "v43-menu");
+        step(2, () -> BetterLoka.LOGGER.info("DIAG v43 assistant server {}", com.betterloka.assistant.AssistantClient.server(System.getenv())));
         step(2, () -> client().gui.setScreen(new com.betterloka.gui.AssistantScreen(null)));
-        shot(10, "v43-server");
-        step(2, () -> com.betterloka.gui.AssistantScreen.devServer(String.valueOf(System.getenv().getOrDefault("BETTERLOKA_ASSISTANT", "127.0.0.1:8787"))));
         shot(10, "v43-notice");
         step(2, com.betterloka.gui.AssistantScreen::devAccept);
         step(60, () -> BetterLoka.LOGGER.info("DIAG v43 logged in as {} (admin {}, left {})",

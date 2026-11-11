@@ -31,8 +31,9 @@ be spent by strangers.
    ```
    java -jar betterloka-assistant-<wersja>.jar
    ```
-7. W grze: BetterLoka → **Loka Assistant** → wpisz adres serwera, np. `127.0.0.1:8787` (ten sam
-   komputer) albo `IP-VPS:8787`.
+7. Mod od wersji 0.45.0 łączy się zawsze z serwerem BetterLoka (`ent-8.icehost.pl:40076`, zapisany
+   w `AssistantClient.SERVER`); gracze nie wpisują adresu. Własny serwer pod innym adresem wymaga
+   zmiany tej stałej i zbudowania moda.
 
 Bez klucza da się obejrzeć ekran w grze: `java -jar ... serve --demo` odpowiada linijkami z bazy
 wiedzy, bez Claude i za darmo.

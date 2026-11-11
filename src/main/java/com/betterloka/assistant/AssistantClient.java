@@ -34,11 +34,23 @@ import java.util.function.Supplier;
  * <p>Plain Java; the game is reached only through the {@link Joiner} and the two suppliers.
  */
 public final class AssistantClient {
+    /** The BetterLoka assistant server every copy of the mod talks to. Not a setting: players cannot change it. */
+    public static final String SERVER = "http://ent-8.icehost.pl:40076";
+
     /**
-     * The assistant server every copy of the mod talks to unless the player enters another one.
-     * Empty: there is none, and the assistant asks the player for an address.
+     * Where to connect: always {@link #SERVER}. The one exception is the developer's own test run
+     * ({@code BETTERLOKA_DIAG=v43}), which points it at a local demo server named in
+     * {@code BETTERLOKA_ASSISTANT}, so the screens can be checked without the real server.
      */
-    public static final String DEFAULT_SERVER = "";
+    public static String server(java.util.Map<String, String> environment) {
+        if ("v43".equals(environment.get("BETTERLOKA_DIAG"))) {
+            String local = environment.get("BETTERLOKA_ASSISTANT");
+            if (local != null && !local.isBlank()) {
+                return normalize(local);
+            }
+        }
+        return SERVER;
+    }
 
     /** Tells Mojang the player is joining {@code serverId}. */
     @FunctionalInterface
@@ -121,21 +133,6 @@ public final class AssistantClient {
 
     public String loggedInAs() {
         return loggedInAs;
-    }
-
-    /** The server to use: the player's own address, or the built-in one when they have none. */
-    public static String effectiveServer(String stored, String builtIn) {
-        String own = normalize(stored);
-        return own.isEmpty() ? normalize(builtIn) : own;
-    }
-
-    /**
-     * What to save for an address the player entered: nothing when it is empty or the built-in one,
-     * so a later version of the mod can move the built-in server without leaving them behind.
-     */
-    public static String serverToStore(String entered, String builtIn) {
-        String own = normalize(entered);
-        return own.equals(normalize(builtIn)) ? "" : own;
     }
 
     /** {@code play.example.com:8787} becomes {@code http://play.example.com:8787}; no trailing slash. */

@@ -31,11 +31,15 @@ import java.util.concurrent.CompletionException;
  * <b>Review</b>, for the assistant's admins only, approves those answers, and only then does the
  * assistant learn them.
  *
- * <p>Questions go to the assistant server set in the screen, never to Loka's server, and only when
- * the player asks; before the first one the screen says so and waits for the player to agree.
+ * <p>Questions go to the BetterLoka assistant server ({@link AssistantClient#SERVER}, not a setting),
+ * never to Loka's server, and only when the player asks; before the first one the screen says so and
+ * waits for the player to agree. Under the chat a red line says the assistant can be wrong, and that
+ * punishments are a question for Loka's staff, not for it.
  */
 public class AssistantScreen extends Screen {
     private static final int MAX_WIDTH = 480;
+    /** Minecraft's own red (§c): the disclaimer has to read as a warning, not as a hint. */
+    private static final int DISCLAIMER_RED = 0xFFFF5555;
     private static final int TOP = 22;
     private static final int TAB_HEIGHT = 16;
     private static final int LINE = 10;
@@ -85,10 +89,8 @@ public class AssistantScreen extends Screen {
     private int activeTabX;
     private int activeTabWidth;
     private EditBox input;
-    private EditBox serverField;
     private EditBox helpQuestion;
     private MultiLineEditBox helpAnswer;
-    private boolean editingServer;
     private boolean connecting;
     private String connectError;
     private boolean stickToEnd = true;
@@ -123,16 +125,19 @@ public class AssistantScreen extends Screen {
         return this.height - 24;
     }
 
+    /** The input sits above the red disclaimer, however many lines it wraps to at this width. */
     private int inputY() {
-        return backY() - 36;
+        return backY() - 24 - disclaimerLines().size() * 10;
+    }
+
+    /** "The assistant can be wrong; ask staff about bans", wrapped to the chat's width, at most three lines. */
+    private List<FormattedCharSequence> disclaimerLines() {
+        List<FormattedCharSequence> lines = this.font.split(Component.translatable("betterloka.assistant.disclaimer"), contentWidth());
+        return lines.size() > 3 ? lines.subList(0, 3) : lines;
     }
 
     private int listTop() {
         return TOP + TAB_HEIGHT + GAP;
-    }
-
-    private boolean needsServer() {
-        return editingServer || BetterLokaClient.config().assistantServer().isBlank();
     }
 
     private boolean needsNotice() {
@@ -140,7 +145,7 @@ public class AssistantScreen extends Screen {
     }
 
     private boolean ready() {
-        return !needsServer() && !needsNotice();
+        return !needsNotice();
     }
 
     @Override
@@ -157,11 +162,8 @@ public class AssistantScreen extends Screen {
         input = null;
         helpQuestion = null;
         helpAnswer = null;
-        serverField = null;
 
-        if (needsServer()) {
-            initServerPanel();
-        } else if (needsNotice()) {
+        if (needsNotice()) {
             int panelY = this.height / 2 + 30;
             addRenderableWidget(Button.builder(Component.translatable("betterloka.assistant.accept")
                             .withStyle(ChatFormatting.GREEN), button -> {
@@ -178,11 +180,6 @@ public class AssistantScreen extends Screen {
                 case REVIEW -> initReview(left, width);
             }
             scroll.setViewport(left, listTop(), width, listBottom() - listTop());
-            addRenderableWidget(Button.builder(Component.translatable("betterloka.assistant.server"), button -> {
-                        editingServer = true;
-                        rebuildWidgets();
-                    })
-                    .bounds(left, backY(), 70, 20).build());
         }
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
                 .bounds(this.width / 2 - 50, backY(), 100, 20).build());
@@ -203,49 +200,6 @@ public class AssistantScreen extends Screen {
     /** The composer under the open questions: two labels, the question, the answer and its counter. */
     private int helpComposerTop() {
         return backY() - 4 - (LINE + 18 + 2 + LINE + HELP_ANSWER_HEIGHT + LINE);
-    }
-
-    private void initServerPanel() {
-        int panelWidth = Math.min(320, this.width - 40);
-        int x = (this.width - panelWidth) / 2;
-        int y = this.height / 2 - 6;
-        serverField = new EditBox(this.font, x, y, panelWidth, 18, Component.translatable("betterloka.assistant.server_title"));
-        serverField.setMaxLength(200);
-        serverField.setHint(Component.translatable("betterloka.assistant.server_hint").withStyle(ChatFormatting.DARK_GRAY));
-        serverField.setValue(BetterLokaClient.config().assistantServer());
-        addRenderableWidget(serverField);
-        setInitialFocus(serverField);
-        boolean canCancel = !BetterLokaClient.config().assistantServer().isBlank();
-        int buttonWidth = canCancel ? (panelWidth - 4) / 2 : panelWidth;
-        addRenderableWidget(Button.builder(Component.translatable("betterloka.assistant.save"), button -> saveServer())
-                .bounds(x, y + 24, buttonWidth, 20).build());
-        if (canCancel) {
-            addRenderableWidget(Button.builder(Component.translatable("betterloka.assistant.cancel"), button -> {
-                        editingServer = false;
-                        rebuildWidgets();
-                    })
-                    .bounds(x + buttonWidth + 4, y + 24, buttonWidth, 20).build());
-        }
-    }
-
-    private void saveServer() {
-        String address = AssistantClient.normalize(serverField.getValue());
-        if (address.isEmpty() && AssistantClient.DEFAULT_SERVER.isBlank()) {
-            return;
-        }
-        String before = BetterLokaClient.config().assistantServer();
-        BetterLokaClient.config().setAssistantServer(address);
-        if (!BetterLokaClient.config().assistantServer().equals(before)) {
-            client.logout();
-            open = List.of();
-            pending = List.of();
-        }
-        editingServer = false;
-        connectError = null;
-        rebuildWidgets();
-        if (ready()) {
-            connect();
-        }
     }
 
     private void initTabs(int left, int width) {
@@ -556,10 +510,6 @@ public class AssistantScreen extends Screen {
                 ask();
                 return true;
             }
-            if (serverField != null && serverField.isFocused()) {
-                saveServer();
-                return true;
-            }
         }
         return super.keyPressed(event);
     }
@@ -610,9 +560,7 @@ public class AssistantScreen extends Screen {
         super.extractRenderState(context, mouseX, mouseY, delta);
         context.centeredText(this.font, this.title, this.width / 2, 8, GuiTheme.TEXT);
         hits.clear();
-        if (needsServer()) {
-            drawServerPanel(context);
-        } else if (needsNotice()) {
+        if (needsNotice()) {
             drawNotice(context);
         } else {
             drawStatus(context);
@@ -638,11 +586,10 @@ public class AssistantScreen extends Screen {
                 context.text(this.font, Component.translatable("betterloka.assistant.your_answer"), left, y + LINE + 18 + 2, GuiTheme.MUTED);
             }
             if (tab == Tab.ASK) {
-                int footerY = inputY() + 24;
-                Component privacy = Component.translatable("betterloka.assistant.privacy");
-                List<FormattedCharSequence> lines = this.font.split(privacy, contentWidth());
-                if (!lines.isEmpty() && footerY + 9 < backY()) {
-                    context.centeredText(this.font, lines.get(0), this.width / 2, footerY, 0xFF6A6A78);
+                int footerY = inputY() + 23;
+                for (FormattedCharSequence line : disclaimerLines()) {
+                    context.centeredText(this.font, line, this.width / 2, footerY, DISCLAIMER_RED);
+                    footerY += 10;
                 }
             }
         }
@@ -665,12 +612,7 @@ public class AssistantScreen extends Screen {
             int left = left();
             context.fill(left - 4, listTop() - 3, left + contentWidth() + 4, listBottom() + 3, 0x70000000);
         }
-        if (needsServer()) {
-            int panelWidth = Math.min(320, this.width - 40);
-            int x = (this.width - panelWidth) / 2;
-            int y = this.height / 2 - 6;
-            GuiTheme.panel(context, x - 10, y - 58, panelWidth + 20, 112);
-        } else if (needsNotice()) {
+        if (needsNotice()) {
             int panelWidth = Math.min(340, this.width - 40);
             int x = (this.width - panelWidth) / 2;
             int textHeight = this.font.split(Component.translatable("betterloka.assistant.notice"), panelWidth).size() * LINE;
@@ -698,22 +640,6 @@ public class AssistantScreen extends Screen {
         int right = left() + contentWidth();
         int x = Math.max(this.width / 2 + this.font.width(this.title) / 2 + 8, right - this.font.width(status));
         context.text(this.font, status, x, 8, color);
-    }
-
-    private void drawServerPanel(GuiGraphicsExtractor context) {
-        int panelWidth = Math.min(320, this.width - 40);
-        int x = (this.width - panelWidth) / 2;
-        int y = this.height / 2 - 6;
-        context.text(this.font, Component.translatable("betterloka.assistant.server_title").withStyle(ChatFormatting.BOLD),
-                x, y - 50, GuiTheme.ACCENT);
-        int textY = y - 36;
-        Component help = AssistantClient.DEFAULT_SERVER.isBlank()
-                ? Component.translatable("betterloka.assistant.server_help")
-                : Component.translatable("betterloka.assistant.server_help_default");
-        for (FormattedCharSequence line : this.font.split(help, panelWidth)) {
-            context.text(this.font, line, x, textY, GuiTheme.MUTED);
-            textY += LINE;
-        }
     }
 
     private void drawNotice(GuiGraphicsExtractor context) {
@@ -1020,13 +946,6 @@ public class AssistantScreen extends Screen {
     }
 
     // ---- for the dev diagnostics run ----
-
-    public static void devServer(String address) {
-        if (devInstance != null && devInstance.serverField != null) {
-            devInstance.serverField.setValue(address);
-            devInstance.saveServer();
-        }
-    }
 
     public static void devAccept() {
         if (devInstance != null) {

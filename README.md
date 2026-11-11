@@ -667,6 +667,9 @@ Ask anything about Loka — towns, conquest, bosses, the market, places, events 
 by Anthropic) answers in your language from what Loka has published and what players have taught it.
 Each answer can be marked **✔ Good** or **✘ Wrong**.
 
+A red line under the chat says what the assistant is not: it can be wrong, and for bans, mutes and
+other punishments players should ask Loka's staff in a ticket on Discord rather than rely on it.
+
 ![Help it learn](docs/assistant-help.png)
 
 **Help it learn** lists what the assistant could not answer, and answers players marked wrong, most
@@ -678,7 +681,8 @@ the next question on. Nothing a player writes is learned on its own.
 
 The answering happens on a **separate server** ([`assistant/`](assistant/README.md)), which holds the
 Claude API key, the knowledge base, the budget and the per-player limits. The key is never in the mod,
-where anyone could take it. The server's address is set once in the screen.
+where anyone could take it. Every copy of the mod talks to the BetterLoka assistant server
+(`ent-8.icehost.pl:40076`); it is built in, not a setting, so there is nothing to enter.
 
 What is sent, and when: nothing until you open Loka Assistant and agree to the note it shows first.
 From then on, opening it logs you in (your name, checked with Mojang as below), and asking, rating or
