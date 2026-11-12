@@ -26,10 +26,9 @@ import java.util.concurrent.CompletionException;
  * Loka Assistant: ask anything about Loka and an AI answers from what Loka has published and what
  * players taught it.
  *
- * <p>Three tabs. <b>Ask</b> is a chat; each answer can be marked good or wrong. <b>Help it learn</b>
+ * <p>Two tabs. <b>Ask</b> is a chat; each answer can be marked good or wrong. <b>Help it learn</b>
  * lists what the assistant could not answer (or answered wrong) so players can write the answer.
- * <b>Review</b>, for the assistant's admins only, approves those answers, and only then does the
- * assistant learn them.
+ * The team approves those answers on Discord, and only then does the assistant learn them.
  *
  * <p>Questions go to the BetterLoka assistant server ({@link AssistantClient#SERVER}, not a setting),
  * never to Loka's server, and only when the player asks; before the first one the screen says so and
@@ -50,7 +49,7 @@ public class AssistantScreen extends Screen {
     private static final long TOAST_MILLIS = 4500;
     private static final int HELP_ANSWER_HEIGHT = 44;
 
-    private enum Tab { ASK, HELP, REVIEW }
+    private enum Tab { ASK, HELP }
 
     /** One question and what came back. */
     private static final class Entry {
@@ -100,9 +99,6 @@ public class AssistantScreen extends Screen {
     private String openError;
     private String selectedOpenId;
 
-    private List<AssistantClient.Proposal> pending = List.of();
-    private boolean pendingLoading;
-    private String pendingError;
 
     private Component toast;
     private boolean toastGood;
@@ -177,7 +173,6 @@ public class AssistantScreen extends Screen {
             switch (tab) {
                 case ASK -> initAsk(left, width);
                 case HELP -> initHelp(left, width);
-                case REVIEW -> initReview(left, width);
             }
             scroll.setViewport(left, listTop(), width, listBottom() - listTop());
         }
@@ -193,7 +188,6 @@ public class AssistantScreen extends Screen {
         return switch (tab) {
             case ASK -> inputY() - GAP;
             case HELP -> helpComposerTop() - GAP;
-            case REVIEW -> backY() - GAP;
         };
     }
 
@@ -203,19 +197,13 @@ public class AssistantScreen extends Screen {
     }
 
     private void initTabs(int left, int width) {
-        List<Tab> tabs = new ArrayList<>(List.of(Tab.ASK, Tab.HELP));
-        if (client.admin()) {
-            tabs.add(Tab.REVIEW);
-        } else if (tab == Tab.REVIEW) {
-            tab = Tab.ASK;
-        }
+        List<Tab> tabs = List.of(Tab.ASK, Tab.HELP);
         int tabWidth = Math.min(150, (width - (tabs.size() - 1) * 4) / tabs.size());
         int x = left;
         for (Tab each : tabs) {
             Component label = switch (each) {
                 case ASK -> Component.translatable("betterloka.assistant.tab.ask");
                 case HELP -> Component.translatable("betterloka.assistant.tab.help", open.size());
-                case REVIEW -> Component.translatable("betterloka.assistant.tab.review", pending.size());
             };
             Button button = Button.builder(label, b -> switchTab(each)).bounds(x, TOP, tabWidth, TAB_HEIGHT).build();
             button.active = tab != each;
@@ -235,8 +223,6 @@ public class AssistantScreen extends Screen {
         rebuildWidgets();
         if (next == Tab.HELP) {
             loadOpen();
-        } else if (next == Tab.REVIEW) {
-            loadPending();
         }
     }
 
@@ -286,11 +272,6 @@ public class AssistantScreen extends Screen {
                 .bounds(left + width - buttonWidth, y + 24, buttonWidth, 20).build());
     }
 
-    private void initReview(int left, int width) {
-        addRenderableWidget(Button.builder(Component.translatable("betterloka.assistant.refresh"), button -> loadPending())
-                .bounds(left + width - 70, backY(), 70, 20).build());
-    }
-
     // ---- talking to the server ----
 
     private void connect() {
@@ -304,9 +285,6 @@ public class AssistantScreen extends Screen {
             }
             rebuildWidgets();
             loadOpen();
-            if (client.admin()) {
-                loadPending();
-            }
         }));
     }
 
@@ -388,21 +366,6 @@ public class AssistantScreen extends Screen {
         }));
     }
 
-    private void loadPending() {
-        if (!ready() || !client.admin()) {
-            return;
-        }
-        pendingLoading = true;
-        client.pending().whenComplete((list, error) -> onGame(() -> {
-            pendingLoading = false;
-            pendingError = error != null ? code(error) : null;
-            if (list != null) {
-                pending = list;
-            }
-            refreshTabLabels();
-        }));
-    }
-
     private void refreshTabLabels() {
         if (this.minecraft != null && this.minecraft.gui.screen() == this && ready()) {
             rebuildWidgets();
@@ -433,32 +396,6 @@ public class AssistantScreen extends Screen {
                 helpQuestion.setValue("");
             }
             showToast(Component.translatable("betterloka.assistant.submitted"), true);
-            if (client.admin()) {
-                loadPending();
-            }
-        }));
-    }
-
-    private void review(AssistantClient.Proposal proposal, boolean approve) {
-        client.review(proposal.id(), approve).whenComplete((ignored, error) -> onGame(() -> {
-            if (error != null) {
-                showToast(errorText(code(error)), false);
-                return;
-            }
-            pending = pending.stream().filter(p -> !p.id().equals(proposal.id())).toList();
-            showToast(Component.translatable(approve ? "betterloka.assistant.approved" : "betterloka.assistant.rejected"), approve);
-            loadOpen();
-        }));
-    }
-
-    private void dismiss(AssistantClient.OpenQuestion question) {
-        client.dismiss(question.id()).whenComplete((ignored, error) -> onGame(() -> {
-            if (error != null) {
-                showToast(errorText(code(error)), false);
-                return;
-            }
-            open = open.stream().filter(q -> !q.id().equals(question.id())).toList();
-            refreshTabLabels();
         }));
     }
 
@@ -572,7 +509,6 @@ public class AssistantScreen extends Screen {
             int height = switch (tab) {
                 case ASK -> drawConversation(context, mouseX, mouseY);
                 case HELP -> drawOpen(context, mouseX, mouseY);
-                case REVIEW -> drawPending(context, mouseX, mouseY);
             };
             context.disableScissor();
             scroll.setContentHeight(height);
@@ -841,9 +777,7 @@ public class AssistantScreen extends Screen {
         }
         for (AssistantClient.OpenQuestion question : open) {
             boolean selected = question.id().equals(selectedOpenId);
-            Component dismiss = Component.translatable("betterloka.assistant.dismiss");
-            int dismissWidth = client.admin() ? this.font.width(dismiss) + 8 : 0;
-            int textWidth = width - 2 * PAD - (dismissWidth > 0 ? dismissWidth + 6 : 0);
+            int textWidth = width - 2 * PAD;
             List<FormattedCharSequence> lines = this.font.split(Component.literal(question.question()), textWidth);
             Component meta = Component.translatable("betterloka.assistant.asked_times", question.count())
                     .append(" · ")
@@ -873,59 +807,7 @@ public class AssistantScreen extends Screen {
                 context.text(this.font, line, left + PAD, lineY, GuiTheme.MUTED);
                 lineY += LINE;
             }
-            if (dismissWidth > 0) {
-                int chipX = left + width - PAD - dismissWidth;
-                boolean chipHover = mouseX >= chipX && mouseX < chipX + dismissWidth && mouseY >= y + PAD && mouseY < y + PAD + 12;
-                GuiTheme.chip(context, chipX, y + PAD, dismissWidth, 12, chipHover ? GuiTheme.BAD : 0xFF4A4A5A);
-                context.text(this.font, dismiss, chipX + 4, y + PAD + 2, chipHover ? GuiTheme.BAD : GuiTheme.MUTED);
-                hits.add(new Hit(chipX, y + PAD, dismissWidth, 12, () -> dismiss(question)));
-            }
             hits.add(new Hit(left, y, width, rowHeight, () -> select(question)));
-            y += rowHeight + 4;
-        }
-        return y - top;
-    }
-
-    private int drawPending(GuiGraphicsExtractor context, int mouseX, int mouseY) {
-        int left = left();
-        int width = scroll.contentWidth();
-        int top = scroll.contentTop();
-        int y = top;
-        for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.assistant.review_intro"), width)) {
-            context.text(this.font, line, left, y, GuiTheme.MUTED);
-            y += LINE;
-        }
-        y += 6;
-        if (pending.isEmpty()) {
-            Component message = pendingLoading ? Component.translatable("betterloka.assistant.loading")
-                    : pendingError != null ? errorText(pendingError) : Component.translatable("betterloka.assistant.review_empty");
-            context.text(this.font, message, left, y, pendingError != null ? GuiTheme.BAD : GuiTheme.MUTED);
-            return y + LINE - top;
-        }
-        for (AssistantClient.Proposal proposal : pending) {
-            int textWidth = width - 2 * PAD;
-            List<FormattedCharSequence> question = this.font.split(Component.literal(proposal.question()).withStyle(ChatFormatting.BOLD), textWidth);
-            List<FormattedCharSequence> answer = formatted(proposal.answer(), textWidth);
-            int rowHeight = 2 * PAD + (question.size() + answer.size()) * LINE + 4 + 14 - 1;
-            GuiTheme.panel(context, left, y, width, rowHeight);
-            int lineY = y + PAD;
-            for (FormattedCharSequence line : question) {
-                context.text(this.font, line, left + PAD, lineY, GuiTheme.ACCENT);
-                lineY += LINE;
-            }
-            for (FormattedCharSequence line : answer) {
-                context.text(this.font, line, left + PAD, lineY, GuiTheme.TEXT);
-                lineY += LINE;
-            }
-            lineY += 4;
-            String ago = proposal.time() > 0 ? TimeFormat.ago(proposal.time()) : "";
-            context.text(this.font, Component.translatable("betterloka.assistant.by", proposal.by(), ago), left + PAD, lineY + 2, GuiTheme.MUTED);
-            Component approve = Component.translatable("betterloka.assistant.approve");
-            Component reject = Component.translatable("betterloka.assistant.reject");
-            int rejectX = left + width - PAD - this.font.width(reject) - 8;
-            int approveX = rejectX - 4 - this.font.width(approve) - 8;
-            rateChip(context, approve, approveX, lineY, GuiTheme.GOOD, mouseX, mouseY, () -> review(proposal, true));
-            rateChip(context, reject, rejectX, lineY, GuiTheme.BAD, mouseX, mouseY, () -> review(proposal, false));
             y += rowHeight + 4;
         }
         return y - top;
@@ -989,12 +871,6 @@ public class AssistantScreen extends Screen {
     public static void devPropose() {
         if (devInstance != null) {
             devInstance.propose();
-        }
-    }
-
-    public static void devReview(boolean approve) {
-        if (devInstance != null && !devInstance.pending.isEmpty()) {
-            devInstance.review(devInstance.pending.get(0), approve);
         }
     }
 }

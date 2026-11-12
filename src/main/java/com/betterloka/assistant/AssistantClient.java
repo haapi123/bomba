@@ -73,9 +73,6 @@ public final class AssistantClient {
         }
     }
 
-    public record Proposal(String id, String question, String answer, String by, long time) {
-    }
-
     public record Status(boolean ready, int maxQuestionChars, int maxProposalChars) {
     }
 
@@ -222,38 +219,6 @@ public final class AssistantClient {
             request.addProperty("question", question);
             request.addProperty("answer", answer);
             return text(authed("POST", "/v1/propose", request, 15), "id");
-        });
-    }
-
-    public CompletableFuture<List<Proposal>> pending() {
-        return call(() -> {
-            JsonObject body = authed("POST", "/v1/admin/pending", new JsonObject(), 15);
-            List<Proposal> list = new ArrayList<>();
-            for (JsonElement element : array(body, "proposals")) {
-                JsonObject item = element.getAsJsonObject();
-                list.add(new Proposal(text(item, "id"), text(item, "question"), text(item, "answer"), text(item, "by"),
-                        item.has("time") ? item.get("time").getAsLong() : 0));
-            }
-            return list;
-        });
-    }
-
-    public CompletableFuture<Void> review(String proposalId, boolean approve) {
-        return call(() -> {
-            JsonObject request = new JsonObject();
-            request.addProperty("id", proposalId);
-            request.addProperty("approve", approve);
-            authed("POST", "/v1/admin/review", request, 15);
-            return null;
-        });
-    }
-
-    public CompletableFuture<Void> dismiss(String openId) {
-        return call(() -> {
-            JsonObject request = new JsonObject();
-            request.addProperty("id", openId);
-            authed("POST", "/v1/admin/dismiss", request, 15);
-            return null;
         });
     }
 

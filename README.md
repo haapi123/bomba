@@ -673,11 +673,9 @@ other punishments players should ask Loka's staff in a ticket on Discord rather 
 ![Help it learn](docs/assistant-help.png)
 
 **Help it learn** lists what the assistant could not answer, and answers players marked wrong, most
-asked first. Anyone can pick one and write the answer; it waits for the assistant's admins, who see
-a **Review** tab the others do not, and only an approved answer goes into the knowledge base — from
+asked first. Anyone can pick one and write the answer; it goes to the BetterLoka team's Discord
+channel, where it is approved or rejected, and only an approved answer goes into the knowledge base — from
 the next question on. Nothing a player writes is learned on its own.
-
-![Review](docs/assistant-review.png)
 
 The answering happens on a **separate server** ([`assistant/`](assistant/README.md)), which holds the
 Claude API key, the knowledge base, the budget and the per-player limits. The key is never in the mod,

@@ -26,7 +26,9 @@ be spent by strangers.
    java -jar betterloka-assistant-<wersja>.jar build-kb
    ```
    Przed wydaniem pieniędzy pokaże szacowany koszt i zapyta „yes”.
-5. Wpisz swój UUID Minecrafta do `admins` w `assistant.json` (żeby móc zatwierdzać odpowiedzi graczy).
+5. Wpisz swój UUID Minecrafta do `admins` w `assistant.json` (bez dziennego limitu pytań).
+   Odpowiedzi graczy zatwierdza się na Discordzie (sekcja niżej); mod od 0.45.1 nie ma już zakładki
+   do zatwierdzania.
 6. Uruchom:
    ```
    java -jar betterloka-assistant-<wersja>.jar
@@ -110,9 +112,10 @@ ways, none of which needs a restart (the folder is looked at again every ten sec
   the assistant trusts it over what `build-kb` wrote from the forum and the wiki (`kb/generated/`)
   when the two disagree.
 - **Players**: a question the assistant could not answer, or an answer a player marked wrong, shows
-  up in the game's *Help it learn* tab. Any player can write an answer; it waits in *Review*, which
-  only the `admins` see, and goes into `kb/community.md` only once one of them approves it (edited
-  if need be). Nothing a player writes reaches the knowledge base on its own — one troll could
+  up in the game's *Help it learn* tab. Any player can write an answer; it waits for approval on
+  Discord (below) and goes into `kb/community.md` only once someone with the approving role approves
+  it (edited if need be). The mod has no review tab since 0.45.1; the server's review endpoints remain
+  for older versions. Nothing a player writes reaches the knowledge base on its own — one troll could
   otherwise teach everyone something false. With `discordWebhookUrl` set, new unanswered questions
   and new proposals are posted to that channel.
 - **Discord**: with `discordQuestions` set, the same questions are answered on Discord — see below.
@@ -124,13 +127,12 @@ is posted to that channel with an **Answer** button (and **Dismiss question**). 
 with the question filled in (it can be corrected) and a box for the answer.
 
 - Members with an **`answerRoleIds`** role may answer. Their answer becomes a proposal, posted under
-  the question with **Approve**, **Edit and approve** and **Reject** — and it is in the game's
-  *Review* tab too.
+  the question with **Approve**, **Edit and approve** and **Reject**.
 - Members with an **`approveRoleIds`** role — and the Discord server's administrators — may approve,
   edit, reject and dismiss, players' proposals from the game included. Their own answers go straight
   into `kb/community.md`.
-- Whichever side acts, the other follows: approve in the game and the Discord message turns green and
-  loses its buttons; answer on Discord and the question leaves the game's *Help it learn* list.
+- The game and Discord stay in step: an answer written in the game appears on Discord for approval,
+  and a question answered or dismissed on Discord leaves the game's *Help it learn* list.
 - Who may do what comes from the roles Discord reports with each click, and only clicks in that one
   channel count. Replies to the clicker are visible to them alone.
 - Questions are posted without the asker's name. Proposals carry the name of whoever wrote them, as
@@ -167,7 +169,7 @@ Written with defaults on first start.
 | `maxQuestionChars`, `maxProposalChars` | `300`, `1200` | |
 | `historyTurns` | `3` | |
 | `concurrentAnswers` | `4` | Claude calls at once; the rest wait. |
-| `admins` | `[]` | Minecraft UUIDs (or names) who may approve answers. |
+| `admins` | `[]` | Minecraft UUIDs (or names) with no daily question limit. (Mods before 0.45.1 also showed them an in-game Review tab.) |
 | `discordWebhookUrl` | `""` | Optional. Treat it as a secret. |
 | `discordQuestions` | | `channelId`, `answerRoleIds`, `approveRoleIds`, `pingRoleId`, `language` (`pl` or `en`): see *Answering on Discord*. Added to an older `assistant.json` on start. |
 | `skipMojangCheck` | `false` | **Testing only**: trusts any name. Anyone could then pose as anyone. |

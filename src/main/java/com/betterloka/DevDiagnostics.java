@@ -1186,16 +1186,10 @@ public final class DevDiagnostics {
         step(2, com.betterloka.gui.AssistantScreen::devPropose);
         step(40, () -> { });
         shot(2, "v43-help-sent");
-        step(2, () -> com.betterloka.gui.AssistantScreen.devTab("REVIEW"));
-        step(40, () -> { });
-        shot(2, "v43-review");
-        step(2, () -> com.betterloka.gui.AssistantScreen.devReview(true));
-        step(40, () -> { });
-        shot(2, "v43-review-approved");
+        // Approving happens on Discord now; the game only sends the answer in.
         step(2, () -> com.betterloka.gui.AssistantScreen.devTab("ASK"));
-        step(2, () -> com.betterloka.gui.AssistantScreen.devAsk(unknown.get()));
-        step(60, () -> { });
-        shot(2, "v43-learned");
+        step(10, () -> { });
+        shot(2, "v43-ask-after");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG v43 checks done");
             client().stop();
