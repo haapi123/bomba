@@ -6,9 +6,15 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** An alliance and the towns in it, as returned by {@code /alliances}. */
-public record LokaAlliance(String id, String name, double strength, int vulnerabilityWindow,
-                           String leaderTownId, List<String> townIds) {
+/**
+ * An alliance and the towns in it, as returned by {@code /alliances}.
+ *
+ * @param strength      its conquest Strength on its own continent
+ * @param balakStrength its Strength on Balak, which is counted apart ({@code bbStrength})
+ * @param leaderTownId  the town that leads it, whose continent is the alliance's own
+ */
+public record LokaAlliance(String id, String name, double strength, double balakStrength,
+                           int vulnerabilityWindow, String leaderTownId, List<String> townIds) {
 
     public static LokaAlliance fromJson(JsonObject json) {
         List<String> towns = new ArrayList<>();
@@ -24,6 +30,7 @@ public record LokaAlliance(String id, String name, double strength, int vulnerab
                 Json.string(json, "id"),
                 Json.string(json, "name"),
                 Json.doubleValue(json, "strength", 0),
+                Json.doubleValue(json, "bbStrength", 0),
                 Json.integer(json, "vulnerabilityWindow", -1),
                 Json.string(json, "leaderId"),
                 List.copyOf(towns));

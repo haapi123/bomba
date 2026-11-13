@@ -789,6 +789,13 @@ public class LokaMapScreen extends Screen {
         // now is on it within a quarter of a minute; the tabs say where they are.
         long now = System.currentTimeMillis();
         BetterLokaClient.fights().poll(now);
+        // The standings are read only while a fight for Strength is on the books to be worked out.
+        for (ScheduledFight declared : BetterLokaClient.fights().fights()) {
+            if (declared.defended() && com.betterloka.conquest.StrengthMath.countsForStrength(declared.world())) {
+                BetterLokaClient.standings().poll(now);
+                break;
+            }
+        }
         Continent[] continents = Continent.values();
         for (int i = 0; i < tabButtons.size() && i < continents.length; i++) {
             tabButtons.get(i).setMessage(tabLabel(continents[i]));
@@ -1269,6 +1276,10 @@ public class LokaMapScreen extends Screen {
                     Component.literal(FightsPanel.status(fight, now)), FightsPanel.statusColor(fight, now)));
             lines.add(CardLine.row(Component.translatable("betterloka.fights.card_warping"),
                     Component.literal(FightsPanel.turnout(fight)), GuiTheme.TEXT));
+            com.betterloka.conquest.Standings.Forecast forecast = BetterLokaClient.standings().standings().forecast(fight);
+            if (forecast != null) {
+                lines.add(CardLine.small(Component.literal(FightsPanel.stakesLine(forecast))));
+            }
             lines.add(CardLine.small(Component.translatable("betterloka.fights.card_click")));
             lines.add(CardLine.separator());
         }
@@ -2257,6 +2268,10 @@ public class LokaMapScreen extends Screen {
 
     public int[] devFightCard(int i) {
         return fightsPanel.devCard(i);
+    }
+
+    public void devScrollFights(double amount) {
+        fightsPanel.devScroll(amount);
     }
 
     public String devFightsState() {

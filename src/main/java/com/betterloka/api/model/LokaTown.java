@@ -16,6 +16,7 @@ public final class LokaTown {
     private final String slogan;
     private final double townLevel;
     private final double strength;
+    private final double balakStrength;
     private final boolean recruiting;
     private final boolean deleted;
     private final int memberCount;
@@ -26,7 +27,7 @@ public final class LokaTown {
     private final List<String> memberIds;
 
     private LokaTown(String id, String name, String world, String slogan, double townLevel,
-                     double strength, boolean recruiting, boolean deleted, int memberCount,
+                     double strength, double balakStrength, boolean recruiting, boolean deleted, int memberCount,
                      int vulnerabilityWindow, String territoryNum, String ownerId,
                      List<String> subOwnerIds, List<String> memberIds) {
         this.id = id;
@@ -35,6 +36,7 @@ public final class LokaTown {
         this.slogan = slogan;
         this.townLevel = townLevel;
         this.strength = strength;
+        this.balakStrength = balakStrength;
         this.recruiting = recruiting;
         this.deleted = deleted;
         this.memberCount = memberCount;
@@ -53,19 +55,19 @@ public final class LokaTown {
      */
     public record Saved(String id, String name, String world, String slogan, double townLevel,
                         double strength, boolean recruiting, int memberCount, int vulnerabilityWindow,
-                        String territoryNum, String ownerId, List<String> subOwnerIds) {
+                        String territoryNum, String ownerId, List<String> subOwnerIds, double balakStrength) {
     }
 
     public Saved toSaved() {
         return new Saved(id, name, world, slogan, townLevel, strength, recruiting, memberCount,
-                vulnerabilityWindow, territoryNum, ownerId, subOwnerIds);
+                vulnerabilityWindow, territoryNum, ownerId, subOwnerIds, balakStrength);
     }
 
     public static LokaTown fromSaved(Saved saved) {
         // The roster is not saved — it is the bulk of the megabyte the cache exists to avoid — so a
         // restored town knows how many members it has but not who they are.
         return new LokaTown(saved.id(), saved.name(), saved.world(), saved.slogan(), saved.townLevel(),
-                saved.strength(), saved.recruiting(), false, saved.memberCount(),
+                saved.strength(), saved.balakStrength(), saved.recruiting(), false, saved.memberCount(),
                 saved.vulnerabilityWindow(), saved.territoryNum(), saved.ownerId(),
                 saved.subOwnerIds() == null ? List.of() : saved.subOwnerIds(), List.of());
     }
@@ -75,7 +77,7 @@ public final class LokaTown {
      * kept but what a deleted town can no longer be asked for.
      */
     public static LokaTown deleted(String id, String name, String world) {
-        return new LokaTown(id, name, world, null, 0, 0, false, true, 0, -1, null, null,
+        return new LokaTown(id, name, world, null, 0, 0, 0, false, true, 0, -1, null, null,
                 List.of(), List.of());
     }
 
@@ -99,6 +101,7 @@ public final class LokaTown {
                 Json.string(json, "slogan"),
                 Json.doubleValue(json, "townLevel", 0),
                 Json.doubleValue(json, "strength", 0),
+                Json.doubleValue(json, "bbStrength", 0),
                 Json.bool(json, "recruiting", false),
                 Json.bool(json, "deleted", false),
                 members == null ? 0 : members.size(),
@@ -131,6 +134,11 @@ public final class LokaTown {
 
     public double strength() {
         return strength;
+    }
+
+    /** The town's own Strength on Balak ({@code bbStrength}); 0 on a roster saved before it was kept. */
+    public double balakStrength() {
+        return balakStrength;
     }
 
     public boolean recruiting() {

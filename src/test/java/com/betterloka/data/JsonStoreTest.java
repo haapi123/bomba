@@ -27,7 +27,7 @@ class JsonStoreTest {
         JsonStore<List<LokaTown.Saved>> store =
                 new JsonStore<>(dir.resolve("towns.json"), TYPE, 60_000);
         store.write(List.of(new LokaTown.Saved("id", "Hilo", "north", "setup an inhibitor", 25, 100,
-                true, 23, 10, "1", "owner", List.of("a", "b"))));
+                true, 23, 10, "1", "owner", List.of("a", "b"), 112)));
 
         List<LokaTown.Saved> read = new JsonStore<List<LokaTown.Saved>>(
                 dir.resolve("towns.json"), TYPE, 60_000).read();
@@ -37,6 +37,23 @@ class JsonStoreTest {
         assertEquals(10, town.vulnerabilityWindow());
         assertEquals(List.of("a", "b"), town.subOwnerIds());
         assertEquals(23, town.memberCount());
+        assertEquals(112, town.balakStrength());
+    }
+
+    @Test
+    void aRosterSavedBeforeBalakStrengthWasKeptStillReads(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("towns.json");
+        new JsonStore<List<LokaTown.Saved>>(file, TYPE, 60_000)
+                .write(List.of(new LokaTown.Saved("id", "Hilo", "north", null, 25, 100, true, 1, 9,
+                        "1", null, List.of(), 140)));
+        // What an older version wrote: the same file without the new field.
+        String older = java.nio.file.Files.readString(file).replaceAll(",?\\s*\"balakStrength\":\\s*[0-9.]+", "");
+        assertEquals(-1, older.indexOf("balakStrength"));
+        java.nio.file.Files.writeString(file, older);
+
+        List<LokaTown.Saved> read = new JsonStore<List<LokaTown.Saved>>(file, TYPE, 60_000).read();
+        assertEquals("Hilo", read.get(0).name());
+        assertEquals(0, read.get(0).balakStrength(), "unknown, which the standings read as not yet fought there");
     }
 
     @Test
@@ -44,7 +61,7 @@ class JsonStoreTest {
         Path file = dir.resolve("towns.json");
         new JsonStore<List<LokaTown.Saved>>(file, TYPE, 60_000)
                 .write(List.of(new LokaTown.Saved("id", "Hilo", "north", null, 25, 100, true, 1, 9,
-                        "1", null, List.of())));
+                        "1", null, List.of(), 100)));
 
         // Same file, zero tolerance for age: what was just written is already too old.
         assertNull(new JsonStore<List<LokaTown.Saved>>(file, TYPE, -1).read(),
@@ -64,7 +81,7 @@ class JsonStoreTest {
     @Test
     void survivesARoundTripThroughTheTownModel(@TempDir Path dir) {
         LokaTown.Saved saved = new LokaTown.Saved("id", "Newgen", "west", "slogan", 24, 175,
-                false, 40, 19, "77", "owner-id", List.of("sub"));
+                false, 40, 19, "77", "owner-id", List.of("sub"), 131);
         LokaTown restored = LokaTown.fromSaved(saved);
 
         assertEquals("Newgen", restored.name());

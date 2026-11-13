@@ -357,8 +357,8 @@ public final class LokaApi {
      */
     public List<ScheduledFight> fetchRecentBattles() throws ApiException {
         List<ScheduledFight> fights = new ArrayList<>();
-        for (JsonElement element : embeddedArray(getObject(BASE_URL + "/battlezones"),
-                "battlezones")) {
+        for (JsonElement element : embeddedArray(getObject(BASE_URL + "/battlezones?size=" + PAGE_SIZE
+                + "&page=0&sort=timeEnded,desc"), "battlezones")) {
             if (element.isJsonObject()) {
                 fights.add(ScheduledFight.fromJson(element.getAsJsonObject()));
             }

@@ -4,7 +4,9 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.api.model.LokaAlliance;
 import com.betterloka.api.model.LokaTown;
 import com.betterloka.api.model.ScheduledFight;
+import com.betterloka.api.model.Territory;
 import com.betterloka.api.model.TerritoryDetails;
+import com.betterloka.conquest.Standings;
 import com.betterloka.fights.FightTiming;
 import com.betterloka.fights.FightWatch;
 import com.betterloka.map.MapTerritory;
@@ -25,7 +27,8 @@ import java.util.Locale;
 /**
  * The fights, on the map: a list of everything declared, as the Fight Manager used to show it, and
  * one fight's details — who is fighting whom, when it goes off, who is warping in, whether
- * reinforcements may be called, and the mutator and bonuses of the ground it is over.
+ * reinforcements may be called, what Strength is at stake and how the continent would rank after
+ * either outcome, and the mutator and bonuses of the ground it is over.
  *
  * <p>Drawn over the left of the map, under a button that shows or hides it.
  */
@@ -46,6 +49,9 @@ final class FightsPanel {
     private static final int PAD = 5;
     private static final int CARD_GAP = 3;
     private static final int HEADER = 18;
+
+    /** How much of a ranking a fight's details show; the two sides are shown wherever they stand. */
+    private static final int RANKING_SHOWN = 5;
 
     /** Under this long to go, the countdown turns red. */
     private static final long SOON_MILLIS = 5 * 60 * 1000L;
@@ -170,12 +176,14 @@ final class FightsPanel {
             cy += 8;
         }
         boolean inView = mouseY >= listScroll.viewportTop() && mouseY < listScroll.viewportBottom();
+        Standings standings = BetterLokaClient.standings().standings();
         for (ScheduledFight fight : fights) {
-            int cardHeight = PAD * 2 + LINE * 4;
+            Standings.Forecast forecast = standings.forecast(fight);
+            int cardHeight = PAD * 2 + LINE * (forecast == null ? 4 : 5);
             if (cy + cardHeight >= listScroll.viewportTop() && cy <= listScroll.viewportBottom()) {
                 boolean hovered = inView && mouseX >= left && mouseX < left + cardWidth
                         && mouseY >= cy && mouseY < cy + cardHeight;
-                drawCard(context, font, watch, fight, now, left, cy, cardWidth, cardHeight, hovered);
+                drawCard(context, font, watch, fight, forecast, now, left, cy, cardWidth, cardHeight, hovered);
                 int top = Math.max(cy, listScroll.viewportTop());
                 int bottom = Math.min(cy + cardHeight, listScroll.viewportBottom());
                 if (bottom > top) {
@@ -193,7 +201,8 @@ final class FightsPanel {
     }
 
     private void drawCard(GuiGraphicsExtractor context, Font font, FightWatch watch, ScheduledFight fight,
-                          long now, int left, int top, int cardWidth, int cardHeight, boolean hovered) {
+                          Standings.Forecast forecast, long now, int left, int top, int cardWidth, int cardHeight,
+                          boolean hovered) {
         context.fill(left, top, left + cardWidth, top + cardHeight, hovered ? 0xFF24242E : 0xFF16161C);
         FilterMenu.outline(context, left, top, cardWidth, cardHeight, hovered ? 0xFF8A8AA8 : 0xFF2C2C38);
         context.fill(left, top, left + 2, top + cardHeight, statusColor(fight, now));
@@ -246,6 +255,18 @@ final class FightsPanel {
         context.text(font, status(fight, now), tx, ty + LINE * 3, statusColor(fight, now));
         String turnout = turnout(fight);
         context.text(font, turnout, tx + inner - font.width(turnout), ty + LINE * 3, GuiTheme.TEXT);
+
+        // What it is worth to whoever wins.
+        if (forecast != null) {
+            context.text(font, font.plainSubstrByWidth(stakesLine(forecast), inner), tx, ty + LINE * 4,
+                    forecast.tooLittle() ? GuiTheme.LIVE : GuiTheme.MUTED);
+        }
+    }
+
+    /** {@code Strength: attackers +16 · defenders +9}, for a card. */
+    static String stakesLine(Standings.Forecast forecast) {
+        return Component.translatable("betterloka.fights.forecast_card", forecast.attackerWin(),
+                forecast.defenderWin()).getString();
     }
 
     private void renderDetail(GuiGraphicsExtractor context, Font font, FightWatch watch, ScheduledFight fight,
@@ -306,6 +327,16 @@ final class FightsPanel {
         GuiTheme.chip(context, chipX, cy - 2, chipWidth, 11, reinsColor(fight));
         context.text(font, reins, chipX + 3, cy, reinsColor(fight));
         cy += LINE + 6;
+
+        // What is at stake, and the ranking either outcome would leave: before the two sides, whose
+        // lists of names can run to a screen each.
+        Standings standings = BetterLokaClient.standings().standings();
+        Standings.Forecast forecast = standings.forecast(fight);
+        if (forecast != null) {
+            cy = stakes(context, font, standings, fight, forecast, tx, cy, textWidth);
+            context.fill(tx, cy, tx + textWidth, cy + 1, 0xFF33333F);
+            cy += 5;
+        }
 
         // The two sides.
         cy = side(context, font, fight, true, tx, cy, textWidth, now);
@@ -423,6 +454,70 @@ final class FightsPanel {
             cy = wrap(context, font, Component.literal(names.toString()), tx + 4, cy, textWidth - 4, GuiTheme.TEXT);
         }
         return cy;
+    }
+
+    /** The Strength the fight moves, and the continent's ranking after each way it can go. */
+    private int stakes(GuiGraphicsExtractor context, Font font, Standings standings, ScheduledFight fight,
+                       Standings.Forecast forecast, int tx, int cy, int textWidth) {
+        context.text(font, Component.translatable("betterloka.fights.forecast").withStyle(ChatFormatting.BOLD),
+                tx, cy, GuiTheme.TEXT);
+        cy += LINE + 1;
+        cy = wrap(context, font, Component.translatable("betterloka.fights.forecast_k",
+                whole(forecast.attackerStrength()), whole(forecast.defenderStrength()), forecast.k()), tx, cy,
+                textWidth, GuiTheme.MUTED);
+        cy = outcome(context, font, standings, fight, forecast, true, tx, cy + 3, textWidth);
+        cy = outcome(context, font, standings, fight, forecast, false, tx, cy + 3, textWidth);
+        if (forecast.tooLittle()) {
+            cy = wrap(context, font, Component.translatable("betterloka.calculator.too_little"), tx, cy + 2,
+                    textWidth, GuiTheme.LIVE);
+        }
+        return cy + 3;
+    }
+
+    private int outcome(GuiGraphicsExtractor context, Font font, Standings standings, ScheduledFight fight,
+                        Standings.Forecast forecast, boolean attackersWin, int tx, int cy, int textWidth) {
+        int change = attackersWin ? forecast.attackerWin() : forecast.defenderWin();
+        String winnerName = attackersWin ? attackerName(fight) : defenderName(fight);
+        String loserName = attackersWin ? defenderName(fight) : attackerName(fight);
+        double winnerStrength = attackersWin ? forecast.attackerStrength() : forecast.defenderStrength();
+        double loserStrength = attackersWin ? forecast.defenderStrength() : forecast.attackerStrength();
+        context.text(font, Component.translatable(attackersWin ? "betterloka.fights.forecast_attackers"
+                : "betterloka.fights.forecast_defenders").withStyle(ChatFormatting.BOLD), tx, cy,
+                attackersWin ? ATTACKER : DEFENDER);
+        cy += LINE + 1;
+        cy = wrap(context, font, Component.translatable("betterloka.fights.forecast_line", winnerName,
+                "+" + change, whole(winnerStrength + change)), tx + 4, cy, textWidth - 4, GuiTheme.GOOD);
+        cy = wrap(context, font, Component.translatable("betterloka.fights.forecast_line", loserName,
+                "-" + change, whole(loserStrength - change)), tx + 4, cy, textWidth - 4, GuiTheme.BAD);
+
+        Standings.Side winner = attackersWin ? forecast.attacker() : forecast.defender();
+        Standings.Side loser = attackersWin ? forecast.defender() : forecast.attacker();
+        if (winner == null || loser == null) {
+            return cy;
+        }
+        String continent = Territory.continentOf(forecast.world());
+        cy = wrap(context, font, Component.translatable("betterloka.fights.forecast_ranking",
+                continent == null ? "?" : continent), tx + 4, cy + 1, textWidth - 4, GuiTheme.MUTED);
+        for (Standings.Row row : standings.rankingAfter(forecast.world(), winner, loser, change)) {
+            boolean won = row.side().id().equals(winner.id());
+            boolean lost = row.side().id().equals(loser.id());
+            if (row.rank() > RANKING_SHOWN && !won && !lost) {
+                continue;
+            }
+            String moved = row.before() == row.rank() ? "" : row.before() > row.rank() ? " ↑" : " ↓";
+            String strength = whole(row.strength()) + moved;
+            String place = row.rank() + ". ";
+            int nameWidth = Math.max(20, textWidth - 8 - font.width(place) - font.width(strength) - 6);
+            int color = won ? GuiTheme.GOOD : lost ? GuiTheme.BAD : GuiTheme.TEXT;
+            context.text(font, place + font.plainSubstrByWidth(row.side().name(), nameWidth), tx + 8, cy, color);
+            context.text(font, strength, tx + textWidth - font.width(strength), cy, color);
+            cy += LINE;
+        }
+        return cy;
+    }
+
+    private static String whole(double value) {
+        return String.format(Locale.ROOT, "%.0f", value);
     }
 
     private static int wrap(GuiGraphicsExtractor context, Font font, Component text, int x, int y, int width,
@@ -589,6 +684,11 @@ final class FightsPanel {
     void mouseReleased() {
         listScroll.mouseReleased();
         detailScroll.mouseReleased();
+    }
+
+    /** Scrolls whichever of the list and the details is up, for the dev harness. */
+    void devScroll(double amount) {
+        mouseScrolled(x + width / 2.0, y + height / 2.0, amount);
     }
 
     /** The middle of the {@code i}th card of the list, for the dev harness. */

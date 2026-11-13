@@ -83,7 +83,7 @@ class TownLogStoreTest {
     @Test
     void countsAlliesByDaysTogetherRatherThanBySweeps(@TempDir Path dir) {
         TownLogStore store = new TownLogStore(dir.resolve("town-log.json"));
-        LokaAlliance alliance = new LokaAlliance("a1", "The Covenant", 100, 13, "town-a",
+        LokaAlliance alliance = new LokaAlliance("a1", "The Covenant", 100, 100, 13, "town-a",
                 List.of("town-a", "town-b", "town-c"));
         Map<String, String> names = Map.of("town-a", "Hilo", "town-b", "Newgen", "town-c", "Grimwall");
 

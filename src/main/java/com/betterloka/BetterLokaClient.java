@@ -96,6 +96,7 @@ public class BetterLokaClient implements ClientModInitializer {
     private static ShrineIcons shrineIcons;
     private static BetterLokaConfig config;
     private static FightWatch fights;
+    private static com.betterloka.conquest.StandingsService standings;
 
     @Override
     public void onInitializeClient() {
@@ -153,13 +154,32 @@ public class BetterLokaClient implements ClientModInitializer {
         fights = new FightWatch(new FightWatch.Source() {
             @Override
             public java.util.List<com.betterloka.api.model.ScheduledFight> fights() throws com.betterloka.api.ApiException {
-                return loka.fetchScheduledFights();
+                java.util.List<com.betterloka.api.model.ScheduledFight> staged = DevDiagnostics.stagedFights(loka);
+                return staged != null ? staged : loka.fetchScheduledFights();
             }
 
             @Override
             public com.betterloka.api.model.TerritoryDetails territory(String territoryId)
                     throws com.betterloka.api.ApiException {
                 return loka.fetchTerritory(territoryId);
+            }
+        }, loka.executor());
+        // Who stands where in conquest, for the calculator and the fights on the map: read only
+        // while one of them is on screen, and then at most once a minute.
+        standings = new com.betterloka.conquest.StandingsService(new com.betterloka.conquest.StandingsService.Source() {
+            @Override
+            public java.util.List<com.betterloka.api.model.LokaAlliance> alliances() throws com.betterloka.api.ApiException {
+                return loka.fetchAlliances();
+            }
+
+            @Override
+            public java.util.List<com.betterloka.api.model.LokaTown> towns() {
+                return towns.all();
+            }
+
+            @Override
+            public com.betterloka.api.model.LokaTown town(String townId) throws com.betterloka.api.ApiException {
+                return loka.findTownById(townId);
             }
         }, loka.executor());
         // The map's own data lives on its own, refreshed in the background, so opening the screen
@@ -254,7 +274,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43", "v46").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -488,6 +508,11 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static TownCache towns() {
         return towns;
+    }
+
+    /** The conquest standings, which the calculator and the map's fights poll while they are open. */
+    public static com.betterloka.conquest.StandingsService standings() {
+        return standings;
     }
 
     public static LokaApi lokaApi() {

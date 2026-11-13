@@ -126,6 +126,9 @@ public final class BetterLokaConfig {
     /** Whether the player has read where their questions go. */
     private boolean assistantNoticeAccepted = false;
 
+    /** The town or alliance last worked out in the Loka Calculator; empty until one is. */
+    private String calculatorTown = "";
+
 
     private transient Path file;
 
@@ -327,6 +330,19 @@ public final class BetterLokaConfig {
     public void setShowNameplatePing(boolean showNameplatePing) {
         this.showNameplatePing = showNameplatePing;
         save();
+    }
+
+    public String calculatorTown() {
+        return calculatorTown == null ? "" : calculatorTown;
+    }
+
+    /** Saved only when it changes: the calculator sets it every time it finds the town again. */
+    public void setCalculatorTown(String calculatorTown) {
+        String value = calculatorTown == null ? "" : calculatorTown.strip();
+        if (!value.equals(calculatorTown())) {
+            this.calculatorTown = value;
+            save();
+        }
     }
 
     public boolean assistantNoticeAccepted() {

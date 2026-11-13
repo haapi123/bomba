@@ -38,6 +38,44 @@ public final class DevDiagnostics {
         new DevDiagnostics().start();
     }
 
+    private static java.util.List<com.betterloka.api.model.ScheduledFight> staged;
+
+    /**
+     * For the 0.46 run only ({@code BETTERLOKA_DIAG=v46}): Loka's most recent real fights between
+     * two sides, put back on the books as if they had been declared twenty minutes ago, so the
+     * calculator and the map's stakes can be photographed when nothing happens to be declared. The
+     * sides, towns and territories are the real ones; the Strength figures are left empty, as on a
+     * fight not yet begun, so they come from the standings as they are now.
+     *
+     * @return the staged fights, or {@code null} outside that run
+     */
+    public static synchronized java.util.List<com.betterloka.api.model.ScheduledFight> stagedFights(
+            com.betterloka.api.LokaApi loka) throws com.betterloka.api.ApiException {
+        if (!"v46".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            return null;
+        }
+        if (staged == null) {
+            java.util.List<com.betterloka.api.model.ScheduledFight> picked = new ArrayList<>();
+            java.util.Set<String> pairs = new java.util.HashSet<>();
+            long declared = System.currentTimeMillis() / 1000 - 20 * 60;
+            for (com.betterloka.api.model.ScheduledFight fight : loka.fetchRecentBattles()) {
+                if (!fight.defended() || fight.id() == null || fight.id().length() != 24
+                        || !com.betterloka.conquest.StrengthMath.countsForStrength(fight.world())
+                        || !pairs.add(fight.world() + fight.attackerAllianceId() + fight.defenderAllianceId())) {
+                    continue;
+                }
+                String id = String.format(java.util.Locale.ROOT, "%08x", declared - picked.size() * 400L) + fight.id().substring(8);
+                picked.add(new com.betterloka.api.model.ScheduledFight(id, fight.territoryId(), fight.name(), fight.world(),
+                        fight.relocatedName(), fight.attackerTownId(), fight.attackerAllianceId(), fight.defenderTownId(),
+                        fight.defenderAllianceId(), fight.attackerName(), fight.defenderName(), fight.attackers(),
+                        fight.defenders(), fight.reinforcementsAllowed(), false, 0, 0, 0));
+            }
+            staged = java.util.List.copyOf(picked);
+            BetterLoka.LOGGER.info("DIAG v46 staged {} recent fights as declared", staged.size());
+        }
+        return staged;
+    }
+
     private void start() {
         step(80, () -> { });
         step(5, this::createWorld);
@@ -59,6 +97,11 @@ public final class DevDiagnostics {
         }
         if ("helper".equals(System.getenv("BETTERLOKA_DIAG"))) {
             helperInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
+        if ("v46".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            v46Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
@@ -1196,6 +1239,82 @@ public final class DevDiagnostics {
         });
     }
 
+    /**
+     * 0.46: Loka Calculator for a real alliance with Loka's latest fights staged as declared (see
+     * {@link #stagedFights}), then the same stakes on the map's fights panel.
+     */
+    private void v46Input() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        String town = System.getenv().getOrDefault("BETTERLOKA_CALC_TOWN", "Silvermoon");
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+            BetterLokaClient.config().setCalculatorTown("");
+        });
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
+        shot(10, "v46-menu");
+        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LokaCalculatorScreen(null)));
+        step(160, () -> BetterLoka.LOGGER.info("DIAG v46 opened: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        shot(2, "v46-empty");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery("zzz"));
+        shot(10, "v46-no-match");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery("s"));
+        shot(10, "v46-suggestions");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery(town));
+        step(200, () -> BetterLoka.LOGGER.info("DIAG v46 town: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        shot(2, "v46-town");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devScroll(-6));
+        shot(5, "v46-town-table");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devPick(2));
+        step(5, () -> BetterLoka.LOGGER.info("DIAG v46 picked: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        shot(5, "v46-picked");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devBalak(true));
+        step(10, () -> BetterLoka.LOGGER.info("DIAG v46 balak: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        shot(5, "v46-balak");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devBalak(false));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery("Pantheon"));
+        step(120, () -> BetterLoka.LOGGER.info("DIAG v46 lone town: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        shot(2, "v46-lone-town");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery(town));
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devNoHover = true;
+            client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null));
+        });
+        step(140, () -> fightState("map open"));
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightsButton(), left);
+            }
+        });
+        step(40, () -> fightState("panel open"));
+        shot(5, "v46-fights-list");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                realClickAt(map.devFightCard(0), left);
+            }
+        });
+        step(80, () -> fightState("first fight opened"));
+        shot(5, "v46-fight-detail");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                map.devScrollFights(-9);
+            }
+        });
+        shot(5, "v46-fight-detail-scrolled");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                map.devOpenFight(BetterLokaClient.fights().fights().get(Math.min(1, BetterLokaClient.fights().fights().size() - 1)).id());
+            }
+        });
+        step(80, () -> fightState("second fight opened"));
+        shot(5, "v46-fight-detail-2");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG v46 checks done");
+            client().stop();
+        });
+    }
+
     private void v42Input() {
         step(2, () -> {
             client().options.guiScale().set(2);
@@ -1204,22 +1323,6 @@ public final class DevDiagnostics {
         });
         step(2, () -> client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null)));
         shot(10, "v42-menu");
-        step(2, () -> client().gui.setScreen(new com.betterloka.gui.LoreCreatorScreen(null)));
-        shot(10, "v42-lore-first");
-        String[][] cases = {
-                {"Miecz wykuty w smoczym ogniu, który pamięta wojnę o Kalros", "FIRE", "pl"},
-                {"A frozen bow from the far north, cold as winter", "ICE", "en"},
-                {"Pradawna korona królów pustki i gwiazd", "VOID", "pl"},
-                {"A lucky charm for my friend", "RAINBOW", "en"}};
-        for (String[] lore : cases) {
-            step(2, () -> {
-                if (client().gui.screen() instanceof com.betterloka.gui.LoreCreatorScreen screen) {
-                    screen.devWrite(lore[0], com.betterloka.lore.LoreScheme.valueOf(lore[1]), lore[2].equals("pl"));
-                    BetterLoka.LOGGER.info("DIAG v42 lore for '{}':\n{}", lore[0], screen.devCode());
-                }
-            });
-            shot(5, "v42-lore-" + lore[1].toLowerCase(java.util.Locale.ROOT));
-        }
         step(2, () -> client().gui.setScreen(new PlayerFinderScreen(null)));
         step(2, () -> {
             type(client().gui.screen(), "haapi");

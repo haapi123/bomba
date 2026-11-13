@@ -20,7 +20,7 @@ into: a question you ask **Loka Assistant** goes, with your name, to the assista
 | **Town Logger** | Working |
 | **Loka Grinder** | Working |
 | **Loka Helper** | Working |
-| **Lore Creator** | Working |
+| **Loka Calculator** | Working |
 | **Loka Assistant** | Working (needs an assistant server) |
 
 
@@ -377,14 +377,17 @@ is. The list itself starts **hidden**, so the map opens as a map: **Fights** ove
 opens it, and picking a blinking territory or the banner of a new fight opens it on that fight.
 
 Each fight in the list says who is fighting whom, their towns, where, whether reinforcements may be
-called, when it starts and how many are warping in on each side. Clicking one flies the map to it
-and opens its details; so does clicking a territory that is blinking.
+called, when it starts, how many are warping in on each side and **what Strength a win is worth to
+each side**. Clicking one flies the map to it and opens its details; so does clicking a territory
+that is blinking.
 
 ![A fight's details](docs/map-fight-details.png)
 
-The details: the two sides, each with its alliance, town and strength and **everybody warping in by
-name**; whether **reinforcements** are on; **when it starts** — a countdown and the clock time, in
-your own time zone — and when it was declared; and the ground itself: its **mutator**, its
+The details: **when it starts** — a countdown and the clock time, in your own time zone — and when
+it was declared; whether **reinforcements** are on; the **Strength at stake** — what the winner
+gains and the loser loses if the attackers win and if the defenders win, and the continent's ranking
+after each (see *Loka Calculator* for the arithmetic); the two sides, each with its alliance, town
+and strength and **everybody warping in by name**; and the ground itself: its **mutator**, its
 **bonus**, what it produces and what it is worth.
 
 The start time is worked out, because Loka publishes none until a fight begins. It does not need to:
@@ -631,33 +634,56 @@ and the screen says so.
 
 ![Clear lava](docs/helper-clear-lava.png)
 
-## Lore Creator
+## Loka Calculator
 
-![Lore Creator](docs/lore-creator.png)
+![Loka Calculator](docs/calculator.png)
 
-Describe an item — *a sword forged in dragon fire*, *lodowy łuk z północy* — pick a colour scheme,
-and the mod writes its lore, in English or Polish, and shows it the way the game will: in a tooltip
-under the item, in the game's own lore purple and italics wherever the lore does not say otherwise.
+What a conquest fight is worth in Strength, before it is fought.
 
-- **What it is about** decides what the lore says. The words in it — in either language — pick the
-  motifs it is written from: fire, ice, shadow, blood, the wild, the sea, storms, holy light, the
-  void, death, kings, war, ages past, the heart. Several at once are mixed. The kind of thing it is
-  (sword, bow, axe, shield, crown, book...) decides the title's noun: *Blade of Embers*, *Ostrze
-  Żaru*. **Write it again** writes another version of the same.
-- **Text: my own** keeps your text instead and only styles it.
-- **Colours**: twelve schemes — fire, ice, shadow, blood, nature, ocean, royal gold, holy light,
-  void, storm, toxic and rainbow — each a gradient for the title, a colour for the text and an
-  accent.
-- Name, number of sentences, a **rarity** line (*Rare* to *Mythic*), a title line, dividers and
-  italics on or off.
+Type your town (the first time it is looked up from your own name) or your alliance, and the screen
+fills in the rest:
 
-The lore is written in **MiniMessage**, the markup Loka's lore editor takes (it is Adventure's
-MiniMessage Viewer): `<gradient:#ff4500:#ffd700><bold>`, `<#ffb066>`, `<!i>`, struck-through spaces
-for a divider. It sits in an editable box under the preview — change anything and the preview
-follows — and **Copy** puts it on the clipboard to paste into Loka's editor, the link Loka gives
-you in game. The preview reads the same markup back with a MiniMessage reader of the mod's own
-(colours, hex, decorations and their negations, gradients, rainbow, reset, new lines), so what it
-shows is what the editor will make of it. Nothing is sent anywhere.
+- **Who you fight as.** A town in an alliance fights with the alliance's Strength, so that is what
+  is shown, with its place on its continent and on Balak.
+- **Declared fights.** Every fight on Loka's books that your side is in: whether you are attacking
+  or defending, against whom, when it starts, and what a **win** gains and a **loss** costs — with
+  the place either would leave you in, and the continent's top three after each.
+- **Against anyone.** The whole ranking of your continent (or of Balak, with the button top right),
+  and for every other side the same two numbers. A side in the top three shows how many players
+  Loka wants at the inhibitor to attack it; a fight where either side's win would be worth 3 or less
+  is marked as not allowed.
+- **By hand.** Three boxes at the bottom — your Strength, theirs, the lower of the two towns'
+  levels — for anything else. Clicking a row of the table fills them in.
+
+The same numbers are on the **Loka Map**: every fight in the Fights list says what it is worth to
+each side, the territory's card says it too, and a fight's details show both outcomes and the
+continent's ranking after each.
+
+### The formula
+
+```
+change = floor(k / (1 + 10 ^ ((winner - loser) / 250))) - 1
+k      = 28 - (25 - lower town level)     on Kalros, Ascalon and Garama
+k      = 14                               on Balak
+```
+
+The winner gains `change` and the loser loses exactly as much. Two equal sides at level 25 trade 13.
+
+Loka's wiki gives the shape of this (an Elo rating, and the k-factor) but with older constants.
+These were fitted to Loka's own records: a finished battle carries both sides' Strength as it
+began, so the change shows in each side's next battle. Thirty-four fights of October and November
+2026 whose effect could be read cleanly — nothing else moving either side's Strength in between —
+come out to the point, on the continents and on Balak, and they are the formula's tests. With the wiki's `/400`, Golden
+Hooligans' win over Primate Pact on Ascalon 63 would have been worth 19; it was worth 22.
+
+Not counted, because nothing published explains them: the wiki's penalties for a territory that
+decays (25) and for losing your last one (50), and what neutral ground on Balak is worth. Rivina is
+fought for conquest points, not Strength.
+
+Alliances hold nearly all the Strength there is and Loka lists them in one small request, so that
+is read afresh — at most once a minute, and only while the calculator or a fight for Strength is on
+screen. A town in no alliance carries its own Strength, which the saved town roster may have hours
+old, so the few that matter are read again one at a time.
 
 ## Loka Assistant
 
