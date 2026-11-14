@@ -66,7 +66,7 @@ Konwerter nie kopiuje z niego żadnych tekstur. Bierze z niego tylko ustawienia 
 
 # Orange Edit (Wembarka Urnak) dla Minecraft 26.3
 
-`orange_edit_26.3.zip` to paczka „Orange_Edit2_26.3”. Format paczki (97) ustawił już
+`orange_edit_kb_26.3.zip` to paczka „Orange_Edit2_26.3”. Format paczki (97) ustawił już
 packsmc.com, ale część rzeczy nadal była w folderze OptiFine CIT, którego sama gra nie czyta.
 
 - **Miecz z knockbackiem**: w 26.3 działa bez modów, przez wbudowane modele przedmiotów
