@@ -63,3 +63,31 @@ Sama gra ich nie czyta. Działają z OptiFine albo z modami Fabric:
 Konwerter nie kopiuje z niego żadnych tekstur. Bierze z niego tylko ustawienia `.mcmeta`
 (np. jak rozciągać przyciski) i sprawdza na nim, czy każdy zapisany plik jest takim, który
 26.3 faktycznie wczytuje.
+
+# Orange Edit (Wembarka Urnak) dla Minecraft 26.3
+
+`orange_edit_26.3.zip` to paczka „Orange_Edit2_26.3”. Format paczki (97) ustawił już
+packsmc.com, ale część rzeczy nadal była w folderze OptiFine CIT, którego sama gra nie czyta.
+
+- **Miecz z knockbackiem**: w 26.3 działa bez modów, przez wbudowane modele przedmiotów
+  (`assets/minecraft/items/diamond_sword.json`).
+  - Zwykły diamentowy miecz jest pomarańczowy.
+  - Knockback I jest jasnoniebieski.
+  - Knockback II i wyżej jest niebieski.
+  - Działa też, gdy miecz ma inne enchanty, np. Sharpness V + Knockback I.
+- **Enchantowane książki**: każdy z 30 enchantów ma swoją ikonę, też bez modów.
+- **Połysk zbroi**: packsmc zostawił starą nazwę `enchanted_glint_entity.png`. Przemianowałem
+  ją na `enchanted_glint_armor.png`, której 26.3 szuka.
+- **Usunięte pliki**, których 26.3 nie czyta: `particle/particles.png` (krytyki z paczki zostały,
+  są w osobnych plikach), `.packsmc/conversion_id` i kopia vanillowego `atlases/items.json`.
+- **Bez zmian**: przedmioty rozpoznawane po nazwie albo NBT z Loki (miecze Ascalon, Garama,
+  Kalros, łuki, ikony z menu, krew, butelki XP itd.) zostały w `optifine/cit`. Działają tylko
+  z modem czytającym CIT (np. CIT Resewn), bo gra nie umie dopasować przedmiotu po nazwie.
+
+Wszystko powyżej sprawdziłem w kliencie 26.3. Dla porównania dałem sobie miecze: bez enchantów,
+z KB1, z KB2, z Sharpness V + KB1, z samym Sharpness V i z KB3 + Unbreaking III.
+
+`cit_enchantments_to_26.3.py` robi to samo z dowolną paczką: zamienia reguły CIT oparte tylko
+na enchantach na modele przedmiotów 26.3.
+
+    python3 cit_enchantments_to_26.3.py "paczka.zip" client-26.3.jar nowa_paczka.zip
