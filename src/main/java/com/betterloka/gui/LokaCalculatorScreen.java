@@ -4,6 +4,7 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.api.model.LokaPlayer;
 import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.api.model.Territory;
+import com.betterloka.conquest.Simulation;
 import com.betterloka.conquest.Standings;
 import com.betterloka.conquest.StandingsService;
 import com.betterloka.conquest.StrengthMath;
@@ -32,8 +33,8 @@ import java.util.Locale;
  * screen fills in the rest: the alliance whose Strength the town fights with, where it stands on its
  * continent, every fight declared for or against it — which side it is on, against whom, and what a
  * win gains and a loss costs, with the ranking either would leave — and the same two numbers against
- * every other side on the continent. A row of three boxes at the bottom works anything else out by
- * hand.
+ * every other side on the continent. A simulation plays several fights out in a row, each from the
+ * Strength the one before left. A row of three boxes at the bottom works anything else out by hand.
  *
  * <p>The arithmetic is {@link StrengthMath}; who stands where is {@link Standings}, read afresh
  * while the screen is open.
@@ -57,6 +58,9 @@ public class LokaCalculatorScreen extends Screen {
     // Kept between openings, as the answer to "which town" does not change in a session.
     private static String query;
     private static boolean balak;
+    /** The fights being simulated, and for which side on which world; kept between openings. */
+    private static final List<Simulation.Fight> simulated = new ArrayList<>();
+    private static String simulatedFor;
     private static boolean lookedUpOwnTown;
     private static LokaCalculatorScreen devInstance;
 
@@ -81,6 +85,10 @@ public class LokaCalculatorScreen extends Screen {
     private Standings filledStandings;
     private List<ScheduledFight> filledFights;
     private String pickedId;
+    /** The simulation as last played out, and what it was played from. */
+    private Simulation.Result simResult;
+    private Standings simStandings;
+    private String simKey;
     private boolean lookingUp;
 
     public LokaCalculatorScreen(Screen parent) {
@@ -466,6 +474,7 @@ public class LokaCalculatorScreen extends Screen {
         }
         y = drawYou(context, standings, left, y, width);
         y = drawFights(context, standings, watch, now, left, y + GAP, width);
+        y = drawSimulation(context, standings, left, y + GAP + 2, width, mouseX, mouseY);
         y = drawTable(context, standings, left, y + GAP + 2, width, mouseX, mouseY);
         y = wrap(context, Component.translatable("betterloka.calculator.note"), left, y + GAP + 1, width, 0xFF7A7A88);
         return y + 2 - top;
@@ -649,6 +658,214 @@ public class LokaCalculatorScreen extends Screen {
         return out.toString();
     }
 
+    // ---- simulation ----
+
+    /**
+     * Who the simulation's next fight is against: the side picked in the table, else the other side
+     * of a declared fight, else the side just above in the ranking (the one to overtake), else the
+     * one just below.
+     */
+    private Standings.Side simOpponent(Standings standings) {
+        String world = world();
+        Standings.Side you = match.side();
+        List<Standings.Row> ranking = standings.ranking(world, you);
+        if (pickedId != null) {
+            for (Standings.Row row : ranking) {
+                if (row.side().id().equals(pickedId)) {
+                    return row.side();
+                }
+            }
+        }
+        for (ScheduledFight fight : fightsOf(you)) {
+            Standings.Forecast forecast = standings.forecast(fight);
+            if (forecast != null && StrengthMath.isBalak(fight.world()) == balak) {
+                Standings.Side them = isSide(you, fight.attackerAllianceId(), fight.attackerTownId())
+                        ? forecast.defender() : forecast.attacker();
+                if (them != null) {
+                    return them;
+                }
+            }
+        }
+        for (int i = 0; i < ranking.size(); i++) {
+            if (ranking.get(i).side().id().equals(you.id())) {
+                if (i > 0) {
+                    return ranking.get(i - 1).side();
+                }
+                return i + 1 < ranking.size() ? ranking.get(i + 1).side() : null;
+            }
+        }
+        return null;
+    }
+
+    /** The simulation starts over when the side or the world being counted changes. */
+    private void keepSimulationFor(String key) {
+        if (!key.equals(simulatedFor)) {
+            simulated.clear();
+            simulatedFor = key;
+            simResult = null;
+        }
+    }
+
+    private void simulate(Standings.Side opponent, int count, boolean win) {
+        for (int i = 0; i < count && simulated.size() < Simulation.MAX_FIGHTS; i++) {
+            simulated.add(new Simulation.Fight(opponent.id(), win));
+        }
+        simResult = null;
+    }
+
+    private Simulation.Result simulation(Standings standings) {
+        String key = simulatedFor + "|" + simulated.size() + "|" + simulated.hashCode();
+        if (simResult == null || standings != simStandings || !key.equals(simKey)) {
+            simResult = Simulation.run(standings, world(), match.side(), match.town(), List.copyOf(simulated));
+            simStandings = standings;
+            simKey = key;
+        }
+        return simResult;
+    }
+
+    /** Fights played out in a row: buttons to add them, each fight as it went, and where they leave everybody. */
+    private int drawSimulation(GuiGraphicsExtractor context, Standings standings, int left, int y, int width,
+                               int mouseX, int mouseY) {
+        String world = world();
+        keepSimulationFor(match.side().id() + "|" + world);
+        context.text(this.font, Component.translatable("betterloka.calculator.sim").withStyle(ChatFormatting.BOLD),
+                left, y, GuiTheme.TEXT);
+        y += LINE + 3;
+
+        Standings.Side opponent = simOpponent(standings);
+        if (opponent == null) {
+            return wrap(context, Component.translatable("betterloka.calculator.sim_nobody", continentName(world)),
+                    left + PAD, y, width - PAD, GuiTheme.MUTED) + 2;
+        }
+        Simulation.Result result = simulation(standings);
+        double yours = result.end();
+        double theirs = opponent.strengthOn(world);
+        for (Simulation.Step step : result.steps()) {
+            if (step.opponent().id().equals(opponent.id())) {
+                theirs = step.themAfter();
+            }
+        }
+        int k = kAgainst(standings, opponent);
+        StrengthMath.Stakes next = StrengthMath.stakes(yours, theirs, k);
+        Component against = Component.translatable("betterloka.calculator.sim_opponent", opponent.name(),
+                number(theirs), k);
+        context.text(this.font, against, left + PAD, y, GuiTheme.TEXT);
+        Component change = Component.translatable("betterloka.calculator.sim_change_hint");
+        if (this.font.width(against) + this.font.width(change) + PAD + 16 < width) {
+            context.text(this.font, change, left + width - this.font.width(change), y, 0xFF7A7A88);
+        }
+        y += LINE + 1;
+        Component nextFight = next.tooLittle() ? Component.translatable("betterloka.calculator.sim_next_blocked")
+                : Component.translatable("betterloka.calculator.sim_next", gain(next.ifFirstWins()), loss(next.ifSecondWins()));
+        context.text(this.font, nextFight, left + PAD, y, next.tooLittle() ? GuiTheme.LIVE : GuiTheme.MUTED);
+        y += LINE + 4;
+
+        // The buttons.
+        int x = left + PAD;
+        boolean full = simulated.size() >= Simulation.MAX_FIGHTS;
+        x = simChip(context, "betterloka.calculator.sim_win1", GuiTheme.GOOD, x, y, mouseX, mouseY, !full,
+                () -> simulate(opponent, 1, true));
+        x = simChip(context, "betterloka.calculator.sim_lose1", GuiTheme.BAD, x, y, mouseX, mouseY, !full,
+                () -> simulate(opponent, 1, false));
+        x = simChip(context, "betterloka.calculator.sim_win5", GuiTheme.GOOD, x, y, mouseX, mouseY, !full,
+                () -> simulate(opponent, 5, true));
+        x = simChip(context, "betterloka.calculator.sim_lose5", GuiTheme.BAD, x, y, mouseX, mouseY, !full,
+                () -> simulate(opponent, 5, false));
+        x = simChip(context, "betterloka.calculator.sim_undo", GuiTheme.ACCENT, x + 6, y, mouseX, mouseY,
+                !simulated.isEmpty(), () -> {
+                    simulated.remove(simulated.size() - 1);
+                    simResult = null;
+                });
+        simChip(context, "betterloka.calculator.sim_clear", GuiTheme.ACCENT, x, y, mouseX, mouseY,
+                !simulated.isEmpty(), () -> {
+                    simulated.clear();
+                    simResult = null;
+                });
+        y += 17;
+
+        if (result.steps().isEmpty()) {
+            return wrap(context, Component.translatable("betterloka.calculator.sim_empty"), left + PAD, y,
+                    width - PAD, GuiTheme.MUTED) + 2;
+        }
+
+        // Each fight: columns from the right — the place, the other side's Strength, yours, the change.
+        int rankRight = left + width - PAD;
+        int themRight = rankRight - 62;
+        int youRight = themRight - 66;
+        int changeRight = youRight - 58;
+        int textX = left + PAD + 16;
+        int textWidth = Math.max(40, changeRight - 34 - textX);
+        for (Simulation.Step step : result.steps()) {
+            int color = !step.allowed() ? GuiTheme.LIVE : step.win() ? GuiTheme.GOOD : GuiTheme.BAD;
+            context.text(this.font, step.number() + ".", left + PAD, y, GuiTheme.MUTED);
+            if (!step.allowed()) {
+                Component blocked = Component.translatable("betterloka.calculator.sim_step_blocked", step.opponent().name());
+                context.text(this.font, this.font.plainSubstrByWidth(blocked.getString(), width - PAD - 16 - PAD), textX, y, color);
+                y += LINE + 1;
+                continue;
+            }
+            Component what = Component.translatable(step.win() ? "betterloka.calculator.sim_step_win"
+                    : "betterloka.calculator.sim_step_loss", step.opponent().name());
+            context.text(this.font, this.font.plainSubstrByWidth(what.getString(), textWidth), textX, y, color);
+            String moved = step.win() ? gain(step.change()) : loss(step.change());
+            rightText(context, Component.literal(moved), changeRight, y, color);
+            rightText(context, Component.translatable("betterloka.calculator.sim_you", number(step.youAfter())), youRight, y, GuiTheme.TEXT);
+            rightText(context, Component.translatable("betterloka.calculator.sim_them", number(step.themAfter())), themRight, y, GuiTheme.MUTED);
+            String place = step.rankBefore() == step.rankAfter() ? "#" + step.rankAfter()
+                    : "#" + step.rankBefore() + " → #" + step.rankAfter();
+            rightText(context, Component.literal(place), rankRight, y,
+                    step.rankAfter() < step.rankBefore() ? GuiTheme.GOOD : step.rankAfter() > step.rankBefore() ? GuiTheme.BAD : GuiTheme.MUTED);
+            y += LINE + 1;
+        }
+
+        // Where they leave everybody.
+        y += 3;
+        GuiTheme.separator(context, left + PAD, y - 2, width - 2 * PAD);
+        int net = result.net();
+        Component summary = Component.translatable("betterloka.calculator.sim_summary", number(result.start()),
+                number(result.end()), net == 0 ? "0" : net > 0 ? "+" + net : String.valueOf(net), result.startRank(),
+                result.endRank(), continentName(world), result.counted());
+        y = wrap(context, summary.copy().withStyle(ChatFormatting.BOLD), left + PAD, y + 2, width - PAD,
+                net > 0 ? GuiTheme.GOOD : net < 0 ? GuiTheme.BAD : GuiTheme.TEXT);
+        StringBuilder top = new StringBuilder();
+        boolean youShown = false;
+        for (Standings.Row row : result.ranking()) {
+            boolean self = row.side().id().equals(match.side().id());
+            if (row.rank() > 3 && !(self && !youShown)) {
+                continue;
+            }
+            youShown |= self;
+            if (!top.isEmpty()) {
+                top.append("  ·  ");
+            }
+            String arrow = row.before() == row.rank() ? "" : row.before() > row.rank() ? " ↑" : " ↓";
+            top.append(row.rank()).append(". ").append(row.side().name()).append(' ').append(number(row.strength())).append(arrow);
+        }
+        y = wrap(context, Component.translatable("betterloka.calculator.sim_ranking", top.toString()), left + PAD, y,
+                width - PAD, GuiTheme.MUTED);
+        if (simulated.size() >= Simulation.MAX_FIGHTS) {
+            y = wrap(context, Component.translatable("betterloka.calculator.sim_full", Simulation.MAX_FIGHTS), left + PAD,
+                    y, width - PAD, GuiTheme.LIVE);
+        }
+        return y;
+    }
+
+    /** A clickable chip; returns where the next one goes. */
+    private int simChip(GuiGraphicsExtractor context, String key, int color, int x, int y, int mouseX, int mouseY,
+                        boolean active, Runnable action) {
+        Component label = Component.translatable(key);
+        int chipWidth = this.font.width(label) + 10;
+        boolean hover = active && mouseX >= x && mouseX < x + chipWidth && mouseY >= y && mouseY < y + 13
+                && mouseY >= scroll.viewportTop() && mouseY < scroll.viewportBottom();
+        int shown = !active ? 0xFF4A4A5A : hover ? color : (color & 0x00FFFFFF) | 0xA0000000;
+        GuiTheme.chip(context, x, y, chipWidth, 13, shown);
+        context.text(this.font, label, x + 5, y + 3, !active ? 0xFF6A6A78 : hover ? color : GuiTheme.TEXT);
+        if (active) {
+            hits.add(new Hit(x, y, chipWidth, 13, action));
+        }
+        return x + chipWidth + 4;
+    }
+
     /** The continent's ranking, with what a win or a loss against each side would be worth. */
     private int drawTable(GuiGraphicsExtractor context, Standings standings, int left, int y, int width,
                           int mouseX, int mouseY) {
@@ -803,6 +1020,22 @@ public class LokaCalculatorScreen extends Screen {
         }
     }
 
+    /** Adds fights to the simulation against whoever it would fight next; 0 clears it. */
+    public static void devSimulate(int count, boolean win) {
+        if (devInstance == null || devInstance.match == null) {
+            return;
+        }
+        if (count == 0) {
+            simulated.clear();
+            devInstance.simResult = null;
+            return;
+        }
+        Standings.Side opponent = devInstance.simOpponent(BetterLokaClient.standings().standings());
+        if (opponent != null) {
+            devInstance.simulate(opponent, count, win);
+        }
+    }
+
     public static void devScroll(double amount) {
         if (devInstance != null) {
             devInstance.scroll.mouseScrolled(devInstance.left() + 10, devInstance.listTop() + 10, amount);
@@ -816,6 +1049,9 @@ public class LokaCalculatorScreen extends Screen {
         Standings.Match match = devInstance.match;
         return "query=" + query + " match=" + (match == null ? null : match.side().name() + " " + match.side().strength()
                 + "/" + match.side().balakStrength()) + " fights=" + (match == null ? 0 : devInstance.fightsOf(match.side()).size())
-                + " boxes=" + devInstance.manualYou + "," + devInstance.manualThem + "," + devInstance.manualLevel;
+                + " boxes=" + devInstance.manualYou + "," + devInstance.manualThem + "," + devInstance.manualLevel
+                + " simulated=" + simulated.size() + (devInstance.simResult == null ? ""
+                : " sim=" + devInstance.simResult.start() + "->" + devInstance.simResult.end() + " #"
+                + devInstance.simResult.startRank() + "->#" + devInstance.simResult.endRank());
     }
 }

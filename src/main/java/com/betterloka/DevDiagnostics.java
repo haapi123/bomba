@@ -1269,6 +1269,27 @@ public final class DevDiagnostics {
         step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devPick(2));
         step(5, () -> BetterLoka.LOGGER.info("DIAG v46 picked: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
         shot(5, "v46-picked");
+        // 0.47: the simulation — five wins over the side above, one fight Loka would not allow, one loss.
+        step(2, () -> {
+            com.betterloka.gui.LokaCalculatorScreen.devScroll(100);
+            com.betterloka.gui.LokaCalculatorScreen.devPick(0);
+            com.betterloka.gui.LokaCalculatorScreen.devSimulate(0, true);
+        });
+        shot(5, "v47-sim-empty");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devSimulate(5, true));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devPick(2));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devSimulate(1, true));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devPick(0));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devSimulate(1, false));
+        step(5, () -> BetterLoka.LOGGER.info("DIAG v47 simulated: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devScroll(-7));
+        shot(5, "v47-sim");
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devScroll(-6));
+        shot(5, "v47-sim-2");
+        step(2, () -> {
+            com.betterloka.gui.LokaCalculatorScreen.devSimulate(0, true);
+            com.betterloka.gui.LokaCalculatorScreen.devScroll(100);
+        });
         step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devBalak(true));
         step(10, () -> BetterLoka.LOGGER.info("DIAG v46 balak: {}", com.betterloka.gui.LokaCalculatorScreen.devState()));
         shot(5, "v46-balak");

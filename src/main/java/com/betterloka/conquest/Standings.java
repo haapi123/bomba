@@ -261,19 +261,33 @@ public final class Standings {
      * @param always sides to rank even if Balak would leave them out, such as the two in a fight
      */
     public List<Row> ranking(String world, Side... always) {
-        return rank(world, null, null, 0, always);
+        return rankingWith(world, Map.of(), always);
     }
 
     /** The ranking as it would stand once {@code winner} has taken {@code change} off {@code loser}. */
     public List<Row> rankingAfter(String world, Side winner, Side loser, int change) {
-        return rank(world, winner, loser, change, winner, loser);
+        Map<String, Double> strengths = new HashMap<>();
+        if (winner != null) {
+            strengths.put(winner.id(), winner.strengthOn(world) + change);
+        }
+        if (loser != null) {
+            strengths.put(loser.id(), loser.strengthOn(world) - change);
+        }
+        return rankingWith(world, strengths, winner, loser);
     }
 
-    private List<Row> rank(String world, Side winner, Side loser, int change, Side... always) {
+    /**
+     * The ranking with some sides' Strength replaced, as after several fights. Each row says where
+     * the side stood before and how far its Strength moved.
+     *
+     * @param strengths the new Strength of each side that changed, by side id
+     * @param always    sides to rank even if Balak would leave them out
+     */
+    public List<Row> rankingWith(String world, Map<String, Double> strengths, Side... always) {
         boolean balak = StrengthMath.isBalak(world);
         List<Side> ranked = new ArrayList<>();
         for (Side side : sides) {
-            boolean named = false;
+            boolean named = strengths.containsKey(side.id()) && balak;
             for (Side each : always) {
                 named |= each != null && each.id().equals(side.id());
             }
@@ -291,20 +305,13 @@ public final class Standings {
 
         Map<String, Double> after = new HashMap<>();
         for (Side side : ranked) {
-            double strength = side.strengthOn(world);
-            if (winner != null && side.id().equals(winner.id())) {
-                strength += change;
-            } else if (loser != null && side.id().equals(loser.id())) {
-                strength -= change;
-            }
-            after.put(side.id(), strength);
+            after.put(side.id(), strengths.getOrDefault(side.id(), side.strengthOn(world)));
         }
         ranked.sort(Comparator.comparingDouble((Side side) -> -after.get(side.id())).thenComparing(byName));
         List<Row> rows = new ArrayList<>();
         for (int i = 0; i < ranked.size(); i++) {
             Side side = ranked.get(i);
-            int moved = winner != null && side.id().equals(winner.id()) ? change
-                    : loser != null && side.id().equals(loser.id()) ? -change : 0;
+            int moved = (int) Math.round(after.get(side.id()) - side.strengthOn(world));
             rows.add(new Row(i + 1, side, after.get(side.id()), before.get(side.id()), moved));
         }
         return rows;

@@ -652,8 +652,17 @@ fills in the rest:
   and for every other side the same two numbers. A side in the top three shows how many players
   Loka wants at the inhibitor to attack it; a fight where either side's win would be worth 3 or less
   is marked as not allowed.
+- **Simulate fights ahead.** Add wins and losses — one at a time, or five at once — and they are
+  played out in order, each from the Strength the one before left: five wins in a row are worth
+  less than five times the first (+13, +11, +9, +8, +7 from level). Each fight shows the change,
+  both sides' Strength after it and your place; at the end, the total and the continent's top three.
+  A fight Loka would not allow (either side's win worth 3 or less) is shown and counts for nothing.
+  The opponent is the side picked in the table, else the other side of a declared fight, else the
+  side just above you; mix opponents by clicking another row between fights. **Undo** and **Clear**.
 - **By hand.** Three boxes at the bottom — your Strength, theirs, the lower of the two towns'
   levels — for anything else. Clicking a row of the table fills them in.
+
+![Simulating fights ahead](docs/calculator-simulation.png)
 
 The same numbers are on the **Loka Map**: every fight in the Fights list says what it is worth to
 each side, the territory's card says it too, and a fight's details show both outcomes and the
