@@ -3,11 +3,13 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.helper.GuiScaleController;
+import com.betterloka.helper.ImportantPlaces;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.CommonComponents;
@@ -46,6 +48,9 @@ public class LokaHelperScreen extends Screen {
     private Button tlButton;
     private Button tlKeyButton;
     private Button importantButton;
+    /** One switch per continent, right under the heading: no list to open and scroll for one click. */
+    private final java.util.Map<ImportantPlaces.Region, Button> regionButtons =
+            new java.util.EnumMap<>(ImportantPlaces.Region.class);
 
     /** Waiting for the key to bind /tl to. */
     private boolean listeningForKey;
@@ -140,12 +145,27 @@ public class LokaHelperScreen extends Screen {
                 .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build());
         y += BUTTON_HEIGHT + SECTION_GAP;
 
-        // Important waypoints: the places worth a marker, per continent.
+        // Important waypoints: the places worth a marker, per continent. Each continent switches on
+        // and off right here; the last button opens the list of what each one marks.
         importantLabelY = y;
         y += ROW_HEIGHT;
-        importantButton = addRenderableWidget(Button.builder(importantLabel(),
+        ImportantPlaces.Region[] regions = ImportantPlaces.Region.values();
+        int moreWidth = 20;
+        int gap = 2;
+        int regionWidth = (width - moreWidth - gap * regions.length) / regions.length;
+        int x = left;
+        regionButtons.clear();
+        for (ImportantPlaces.Region region : regions) {
+            regionButtons.put(region, addRenderableWidget(Button.builder(regionLabel(region), button -> {
+                        config().setImportantRegionEnabled(region, !config().importantRegionEnabled(region));
+                        refreshLabels();
+                    })
+                    .bounds(x, y, regionWidth, BUTTON_HEIGHT).build()));
+            x += regionWidth + gap;
+        }
+        importantButton = addRenderableWidget(Button.builder(Component.literal("..."),
                         button -> this.minecraft.gui.setScreen(new ImportantWaypointsScreen(this)))
-                .bounds(left, y, width, BUTTON_HEIGHT).build());
+                .bounds(left + width - moreWidth, y, moreWidth, BUTTON_HEIGHT).build());
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
                 .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
@@ -164,7 +184,18 @@ public class LokaHelperScreen extends Screen {
         lavaButton.setMessage(lavaLabel());
         tlButton.setMessage(tlLabel());
         tlKeyButton.setMessage(tlKeyLabel());
-        importantButton.setMessage(importantLabel());
+        importantButton.setTooltip(Tooltip.create(importantLabel()));
+        for (var entry : regionButtons.entrySet()) {
+            entry.getValue().setMessage(regionLabel(entry.getKey()));
+            entry.getValue().setTooltip(Tooltip.create(Component.translatable("betterloka.helper.important_region",
+                    entry.getKey().displayName(), onOff(config().importantRegionEnabled(entry.getKey())))));
+        }
+    }
+
+    /** The continent's name: green while its markers are on, grey while they are off. */
+    private Component regionLabel(ImportantPlaces.Region region) {
+        boolean on = config().importantRegionEnabled(region);
+        return Component.literal(region.displayName()).withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY);
     }
 
     private static Component onOff(boolean on) {
@@ -199,13 +230,13 @@ public class LokaHelperScreen extends Screen {
 
     private Component importantLabel() {
         int on = 0;
-        for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+        for (ImportantPlaces.Region region : ImportantPlaces.Region.values()) {
             if (config().importantRegionEnabled(region)) {
                 on++;
             }
         }
         return Component.translatable("betterloka.helper.important_open",
-                Component.literal(on + "/" + com.betterloka.helper.ImportantPlaces.Region.values().length)
+                Component.literal(on + "/" + ImportantPlaces.Region.values().length)
                         .withStyle(on > 0 ? ChatFormatting.GREEN : ChatFormatting.GRAY));
     }
 
@@ -267,8 +298,11 @@ public class LokaHelperScreen extends Screen {
         context.text(this.font, Component.translatable("betterloka.helper.lava"), left, lavaLabelY,
                 GuiTheme.MUTED);
         context.text(this.font, Component.translatable("betterloka.helper.tl"), left, tlLabelY, GuiTheme.MUTED);
-        context.text(this.font, Component.translatable("betterloka.helper.important"), left, importantLabelY,
-                GuiTheme.MUTED);
+        Component important = Component.translatable("betterloka.helper.important");
+        context.text(this.font, important, left, importantLabelY, GuiTheme.MUTED);
+        String hint = this.font.plainSubstrByWidth(Component.translatable("betterloka.helper.important_hint").getString(),
+                Math.max(0, contentWidth() - this.font.width(important) - 8));
+        context.text(this.font, hint, left + contentWidth() - this.font.width(hint), importantLabelY, 0xFF6E6E7A);
     }
 
     @Override

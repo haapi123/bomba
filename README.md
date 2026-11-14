@@ -350,6 +350,17 @@ off.
 Hit-testing is ray casting against the real outline rather than a bounding box. Loka's territories
 are not rectangles, and a box would hand a corner to the neighbour.
 
+### Important places
+
+![Important places on the map](docs/map-places.png)
+
+Loka Helper's important waypoints are pinned on the map too, on the continents the map has (spawn,
+Aladra, is not one of them): each continent's **docks**, its **resource island** and its **boss** —
+Kalros' Witch Hunter, Garama's Golem, Balak's Warden. A pin is the same picture the marker in the
+world carries, on a gold-edged tile pointing at the spot. Hovering one shows its name, its
+coordinates and whether Loka Helper marks it in the world. They show whether or not that continent's
+markers are switched on in Loka Helper: the map is where you look for them.
+
 ### Panning, zoom, and where the ground is
 
 It opens about six territories across — measured, not guessed: Kalros's territories have a median
@@ -365,6 +376,12 @@ download button under the zoom controls fetches a continent's closer levels ahea
 The map opens on the centre Loka publishes rather than the middle of the territory outlines. That is
 not cosmetic either: the geometric centre of Kalros is bare sea floor with no tiles at all, against
 40 of 169 at Loka's own centre.
+
+Tiles are fetched newest first, and a request nobody has asked for again in the last second is
+dropped rather than fetched. Before 0.48 they queued first in, first out, so pressing zoom in and out
+a dozen times queued hundreds of tiles for views already gone; switching continent after that left
+the new one blank for about ten seconds while the old queue drained. Now its ground is there within
+about a second.
 
 ### Fights
 
@@ -615,10 +632,12 @@ Several things are done deliberately in the HTTP layer, all measured against the
   you are standing on and only there: each continent's **docks**, **resource island** and **boss**
   (Kalros' Witch Hunter, Balak's Warden, Garama's Golem), and at spawn, Aladra, the **Town Portal, Loka Market, End
   Portal, Zyre Portal, Gambling, Nether Portal, Balak & Reins Teleports, Rivi Portal and the
-  Continent Portals**. Each continent has its own switch and **every one starts off**. The picture
-  says what the place is — a boat, a diamond pickaxe, the boss's egg (witch, warden, iron golem), a house, a market stall, a
-  roulette wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker
-  nearest the crosshair.
+  Continent Portals**. Each continent has its own switch and **every one starts off**. The switches
+  are right on the Loka Helper screen, one button per continent — green when on, click to flip it;
+  **…** opens the list of what each continent marks. The picture says what the place is — a boat, a
+  diamond pickaxe, the boss's egg (witch, warden, iron golem), a house, a market stall, a roulette
+  wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
+  crosshair. The same places are pinned on **Loka Map**.
 
 ![Important Waypoints](docs/helper-important.png)
 
@@ -635,6 +654,9 @@ and the screen says so.
 ![Clear lava](docs/helper-clear-lava.png)
 
 ## Loka Calculator
+
+Two tabs: **Strength**, for conquest fights, and **Brewer Calculator**, for a potion machine. The
+module opens whichever was open last.
 
 ![Loka Calculator](docs/calculator.png)
 
@@ -693,6 +715,39 @@ Alliances hold nearly all the Strength there is and Loka lists them in one small
 is read afresh — at most once a minute, and only while the calculator or a fight for Strength is on
 screen. A town in no alliance carries its own Strength, which the saved town roster may have hours
 old, so the few that matter are read again one at a time.
+
+### Brewer Calculator
+
+![Brewer Calculator](docs/brewer.png)
+
+What a potion machine makes, and everything it takes. Pick the potion (the arrows, the mouse wheel,
+or click it for every potion at once), drink, splash or lingering, and base, **II** or long; the row
+under it shows the steps in the order they go in, from water bottles to the finished potion.
+
+- **From mats.** How many of every ingredient go into each brewing stand, and how many stands. One
+  mat brews three bottles, so **64 mats in each of 8 stands make 1,536 potions — 24 stacks of
+  bottles.** When the bottles would not come to whole stacks (63 mats: 23×64 + 40), the nearest
+  amounts that do are offered under the boxes, one click each.
+- **For a target.** How many potions you want (`20000` or `20k`) and how many stands, and three ways
+  to fill each stand, **always in whole stacks of bottles**: the nearest above (20k on 8 stands: 840
+  each, 20,160 potions, 315×64), the nearest below (832, 19,968), and whole stacks of every
+  ingredient (896 = 14×64, 21,504). Click one to see it in full.
+
+![Brewer Calculator, for a target](docs/brewer-target.png)
+
+For whatever it comes to: the **empty bottles** (to fill with water), **every ingredient**, in total,
+in stacks and per stand, and the **blaze powder** each stand burns as fuel — beside the ingredients,
+on its own line. Then the **brewing time** (all stands at once), the **shulker boxes** the finished
+potions fill (they do not stack: 27 a box), and everything worked **back to raw materials** — glass
+for the bottles, blaze rods for all the powder (fuel and ingredient), gold ingots and melon slices
+for glistering melons, carrots for golden carrots, spider eyes, mushrooms and sugar cane for
+fermented spider eyes. **Copy list** puts it on the clipboard.
+
+The rules are vanilla's: one ingredient per step, up to three bottles a step, 20 seconds a step, and
+**one blaze powder lasts 20 steps** — 20 brews, so up to 60 bottles, not 20 potions. Every step
+burns fuel, so a splash Healing II (nether wart, glistering melon, glowstone, gunpowder) burns four
+times what a one-step potion does: 64 mats is 256 brews, 13 blaze powder a stand. A stand cannot
+hand the rest of a powder to the next, so each one's is rounded up on its own.
 
 ## Loka Assistant
 

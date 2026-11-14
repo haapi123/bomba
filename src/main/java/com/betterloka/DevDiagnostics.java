@@ -100,6 +100,16 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("v48".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            v48Input();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
+        if ("zoomspam".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            zoomSpamInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("v46".equals(System.getenv("BETTERLOKA_DIAG"))) {
             v46Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1332,6 +1342,131 @@ public final class DevDiagnostics {
         shot(5, "v46-fight-detail-2");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG v46 checks done");
+            client().stop();
+        });
+    }
+
+    /**
+     * The zoom buttons pressed thirty times in a row, then another continent: how long until its
+     * ground is drawn. {@code BETTERLOKA_TILES_FIFO=1} runs the old first-in, first-out tile queue.
+     */
+    private void zoomSpamInput() {
+        com.betterloka.map.MapTerrain.devFirstInFirstOut = "1".equals(System.getenv("BETTERLOKA_TILES_FIFO"));
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+        });
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devNoHover = true;
+            client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null));
+        });
+        step(5, () -> mapScreen().devSelect(com.betterloka.map.Continent.KALROS));
+        step(120, () -> BetterLoka.LOGGER.info("DIAG zoomspam fifo={} before: {}",
+                com.betterloka.map.MapTerrain.devFirstInFirstOut, mapScreen().devTerrainState()));
+        for (int i = 0; i < 14; i++) {
+            step(1, () -> mapScreen().devZoom(true));
+        }
+        for (int i = 0; i < 14; i++) {
+            step(1, () -> mapScreen().devZoom(false));
+        }
+        for (int i = 0; i < 8; i++) {
+            step(1, () -> mapScreen().devZoom(true));
+        }
+        step(1, () -> BetterLoka.LOGGER.info("DIAG zoomspam after spam: {}", mapScreen().devTerrainState()));
+        step(1, () -> {
+            startTimer();
+            mapScreen().devSelect(com.betterloka.map.Continent.GARAMA);
+        });
+        for (int i = 1; i <= 24; i++) {
+            int at = i;
+            step(10, () -> BetterLoka.LOGGER.info("DIAG zoomspam +{} ms: {}", sinceTimerMillis(), mapScreen().devTerrainState()));
+            if (at == 4) {
+                shot(1, "zoomspam-2s");
+            }
+        }
+        shot(2, "zoomspam-end");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG zoomspam checks done");
+            client().stop();
+        });
+    }
+
+    /**
+     * 0.48: Loka Helper's continent switches, its places pinned on Loka Map, and the Brewer
+     * Calculator both ways round. {@code BETTERLOKA_SCALE} sets the GUI scale (3 by default).
+     */
+    private void v48Input() {
+        int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
+        step(2, () -> {
+            client().options.guiScale().set(scale);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+        });
+        step(2, () -> {
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region,
+                        region == com.betterloka.helper.ImportantPlaces.Region.KALROS
+                                || region == com.betterloka.helper.ImportantPlaces.Region.GARAMA);
+            }
+            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+        });
+        shot(10, "v48-helper");
+
+        com.betterloka.gui.BrewerCalculatorScreen.devSet(false, com.betterloka.brewing.Brewing.Effect.HEALING,
+                com.betterloka.brewing.Brewing.Form.SPLASH, com.betterloka.brewing.Brewing.Level.STRONG, "64", "8");
+        step(2, () -> {
+            com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.BREWER);
+            client().gui.setScreen(com.betterloka.gui.CalculatorTabs.open(null));
+        });
+        step(5, () -> BetterLoka.LOGGER.info("DIAG v48 brewer mats: {}", com.betterloka.gui.BrewerCalculatorScreen.devState()));
+        shot(5, "v48-brewer-mats");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devScroll(-6));
+        shot(3, "v48-brewer-mats-mid");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devScroll(-20));
+        shot(3, "v48-brewer-mats-end");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devSet(false, com.betterloka.brewing.Brewing.Effect.STRENGTH,
+                com.betterloka.brewing.Brewing.Form.DRINK, com.betterloka.brewing.Brewing.Level.NORMAL, "63", "8"));
+        step(3, () -> BetterLoka.LOGGER.info("DIAG v48 brewer 63: {}", com.betterloka.gui.BrewerCalculatorScreen.devState()));
+        shot(3, "v48-brewer-round");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devSet(true, com.betterloka.brewing.Brewing.Effect.HEALING,
+                com.betterloka.brewing.Brewing.Form.SPLASH, com.betterloka.brewing.Brewing.Level.STRONG, "20k", "8"));
+        step(3, () -> BetterLoka.LOGGER.info("DIAG v48 brewer target: {}", com.betterloka.gui.BrewerCalculatorScreen.devState()));
+        shot(3, "v48-brewer-target");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devFit(com.betterloka.brewing.Brewing.Fit.FULL_STACKS));
+        step(3, () -> BetterLoka.LOGGER.info("DIAG v48 brewer full stacks: {}", com.betterloka.gui.BrewerCalculatorScreen.devState()));
+        shot(3, "v48-brewer-target-full");
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devFit(com.betterloka.brewing.Brewing.Fit.ABOVE));
+        step(2, () -> com.betterloka.gui.BrewerCalculatorScreen.devPicker(true));
+        shot(3, "v48-brewer-picker");
+        step(2, () -> {
+            com.betterloka.gui.BrewerCalculatorScreen.devPicker(false);
+            com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.STRENGTH);
+            client().gui.setScreen(com.betterloka.gui.CalculatorTabs.open(null));
+        });
+        shot(80, "v48-strength-tab");
+
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devNoHover = true;
+            client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(null));
+        });
+        step(5, () -> mapScreen().devSelect(com.betterloka.map.Continent.KALROS));
+        shot(240, "v48-map-kalros");
+        step(2, () -> com.betterloka.gui.LokaMapScreen.devHoverPlace = "witch_hunter");
+        shot(3, "v48-map-card");
+        step(2, () -> {
+            com.betterloka.gui.LokaMapScreen.devHoverPlace = null;
+            mapScreen().devSelect(com.betterloka.map.Continent.GARAMA);
+        });
+        shot(240, "v48-map-garama");
+        step(2, () -> mapScreen().devSelect(com.betterloka.map.Continent.BALAK));
+        shot(240, "v48-map-balak");
+        step(2, () -> mapScreen().devSelect(com.betterloka.map.Continent.ASCALON));
+        shot(240, "v48-map-ascalon");
+        step(2, () -> mapScreen().devSelect(com.betterloka.map.Continent.RIVINA));
+        shot(240, "v48-map-rivina");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG v48 checks done");
             client().stop();
         });
     }

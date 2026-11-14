@@ -2,9 +2,12 @@ package com.betterloka.helper;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ImportantPlacesTest {
     @Test
@@ -25,6 +28,22 @@ class ImportantPlacesTest {
         assertEquals(ImportantPlaces.Region.BALAK, ImportantPlaces.detect("overworld", false, true, 2300, 3012));
         assertEquals(ImportantPlaces.Region.RIVINA, ImportantPlaces.detect("overworld", false, true, 2385, 1041));
         assertEquals(ImportantPlaces.Region.ALADRA, ImportantPlaces.detect("overworld", false, true, -150, 20));
+    }
+
+    @Test
+    void theMapShowsEachContinentsOwnPlacesAndNothingForAladra() {
+        assertEquals(List.of("kalros_docks", "witch_hunter", "kalros_ri"),
+                ImportantPlaces.onMapWorld("north").stream().map(ImportantPlaces.Place::id).toList());
+        assertEquals(List.of("garama_docks", "garama_ri", "golem"),
+                ImportantPlaces.onMapWorld("south").stream().map(ImportantPlaces.Place::id).toList());
+        assertEquals(List.of("balak_docks", "warden"),
+                ImportantPlaces.onMapWorld("bigboi").stream().map(ImportantPlaces.Place::id).toList());
+        assertEquals(List.of("rivi_docks"),
+                ImportantPlaces.onMapWorld("lilboi").stream().map(ImportantPlaces.Place::id).toList());
+        assertEquals(2, ImportantPlaces.onMapWorld("west").size());
+        assertTrue(ImportantPlaces.onMapWorld("aladra").isEmpty(), "spawn is not on the map");
+        assertTrue(ImportantPlaces.onMapWorld("spawn").isEmpty());
+        assertTrue(ImportantPlaces.onMapWorld(null).isEmpty());
     }
 
     @Test

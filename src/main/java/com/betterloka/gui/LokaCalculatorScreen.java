@@ -363,6 +363,9 @@ public class LokaCalculatorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (CalculatorTabs.click(this.font, this.width, CalculatorTabs.Tab.STRENGTH, click.x(), click.y(), parent)) {
+            return true;
+        }
         if (click.y() >= scroll.viewportTop() && click.y() < scroll.viewportBottom()) {
             for (Hit hit : List.copyOf(hits)) {
                 if (hit.contains(click.x(), click.y())) {
@@ -415,7 +418,7 @@ public class LokaCalculatorScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 8, GuiTheme.TEXT);
+        CalculatorTabs.draw(context, this.font, this.width, CalculatorTabs.Tab.STRENGTH, mouseX, mouseY);
         hits.clear();
 
         long now = System.currentTimeMillis();
@@ -446,7 +449,7 @@ public class LokaCalculatorScreen extends Screen {
         Component text = service.updatedAt() == 0
                 ? Component.translatable(service.failed() ? "betterloka.calculator.unreachable" : "betterloka.calculator.loading")
                 : Component.translatable("betterloka.fights.checked", FightTiming.clock(now - service.updatedAt()));
-        int x = Math.max(this.width / 2 + this.font.width(this.title) / 2 + 8, right - this.font.width(text));
+        int x = Math.max(CalculatorTabs.right(this.font, this.width) + 8, right - this.font.width(text));
         context.text(this.font, text, x, 8, service.failed() ? GuiTheme.BAD : GuiTheme.MUTED);
     }
 

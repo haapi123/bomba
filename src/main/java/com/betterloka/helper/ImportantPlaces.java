@@ -117,6 +117,27 @@ public final class ImportantPlaces {
         return out;
     }
 
+    /**
+     * The places Loka Map shows on the continent it calls {@code world} — {@code north},
+     * {@code bigboi} and the rest. Aladra is not on the map, so it never has any.
+     */
+    public static List<Place> onMapWorld(String world) {
+        if (world == null) {
+            return List.of();
+        }
+        for (Region region : Region.values()) {
+            if (region == Region.ALADRA) {
+                continue;
+            }
+            for (String name : region.worldNames) {
+                if (name.equalsIgnoreCase(world)) {
+                    return on(region);
+                }
+            }
+        }
+        return List.of();
+    }
+
     /** How far a world's spawn may be from a continent's for the two to be taken as the same. */
     static final int SPAWN_MATCH_BLOCKS = 600;
 

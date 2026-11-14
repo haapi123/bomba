@@ -120,6 +120,40 @@ public final class MapTerrain {
     /** Reset every frame by the screen, to cap how much a single pan can kick off. */
     private final AtomicInteger fetchesThisFrame = new AtomicInteger();
 
+    /**
+     * A tile not drawn for this long by the time a worker reaches it was zoomed or panned past, and
+     * is let go rather than loaded. Time rather than frames, so a slow frame rate does not keep a
+     * screenful of stale ground in the queue for seconds.
+     */
+    private static final long STALE_MILLIS = 1000;
+
+    /** A tile waiting for a worker, with the claims it is to be painted with. */
+    private record Pending(Key key, Digest claims) {
+    }
+
+    /**
+     * Tiles waiting to load, newest first.
+     *
+     * <p>A first-in, first-out queue is what made the map stop drawing after the zoom buttons were
+     * pressed a few times in a row: every step of the zoom asks for a screenful of tiles at its own
+     * level, a few hundred in all, and the continent switched to next queued behind every one of
+     * them — tiles nobody would see, each a download. Newest first, the view on screen is always
+     * served before the ones gone past, and those are dropped unread once they are stale.
+     */
+    private final java.util.concurrent.ConcurrentLinkedDeque<Pending> pending = new java.util.concurrent.ConcurrentLinkedDeque<>();
+
+    /** When each waiting tile was last wanted on screen. */
+    private final Map<Key, Long> wantedAt = new ConcurrentHashMap<>();
+
+    /** When the frame being drawn began, set by {@link #beginFrame()}. */
+    private volatile long frame = System.currentTimeMillis();
+
+    /** Tiles let go because the view had moved on, for diagnostics. */
+    private final AtomicInteger dropped = new AtomicInteger();
+
+    /** For measuring the old behaviour against the new, in a development run only. */
+    public static volatile boolean devFirstInFirstOut = false;
+
     public MapTerrain(HttpTransport transport, Path cacheDir) {
         this.transport = transport;
         this.cacheDir = cacheDir;
@@ -191,6 +225,20 @@ public final class MapTerrain {
     /** Called once per frame before drawing, so the per-frame fetch budget starts fresh. */
     public void beginFrame() {
         fetchesThisFrame.set(0);
+        frame = System.currentTimeMillis();
+    }
+
+    /** Waiting, dropped as stale, and uploaded for one world and level: for the development runs. */
+    public String devState(String world, int level) {
+        int ready = 0;
+        synchronized (textures) {
+            for (Key key : textures.keySet()) {
+                if (key.level() == level && key.world().equals(world)) {
+                    ready++;
+                }
+            }
+        }
+        return "ready=" + ready + " waiting=" + pending.size() + " dropped=" + dropped.get();
     }
 
     /** How many tiles of one level are uploaded, and how many were found not to exist. */
@@ -229,6 +277,7 @@ public final class MapTerrain {
             // Painted under older claims: repaint in the background and keep showing this one, so a
             // capture recolours the map without it blinking out first.
             if (existing.claims() != claims.value() && repainting.add(key)) {
+                wantedAt.put(key, frame);
                 if (fetchesThisFrame.incrementAndGet() <= FETCHES_PER_FRAME) {
                     fetch(key, claims);
                 } else {
@@ -241,6 +290,8 @@ public final class MapTerrain {
         if (emptyUnder != null && emptyUnder == claims.value()) {
             return null;
         }
+        // Still wanted: a tile waiting for a worker stays fresh for as long as it is on screen.
+        wantedAt.put(key, frame);
         if (attempted.add(key)) {
             if (fetchesThisFrame.incrementAndGet() <= FETCHES_PER_FRAME) {
                 missing.remove(key);
@@ -288,7 +339,36 @@ public final class MapTerrain {
      * and the render thread only ever uploads finished pixels.
      */
     private void fetch(Key key, Digest claims) {
-        transport.tileExecutor().execute(() -> {
+        if (devFirstInFirstOut) {
+            transport.tileExecutor().execute(() -> load(new Pending(key, claims)));
+            return;
+        }
+        pending.addFirst(new Pending(key, claims));
+        transport.tileExecutor().execute(this::loadNewest);
+    }
+
+    /** Takes the newest tile waiting, and loads it unless the view has moved on from it. */
+    private void loadNewest() {
+        Pending next = pending.pollFirst();
+        if (next == null) {
+            return;
+        }
+        Long wanted = wantedAt.get(next.key());
+        if (wanted == null || System.currentTimeMillis() - wanted > STALE_MILLIS) {
+            // Gone past. Forgetting the attempt lets it be asked for again if the view comes back.
+            attempted.remove(next.key());
+            repainting.remove(next.key());
+            wantedAt.remove(next.key());
+            dropped.incrementAndGet();
+            return;
+        }
+        load(next);
+    }
+
+    private void load(Pending next) {
+        Key key = next.key();
+        Digest claims = next.claims();
+        {
             try {
                 byte[] jpeg = load(key);
                 Pixels pixels = jpeg == null ? null : decode(key, jpeg);
@@ -316,8 +396,9 @@ public final class MapTerrain {
                 }
             } finally {
                 repainting.remove(key);
+                wantedAt.remove(key);
             }
-        });
+        }
     }
 
     /**

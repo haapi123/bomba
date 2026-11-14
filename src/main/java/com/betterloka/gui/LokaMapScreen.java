@@ -3,6 +3,8 @@ package com.betterloka.gui;
 import com.betterloka.BetterLokaClient;
 import com.betterloka.api.model.ScheduledFight;
 import com.betterloka.fights.FightWatch;
+import com.betterloka.helper.ImportantPlaces;
+import com.betterloka.helper.PlaceIcons;
 import com.betterloka.map.Continent;
 import com.betterloka.map.MapDataStore;
 import com.betterloka.map.MapHighlight;
@@ -86,6 +88,8 @@ public class LokaMapScreen extends Screen {
     private String selectedNumber;
     private MapTerritory selected;
     private MapTerritory hovered;
+    /** The Loka Helper place under the pointer, if any: its card wins over the territory's. */
+    private ImportantPlaces.Place hoveredPlace;
 
     /**
      * The view: which world point is in the middle, and how tight the zoom is.
@@ -829,8 +833,9 @@ public class LokaMapScreen extends Screen {
             townButton.active = selectedTown() != null;
         }
         placeFightsUi();
-        hovered = dragging || devNoHover || overSearch(mouseX, mouseY) || overFightsUi(mouseX, mouseY)
-                ? null : territoryAt(mouseX, mouseY);
+        boolean pointerFree = !(dragging || devNoHover || overSearch(mouseX, mouseY) || overFightsUi(mouseX, mouseY));
+        hoveredPlace = pointerFree || devHoverPlace != null ? placeAt(mouseX, mouseY) : null;
+        hovered = pointerFree && hoveredPlace == null ? territoryAt(mouseX, mouseY) : null;
         drawMap(context, mouseX, mouseY);
         // Over the map's own markers, the swords included.
         context.nextStratum();
@@ -847,6 +852,10 @@ public class LokaMapScreen extends Screen {
             if (fight != null && fight.id() != null && fight.id().equals(fightsPanel.detailId())) {
                 describing = null;
             }
+        }
+        if (hoveredPlace != null) {
+            describing = null;
+            drawPlaceCard(context, hoveredPlace, mouseX, mouseY);
         }
         if (describing != null) {
             drawInfoCard(context, describing, mouseX, mouseY, hovered != null);
@@ -908,6 +917,14 @@ public class LokaMapScreen extends Screen {
                 drawFightMarker(context, territory);
             }
         }
+        // Loka Helper's important places — docks, resource island, boss — over everything else on
+        // the ground: there are only ever two or three, and they are what a player looks for first.
+        // North to south, so a pin further down the map is drawn over the point of one above it.
+        List<ImportantPlaces.Place> places = new ArrayList<>(ImportantPlaces.onMapWorld(continent.world()));
+        places.sort(java.util.Comparator.comparingInt(ImportantPlaces.Place::z));
+        for (ImportantPlaces.Place place : places) {
+            drawPlace(context, place, place.equals(hoveredPlace));
+        }
         devIconNanos = System.nanoTime() - devAfterBorders;
         matrices.popMatrix();
 
@@ -915,6 +932,97 @@ public class LokaMapScreen extends Screen {
         drawViewNote(context, mouseX, mouseY);
         context.disableScissor();
     }
+
+    // --- Loka Helper's important places ---
+
+    private static final int PLACE_BOX = 20;
+    private static final int PLACE_BORDER = 0xFFF2C94C;
+    private static final int PLACE_BORDER_HOVER = 0xFFFFF1B8;
+    private static final int PLACE_FILL = 0xE6141419;
+
+    /** One place: its picture on a dark tile with a gold edge, and a point under it on the spot. */
+    private void drawPlace(GuiGraphicsExtractor context, ImportantPlaces.Place place, boolean hover) {
+        int x = screenXOf(place.x() + 0.5);
+        int y = screenYOf(place.z() + 0.5);
+        if (x < mapX - PLACE_BOX || x > mapX + mapWidth + PLACE_BOX
+                || y < mapY - PLACE_BOX * 2 || y > mapY + mapHeight + PLACE_BOX) {
+            return;
+        }
+        int border = hover ? PLACE_BORDER_HOVER : PLACE_BORDER;
+        // The tile sits above the spot, with a little point down to it, the way a map pin does.
+        int left = x - PLACE_BOX / 2;
+        int top = y - PLACE_BOX - 4;
+        context.fill(left + 1, top, left + PLACE_BOX - 1, top + PLACE_BOX, border);
+        context.fill(left, top + 1, left + PLACE_BOX, top + PLACE_BOX - 1, border);
+        context.fill(left + 1, top + 1, left + PLACE_BOX - 1, top + PLACE_BOX - 1, PLACE_FILL);
+        for (int row = 0; row < 4; row++) {
+            context.fill(x - 3 + row, top + PLACE_BOX + row, x + 3 - row, top + PLACE_BOX + row + 1, border);
+        }
+        PlaceIcons.draw(context, place.icon(), left + 2, top + 2, 16);
+    }
+
+    /** The place whose pin is under the pointer, or {@code null}. */
+    private ImportantPlaces.Place placeAt(double mouseX, double mouseY) {
+        if (devHoverPlace != null) {
+            for (ImportantPlaces.Place place : ImportantPlaces.onMapWorld(continent.world())) {
+                if (place.id().equals(devHoverPlace)) {
+                    return place;
+                }
+            }
+        }
+        if (!insideMap(mouseX, mouseY)) {
+            return null;
+        }
+        ImportantPlaces.Place nearest = null;
+        for (ImportantPlaces.Place place : ImportantPlaces.onMapWorld(continent.world())) {
+            double x = screenXOf(place.x() + 0.5) + originFracX;
+            double top = screenYOf(place.z() + 0.5) + originFracY - PLACE_BOX - 4;
+            if (mouseX >= x - PLACE_BOX / 2.0 && mouseX < x + PLACE_BOX / 2.0
+                    && mouseY >= top && mouseY < top + PLACE_BOX + 4) {
+                nearest = place;
+            }
+        }
+        return nearest;
+    }
+
+    /** What a pin is: the place's name, where it is, and whether Loka Helper marks it in the world. */
+    private void drawPlaceCard(GuiGraphicsExtractor context, ImportantPlaces.Place place, int mouseX, int mouseY) {
+        Component name = Component.translatable(place.nameKey()).withStyle(ChatFormatting.BOLD);
+        String coords = place.x() + " " + place.y() + " " + place.z();
+        Component kind = Component.translatable("betterloka.map.place_kind");
+        boolean shown = BetterLokaClient.config().importantRegionEnabled(place.region());
+        Component inWorld = Component.translatable("betterloka.map.place_in_world",
+                Component.translatable(shown ? "betterloka.toggle.on" : "betterloka.toggle.off")
+                        .withStyle(shown ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+        int inner = Math.max(Math.max(this.font.width(name) + 20, this.font.width(coords)),
+                Math.max(this.font.width(kind), this.font.width(inWorld)));
+        int width = inner + MapStyle.CARD_PADDING * 2;
+        int height = MapStyle.CARD_PADDING * 2 + 16 + 3 * 11 + 2;
+        int x = mouseX + MapStyle.CARD_CURSOR_OFFSET;
+        if (x + width > this.width - MapStyle.CARD_SCREEN_MARGIN) {
+            x = mouseX - MapStyle.CARD_CURSOR_OFFSET - width;
+        }
+        int y = mouseY + MapStyle.CARD_CURSOR_OFFSET;
+        if (y + height > this.height - MapStyle.CARD_SCREEN_MARGIN) {
+            y = mouseY - MapStyle.CARD_CURSOR_OFFSET - height;
+        }
+        x = Math.max(MapStyle.CARD_SCREEN_MARGIN, Math.min(x, this.width - width - MapStyle.CARD_SCREEN_MARGIN));
+        y = Math.max(MapStyle.CARD_SCREEN_MARGIN, Math.min(y, this.height - height - MapStyle.CARD_SCREEN_MARGIN));
+        MapStyle.card(context, x, y, width, height, PLACE_BORDER);
+        int textX = x + MapStyle.CARD_PADDING;
+        int lineY = y + MapStyle.CARD_PADDING;
+        PlaceIcons.draw(context, place.icon(), textX, lineY, 16);
+        context.text(this.font, name, textX + 20, lineY + 4, GuiTheme.TEXT);
+        lineY += 18;
+        context.text(this.font, coords, textX, lineY, GuiTheme.ACCENT);
+        lineY += 11;
+        context.text(this.font, kind, textX, lineY, GuiTheme.MUTED);
+        lineY += 11;
+        context.text(this.font, inWorld, textX, lineY, GuiTheme.MUTED);
+    }
+
+    /** Development only: the place whose card to show, by id, wherever the pointer is. */
+    public static String devHoverPlace;
 
     /** Whether a territory is entirely outside the window, and so not worth drawing at all. */
     private boolean offScreen(MapTerritory territory) {
@@ -1885,6 +1993,22 @@ public class LokaMapScreen extends Screen {
      * labelled {@code +} finds nothing and silently photographs an unzoomed map, which is exactly
      * what the first run of this did.
      */
+    /** Switches continent as its tab would. */
+    public void devSelect(Continent target) {
+        select(target);
+    }
+
+    /** The detail level drawn now, and the terrain's state for this continent at it and at the base. */
+    public String devTerrainState() {
+        int detail = MapTerrain.levelFor(MapTerrain.perRealPixel(blocksPerPixel));
+        while (detail < MapTerrain.BASE_LEVEL && tilesAcross(detail) > MapTerrain.MAX_DETAIL_TILES) {
+            detail++;
+        }
+        MapTerrain terrain = BetterLokaClient.mapTerrain();
+        return continent + " detail=" + detail + " [" + terrain.devState(continent.world(), detail) + "] base=["
+                + terrain.devState(continent.world(), MapTerrain.BASE_LEVEL) + "]";
+    }
+
     public void devZoom(boolean in) {
         int y = in ? zoomInY() : zoomOutY();
         double x = zoomButtonX() + MapStyle.ZOOM_BUTTON_SIZE / 2.0;
