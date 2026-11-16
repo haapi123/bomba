@@ -100,6 +100,20 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("logo".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            for (int scale : new int[]{3, 2}) {
+                step(2, () -> {
+                    client().options.guiScale().set(scale);
+                    client().resizeGui();
+                    client().gui.toastManager().clear();
+                    client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null));
+                });
+                shot(10, "logo-menu-" + scale);
+            }
+            step(2, () -> client().stop());
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("v48".equals(System.getenv("BETTERLOKA_DIAG"))) {
             v48Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());

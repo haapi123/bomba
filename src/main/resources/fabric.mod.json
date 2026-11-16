@@ -3,7 +3,7 @@
   "id": "betterloka",
   "version": "${version}",
   "name": "BetterLoka",
-  "description": "Client-side companion mod for the Loka Minecraft server (play.lokamc.com). Adds an in-game GUI with Player Finder, Translator, Fight Manager and Loka Helper modules, powered by the public Loka API.",
+  "description": "Client-side companion mod for the Loka Minecraft server (play.lokamc.com): Player Finder, Translator, Loka Market, Town Logger, Loka Grinder, Loka Map, Loka Helper, Loka Calculator and Loka Assistant, powered by Loka's public API.",
   "authors": [
     "BetterLoka contributors"
   ],

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/banner.png" alt="BetterLoka — the companion mod for Loka" width="680"></p>
+
 # BetterLoka
 
 A client-side Fabric mod for **[Loka](https://lokamc.com)** (`play.lokamc.com`), Minecraft **26.3**.
@@ -842,6 +844,14 @@ monthly budget it never goes over. Its README has the setup, the settings and wh
 It also runs the Discord bot in the same process, so one panel server hosts both, and it can post the
 questions it could not answer to a Discord channel, where members with a chosen role answer them
 through a form and members with an approving role approve them into the knowledge base.
+
+## Logo
+
+The logo is a Loka territory hex in a gold rim with an **L** and a **+** — Loka, plus. It is drawn,
+not painted: `docs/logo/gen.py` writes it as SVG and `docs/logo/render.js` renders it with
+Playwright's Chromium, at 128 px for the mod's icon, at the exact pixel size of every GUI scale for
+the menu, and for the README. The same script makes the Discord avatar (the hex on a dark
+background, inside the circle Discord crops to) and banner.
 
 ## Building
 

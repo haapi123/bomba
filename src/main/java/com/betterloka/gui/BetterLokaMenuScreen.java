@@ -3,6 +3,8 @@ package com.betterloka.gui;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
@@ -13,6 +15,9 @@ public class BetterLokaMenuScreen extends Screen {
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
     private static final int BUTTON_SPACING = 23;
+    /** How big the logo is drawn, in GUI pixels: there is a picture for each GUI scale at exactly this. */
+    private static final int LOGO = 26;
+    private static final int LOGO_GAP = 6;
 
     private final Screen parent;
 
@@ -58,9 +63,31 @@ public class BetterLokaMenuScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
         int titleY = Math.max(6, this.height / 2 - 103 - 26);
-        context.centeredText(this.font, this.title, this.width / 2, titleY, GuiTheme.TEXT);
-        context.centeredText(this.font, Component.translatable("betterloka.menu.subtitle"),
-                this.width / 2, titleY + 12, GuiTheme.MUTED);
+        int buttonsTop = Math.max(24, this.height / 2 - 103);
+        // The logo beside the name, the two together centred over the buttons.
+        Component subtitle = Component.translatable("betterloka.menu.subtitle");
+        int size = Math.max(0, Math.min(LOGO, buttonsTop - 2 - (titleY - 3)));
+        int textWidth = Math.max(this.font.width(this.title), this.font.width(subtitle));
+        int left = (this.width - (size + LOGO_GAP + textWidth)) / 2;
+        drawLogo(context, left, titleY - 3, size);
+        int textX = left + size + LOGO_GAP;
+        context.text(this.font, this.title, textX, titleY, GuiTheme.TEXT);
+        context.text(this.font, subtitle, textX, titleY + 12, GuiTheme.MUTED);
+    }
+
+    /**
+     * The logo, from the picture made for the current GUI scale, so it is drawn pixel for pixel
+     * rather than squeezed from a bigger one.
+     */
+    private void drawLogo(GuiGraphicsExtractor context, int x, int y, int size) {
+        if (size <= 0) {
+            return;
+        }
+        int scale = Math.max(1, Math.min(6, this.minecraft.getWindow().getGuiScale()));
+        int pixels = LOGO * scale;
+        Identifier logo = Identifier.fromNamespaceAndPath("betterloka", "textures/gui/logo_" + scale + ".png");
+        context.blit(RenderPipelines.GUI_TEXTURED, logo, x, y, 0f, 0f, size, size, pixels, pixels, pixels, pixels,
+                0xFFFFFFFF);
     }
 
     @Override
