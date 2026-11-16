@@ -99,6 +99,10 @@ public final class BetterLokaConfig {
     private boolean clearLava = false;
     /** Whether the /tl key does anything; off, and with no key, until the player sets both. */
     private boolean tlKeyEnabled = false;
+    /** Whether "Match Ready!" is answered with /join by itself. Off unless the player turns it on. */
+    private boolean duelAutoAccept = false;
+    /** Whether each duel ends with its hit statistics in chat. On: it only ever writes to the player. */
+    private boolean duelStats = true;
     /**
      * The continents whose important places are marked, by id. Empty until the player switches one
      * on: every continent starts off.
@@ -303,6 +307,24 @@ public final class BetterLokaConfig {
 
     public void setTlKeyEnabled(boolean tlKeyEnabled) {
         this.tlKeyEnabled = tlKeyEnabled;
+        save();
+    }
+
+    public boolean duelAutoAccept() {
+        return duelAutoAccept;
+    }
+
+    public void setDuelAutoAccept(boolean duelAutoAccept) {
+        this.duelAutoAccept = duelAutoAccept;
+        save();
+    }
+
+    public boolean duelStats() {
+        return duelStats;
+    }
+
+    public void setDuelStats(boolean duelStats) {
+        this.duelStats = duelStats;
         save();
     }
 

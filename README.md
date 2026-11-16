@@ -628,6 +628,9 @@ Several things are done deliberately in the HTTP layer, all measured against the
 
 ![Loka Helper](docs/helper.png)
 
+The sections close up to fit the screen; when even that is not enough (a GUI scale that leaves only
+240 pixels of height, as 1440p does at its largest), the list scrolls with the mouse wheel.
+
 - **GUI scale** — an inventory big enough to hit a slot without aiming, and a hotbar that stays the
   size it was.
 - **Coordinates and facing** — where you stand and which way you look (eight points, with the axes:
@@ -650,6 +653,30 @@ Several things are done deliberately in the HTTP layer, all measured against the
   diamond pickaxe, the boss's egg (witch, warden, iron golem), a house, a market stall, a roulette
   wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
   crosshair. The same places are pinned on **Loka Map**.
+
+- **Duels** — two switches.
+  - **Auto-accept** (off until you turn it on): when Loka says `Match Ready! [Click to join]`, `/join`
+    is sent for you, a quarter of a second later, with a line in chat saying so. Only Loka's own line
+    counts — the same words typed by a player arrive as `Name: Match Ready!…` and do nothing — and
+    the command is `/join` whatever the line's button says, once per three seconds at most.
+  - **Stats in chat** (on): when the duel ends, a line per side in your chat, seen by you alone —
+    `You: 56% (23/41) · crits 39% · sweeps 17% · combo 5`: hits landed of swings made, then how much
+    of what landed was crits and sweeps, and the longest run of hits before the other side hit back.
+    The same for your opponent; hover a line for the counts.
+
+  The numbers come from what the server shows every player near a fight, so your opponent's are as
+  good as yours: their **swings** are the arm swing the server shows (counted only with a weapon in
+  hand and within eight blocks — a thrown potion swings the arm too); a **hit** is the server's damage
+  event, which names attacker and victim (melee only: not an arrow, not a potion); a **crit** is the
+  crit animation the server plays on whoever was hit; a **sweep** is the sweep sound, played where
+  the attacker stands. A crit or sweep is tied to the hit it came with, so a blow into the target's
+  red flash — which the server plays the sound for but does not count as a hit — is not counted
+  either. Your own swings are your left clicks at a player or at the air, with a weapon.
+
+  A duel starts with Loka's `Match Ready!` line (whether or not you joined automatically) and ends
+  when one of you dies (then the line says **Won** or **Lost**), when you are moved far away or to
+  another world after fighting, or when nobody has struck for twenty seconds. The opponent is whoever
+  you traded the most hits with. Nothing is sent anywhere.
 
 ![Important Waypoints](docs/helper-important.png)
 

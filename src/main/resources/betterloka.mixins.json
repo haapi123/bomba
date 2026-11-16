@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ClearLavaMixin",
-    "PlayerNameplateKdMixin"
+    "PlayerNameplateKdMixin",
+    "DuelPacketsMixin",
+    "DuelSwingMixin"
   ],
   "injectors": {
     "defaultRequire": 1

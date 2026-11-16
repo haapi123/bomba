@@ -242,6 +242,8 @@ public class BetterLokaClient implements ClientModInitializer {
         tlKey = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
+        // Duels: /join when one is found (off until switched on), and the hit statistics afterwards.
+        new com.betterloka.duel.DuelTracker(config).register();
         new com.betterloka.helper.ImportantWaypointsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -274,7 +276,7 @@ public class BetterLokaClient implements ClientModInitializer {
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43", "v46", "v48", "logo", "zoomspam").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43", "v46", "v48", "logo", "duel", "zoomspam").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 

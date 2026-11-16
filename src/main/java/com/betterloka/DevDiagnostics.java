@@ -114,6 +114,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("duel".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            duelInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("v48".equals(System.getenv("BETTERLOKA_DIAG"))) {
             v48Input();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1407,6 +1412,85 @@ public final class DevDiagnostics {
     }
 
     /**
+     * Duels: Loka Helper's new section (scrolled when the screen is short), "Match Ready!" answered
+     * with /join, and a fight against a dummy with a real sword — swings, hits, sweeps, a jump crit
+     * and a miss — so the server's own packets go through the hooks, then the summary in chat.
+     */
+    private void duelInput() {
+        int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
+        step(2, () -> {
+            client().options.guiScale().set(scale);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+            BetterLokaClient.config().setDuelAutoAccept(false);
+            BetterLokaClient.config().setDuelStats(true);
+            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+        });
+        shot(10, "duel-helper");
+        step(2, () -> {
+            BetterLokaClient.config().setDuelAutoAccept(true);
+            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+        });
+        step(2, () -> client().gui.screen().mouseScrolled(10, 100, 0, -10));
+        shot(3, "duel-helper-scrolled");
+        step(2, () -> {
+            client().gui.setScreen(null);
+            com.betterloka.duel.DuelTracker.devAnyTarget = true;
+            server("gamemode survival @a");
+            server("time set day");
+            server("effect give @a resistance 600 4 true");
+            server("tp @a 0 -60 0 0 0");
+            server("item replace entity @a weapon.mainhand with diamond_sword");
+        });
+        step(20, () -> server("execute as @p at @p run summon zombie ^ ^ ^2.5 "
+                + "{NoAI:1b,PersistenceRequired:1b,Health:500f,attributes:[{id:\"minecraft:max_health\",base:500}]}"));
+        step(20, () -> com.betterloka.duel.DuelTracker.get().onMessage(
+                net.minecraft.network.chat.Component.literal("Match Ready! ").append(
+                        net.minecraft.network.chat.Component.literal("[Click to join]").withStyle(style -> style
+                                .withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand("/join"))))));
+        // Five full-strength hits standing still: a sword sweeps.
+        for (int i = 0; i < 5; i++) {
+            step(14, DevDiagnostics::attack);
+        }
+        // Two crits: jump, and hit on the way down.
+        step(2, () -> client().player.setXRot(30));
+        for (int i = 0; i < 2; i++) {
+            step(14, () -> client().player.jumpFromGround());
+            step(8, DevDiagnostics::attack);
+        }
+        step(2, () -> client().player.setXRot(0));
+        // Two misses: turned away, at the air.
+        step(14, () -> client().player.setYRot(180));
+        step(2, DevDiagnostics::attack);
+        step(14, DevDiagnostics::attack);
+        step(14, () -> client().player.setYRot(0));
+        step(14, DevDiagnostics::attack);
+        step(10, () -> BetterLoka.LOGGER.info("DIAG duel before the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        step(2, () -> server("kill @e[type=zombie]"));
+        step(30, () -> BetterLoka.LOGGER.info("DIAG duel after the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        step(2, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen("", false)));
+        shot(10, "duel-chat");
+        step(2, () -> {
+            BetterLoka.LOGGER.info("DIAG duel checks done");
+            client().stop();
+        });
+    }
+
+    /** A left click, as the attack key does it. */
+    private static void attack() {
+        try {
+            var method = Minecraft.class.getDeclaredMethod("startAttack");
+            method.setAccessible(true);
+            Object hit = method.invoke(client());
+            BetterLoka.LOGGER.info("DIAG duel click: hit={} target={} result={}", hit,
+                    client().hitResult == null ? null : client().hitResult.getType(),
+                    com.betterloka.duel.DuelTracker.get().devState());
+        } catch (ReflectiveOperationException e) {
+            BetterLoka.LOGGER.error("DIAG could not click", e);
+        }
+    }
+
+    /**
      * 0.48: Loka Helper's continent switches, its places pinned on Loka Map, and the Brewer
      * Calculator both ways round. {@code BETTERLOKA_SCALE} sets the GUI scale (3 by default).
      */
@@ -2118,7 +2202,8 @@ public final class DevDiagnostics {
                         .getOrThrow(net.minecraft.world.level.levelgen.presets.WorldPresets.FLAT)));
         creator.setSeed("1");
         creator.setGenerateStructures(false);
-        click(client.gui.screen(), "Create New World");
+        // The button's own words in the game's language, so a Polish run finds it too.
+        click(client.gui.screen(), net.minecraft.network.chat.Component.translatable("selectWorld.create").getString());
     }
 
     private static void click(Screen screen, String label) {
