@@ -61,6 +61,40 @@ public final class DuelTracker {
     private static final double SWEEP_RANGE = 1.5;
     /** A jump this far in one tick is a teleport, and after a fight, the end of it. Past a pearl's reach. */
     private static final double TELEPORT_BLOCKS = 128;
+    /** How long after arriving at the arena the opponent is looked for. */
+    private static final long ARENA_LOOK_MILLIS = 3 * 60_000L;
+    /** How far the opponent may come towards the player before the fight is taken to be on. */
+    private static final double APPROACH_BLOCKS = 4;
+    /** A move this far in one tick, short of a server change, is the arena putting them on their start. */
+    private static final double START_TELEPORT_BLOCKS = 3;
+    /** How far another player may be and still be at this arena. */
+    private static final double ARENA_RANGE = 96;
+
+    /**
+     * At the arena, waiting for the fight: the VS screen, who it shows, and what the moment it was
+     * opened looked like — so a hit, a swing, a teleport onto the start, the opponent coming on or a
+     * new game mode can each say the fight has begun.
+     */
+    private static final class Arena {
+        final long since;
+        final FightStart start = new FightStart();
+        /** The screen was opened, or will not be: once per arrival. */
+        boolean done;
+        boolean logged;
+        DuelVersusScreen screen;
+        String opponent;
+        long openedAt;
+        double openDistance = -1;
+        net.minecraft.world.level.GameType mode;
+        float health;
+        long lastSwingNear;
+        Component title;
+        long titleAt;
+
+        Arena(long since) {
+            this.since = since;
+        }
+    }
 
     /** Development only: count fights against any creature, so a dummy can stand in for a player. */
     public static boolean devAnyTarget;
@@ -77,6 +111,10 @@ public final class DuelTracker {
     private final Map<UUID, PingTrace> pings = new HashMap<>();
     /** Whose record was last asked for ahead of the duel's screen. */
     private UUID prefetched;
+    /** Waiting at the arena for the fight, or {@code null}. */
+    private Arena arena;
+    /** The opponent, if Loka's "Match Ready!" line named them. */
+    private String hinted;
     /** Where the player was last tick: a different player or world is a move. */
     private net.minecraft.client.player.LocalPlayer seenPlayer;
     private ClientLevel seenLevel;
@@ -107,9 +145,14 @@ public final class DuelTracker {
 
     // ---- the line that starts it ----
 
-    /** Reads one line of chat; only Loka's "Match Ready!" does anything. */
+    /** Reads one line of chat: Loka's "Match Ready!", and at the arena, word that the fight is on. */
     public void onMessage(Component message) {
-        if (!DuelMessages.isMatchReady(message.getString())) {
+        String line = message.getString();
+        Arena waiting = arena;
+        if (waiting != null) {
+            waiting.start.chat(line, System.currentTimeMillis());
+        }
+        if (!DuelMessages.isMatchReady(line)) {
             return;
         }
         Minecraft client = Minecraft.getInstance();
@@ -131,20 +174,41 @@ public final class DuelTracker {
         String opponent = DuelMessages.opponentIn(texts, client.player.getName().getString());
         // What exactly the line carries, for working out what Loka puts in it.
         BetterLoka.LOGGER.info("[betterloka] Match Ready line: texts={} command=/{} opponent={}", texts, command, opponent);
+        hinted = opponent;
+        arena = null;
         if (config.duelAutoAccept() && now - lastJoinAt > JOIN_COOLDOWN_MILLIS) {
             lastJoinAt = now;
             joinCommand = command;
             joinIn = JOIN_DELAY_TICKS;
-        } else if (config.duelScreen() && (client.gui.screen() == null || client.gui.screen() instanceof ChatScreen)) {
-            String self = client.player.getName().getString();
-            UUID selfId = client.player.getUUID();
-            client.gui.setScreen(new DuelVersusScreen(self, selfId, opponent, () -> {
-                if (Minecraft.getInstance().player != null) {
-                    joinCommand = command;
-                    sendJoin(Minecraft.getInstance());
-                }
-            }));
         }
+    }
+
+    /** A title, subtitle or action bar: at the arena, maybe the countdown to the fight. */
+    public static void onTitle(Component text) {
+        DuelTracker tracker = instance;
+        Arena waiting = tracker == null ? null : tracker.arena;
+        if (waiting == null || text == null) {
+            return;
+        }
+        String line = text.getString();
+        BetterLoka.LOGGER.info("[betterloka] arena title: {}", line);
+        long now = System.currentTimeMillis();
+        waiting.start.title(line, now);
+        if (!line.isBlank()) {
+            waiting.title = text;
+            waiting.titleAt = now;
+        }
+    }
+
+    /**
+     * The arena's latest title (a countdown, as a rule) while it is fresh: the game draws titles
+     * under screens, so the VS screen shows it itself.
+     */
+    public static Component arenaTitle() {
+        DuelTracker tracker = instance;
+        Arena waiting = tracker == null ? null : tracker.arena;
+        return waiting == null || waiting.title == null || System.currentTimeMillis() - waiting.titleAt > 1500
+                ? null : waiting.title;
     }
 
     /** The line's text and every tooltip in it. */
@@ -191,6 +255,12 @@ public final class DuelTracker {
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || client.level == null || entityId == client.player.getId()) {
             return;
+        }
+        Entity swinger = client.level.getEntity(entityId);
+        Arena waiting = tracker.arena;
+        if (waiting != null && swinger instanceof LivingEntity near && counts(near)
+                && near.distanceTo(client.player) <= SWING_RANGE) {
+            waiting.lastSwingNear = System.currentTimeMillis();
         }
         // Only with a weapon in that hand and near this player: throwing a potion or placing a block
         // swings the arm too, and so does somebody fighting somebody else.
@@ -331,17 +401,21 @@ public final class DuelTracker {
             // respawn: on the way to a duel, or the end of one.
             seenPlayer = player;
             seenLevel = client.level;
-            moved(player == null ? null : player.getId(), now);
+            moved(player == null ? null : player.getId(), now, true);
             lastPosition = player == null ? null : player.position();
         }
         if (player == null) {
             return;
         }
         Vec3 position = player.position();
-        if (lastPosition != null && position.distanceTo(lastPosition) > TELEPORT_BLOCKS) {
-            moved(player.getId(), now);
+        double jump = lastPosition == null ? 0 : position.distanceTo(lastPosition);
+        if (jump > TELEPORT_BLOCKS) {
+            moved(player.getId(), now, false);
         }
         lastPosition = position;
+        if (arena != null) {
+            atArena(client, player, now, jump);
+        }
         DuelStats duel = session.duel();
         if (duel != null) {
             samplePings(client, now);
@@ -353,12 +427,210 @@ public final class DuelTracker {
         say(client, session.tick(player.getId(), player.isDeadOrDying(), now));
     }
 
-    private void moved(Integer self, long now) {
-        if (session.duel() != null && !session.duel().fought()) {
+    /** @param newWorld another server or world, rather than a long teleport within one */
+    private void moved(Integer self, long now, boolean newWorld) {
+        boolean toFight = session.duel() != null && !session.duel().fought();
+        if (toFight) {
             // On the way to the duel: what the last server said of anybody's ping is not this one's.
             pings.clear();
         }
         session.moved(self, now);
+        // Arrived on another server or world after "Match Ready!", with the duel still to fight: the
+        // arena, as Loka has a server of its own for duels. A teleport on the lobby is not that.
+        if (toFight && self != null && newWorld) {
+            arena = new Arena(now);
+        } else if (!toFight) {
+            arena = null;
+        }
+    }
+
+    // ---- at the arena ----
+
+    /**
+     * Once a tick at the arena: until the opponent is known, look for them, and open the VS screen;
+     * while it is open, close it the moment the fight starts.
+     */
+    private void atArena(Minecraft client, net.minecraft.client.player.LocalPlayer player, long now, double jump) {
+        Arena waiting = arena;
+        DuelStats duel = session.duel();
+        if (duel == null || duel.fought()) {
+            close(client, waiting, "first hit");
+            arena = null;
+            return;
+        }
+        if (!waiting.done) {
+            if (!config.duelScreen() || now - waiting.since > ARENA_LOOK_MILLIS || waiting.start.poll(now)) {
+                waiting.done = true;
+                return;
+            }
+            ArenaOpponent.Found found = findOpponent(client, player);
+            if (found == null) {
+                if (!waiting.logged && now - waiting.since > 10_000) {
+                    waiting.logged = true;
+                    BetterLoka.LOGGER.info("[betterloka] arena: no opponent yet; sidebar={} nearby={} server={}",
+                            sidebar(client), nearby(client, player), onServer(client));
+                }
+                return;
+            }
+            UUID uuid = uuidOf(client, found.name());
+            prefetch(uuid, found.name());
+            if (client.gui.screen() != null && !(client.gui.screen() instanceof ChatScreen)) {
+                // Busy with something else: wait until they are not.
+                return;
+            }
+            waiting.done = true;
+            waiting.opponent = found.name();
+            waiting.openedAt = now;
+            waiting.health = player.getHealth();
+            waiting.mode = client.gameMode == null ? null : client.gameMode.getPlayerMode();
+            Entity them = opponentEntity(client, found.name());
+            waiting.openDistance = them == null ? -1 : them.distanceTo(player);
+            waiting.screen = new DuelVersusScreen(player.getName().getString(), player.getUUID(), found.name(), uuid);
+            client.gui.setScreen(waiting.screen);
+            BetterLoka.LOGGER.info("[betterloka] arena: VS screen vs {} (by {}), sidebar={}", found.name(), found.source(),
+                    sidebar(client));
+            return;
+        }
+        if (waiting.screen == null) {
+            return;
+        }
+        if (client.gui.screen() != waiting.screen) {
+            // Closed with Esc, or replaced by the server.
+            waiting.screen = null;
+            return;
+        }
+        String why = fightStarted(client, player, waiting, now, jump);
+        if (why != null) {
+            close(client, waiting, why);
+        }
+    }
+
+    /** What says the fight has begun, or {@code null} while nothing does. */
+    private String fightStarted(Minecraft client, net.minecraft.client.player.LocalPlayer player, Arena waiting,
+                                long now, double jump) {
+        if (waiting.start.poll(now)) {
+            return "countdown";
+        }
+        if (waiting.lastSwingNear > waiting.openedAt) {
+            return "swing";
+        }
+        // Health lost since the screen opened; what came back raises the mark, so a blow taken just
+        // before it opened (a fall on arrival) does not count.
+        if (player.getHealth() < waiting.health - 0.5f) {
+            return "hurt";
+        }
+        waiting.health = Math.max(waiting.health, player.getHealth());
+        if (jump > START_TELEPORT_BLOCKS) {
+            return "teleport";
+        }
+        if (client.gameMode != null && waiting.mode != null && client.gameMode.getPlayerMode() != waiting.mode) {
+            return "game mode";
+        }
+        Entity them = opponentEntity(client, waiting.opponent);
+        if (them != null) {
+            double distance = them.distanceTo(player);
+            if (waiting.openDistance < 0) {
+                waiting.openDistance = distance;
+            } else if (distance < waiting.openDistance - APPROACH_BLOCKS) {
+                return "opponent coming";
+            }
+        }
+        return null;
+    }
+
+    private static void close(Minecraft client, Arena waiting, String why) {
+        if (waiting != null && waiting.screen != null && client.gui.screen() == waiting.screen) {
+            client.gui.setScreen(null);
+            BetterLoka.LOGGER.info("[betterloka] arena: VS screen closed, the fight is on ({})", why);
+        }
+        if (waiting != null) {
+            waiting.screen = null;
+        }
+    }
+
+    private ArenaOpponent.Found findOpponent(Minecraft client, net.minecraft.client.player.LocalPlayer player) {
+        ArenaOpponent.Found found = ArenaOpponent.find(player.getName().getString(), sidebar(client),
+                nearby(client, player), onServer(client));
+        if (found == null && hinted != null) {
+            found = new ArenaOpponent.Found(hinted, ArenaOpponent.Source.SIDEBAR_LABEL);
+        }
+        return found;
+    }
+
+    /** The sidebar as it is shown: its title, then each line with its team's prefix and suffix. */
+    private static List<String> sidebar(Minecraft client) {
+        List<String> lines = new ArrayList<>();
+        if (client.level == null) {
+            return lines;
+        }
+        net.minecraft.world.scores.Scoreboard board = client.level.getScoreboard();
+        net.minecraft.world.scores.Objective objective = board.getDisplayObjective(net.minecraft.world.scores.DisplaySlot.SIDEBAR);
+        if (objective == null) {
+            return lines;
+        }
+        lines.add(objective.getDisplayName().getString());
+        for (net.minecraft.world.scores.PlayerScoreEntry entry : board.listPlayerScores(objective)) {
+            if (!entry.isHidden()) {
+                lines.add(net.minecraft.world.scores.PlayerTeam.formatNameForTeam(board.getPlayersTeam(entry.owner()),
+                        entry.ownerName()).getString());
+            }
+        }
+        return lines;
+    }
+
+    /** The other players the game has nearby, not watching. */
+    private static List<String> nearby(Minecraft client, net.minecraft.client.player.LocalPlayer player) {
+        List<String> names = new ArrayList<>();
+        if (client.level == null) {
+            return names;
+        }
+        for (Player other : client.level.players()) {
+            if (other != player && !other.isSpectator() && other.distanceTo(player) <= ARENA_RANGE) {
+                names.add(other.getName().getString());
+            }
+        }
+        return names;
+    }
+
+    /** Everybody on the server's player list, not watching. */
+    private static List<String> onServer(Minecraft client) {
+        List<String> names = new ArrayList<>();
+        ClientPacketListener connection = client.getConnection();
+        if (connection == null) {
+            return names;
+        }
+        for (PlayerInfo info : connection.getOnlinePlayers()) {
+            if (info.getGameMode() != net.minecraft.world.level.GameType.SPECTATOR) {
+                names.add(info.getProfile().name());
+            }
+        }
+        return names;
+    }
+
+    private static UUID uuidOf(Minecraft client, String name) {
+        ClientPacketListener connection = client.getConnection();
+        PlayerInfo info = connection == null ? null : connection.getPlayerInfo(name);
+        return info == null ? null : info.getProfile().id();
+    }
+
+    /** The opponent in the world, if the game has them. */
+    private static Entity opponentEntity(Minecraft client, String name) {
+        if (client.level == null || name == null) {
+            return null;
+        }
+        for (Player other : client.level.players()) {
+            if (other.getName().getString().equalsIgnoreCase(name)) {
+                return other;
+            }
+        }
+        if (devAnyTarget) {
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (entity instanceof LivingEntity && entity.getName().getString().equalsIgnoreCase(name)) {
+                    return entity;
+                }
+            }
+        }
+        return null;
     }
 
     private void sendJoin(Minecraft client) {

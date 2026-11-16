@@ -659,13 +659,24 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
     is sent for you, a quarter of a second later, with a line in chat saying so. Only Loka's own line
     counts — the same words typed by a player arrive as `Name: Match Ready!…` and do nothing — and
     the command is `/join` whatever the line's button says, once per three seconds at most.
-  - **VS screen** (on; not with auto-join): `Match Ready!` opens a screen with you on the left and
-    your opponent on the right, each on a stand with their skin turning, and a green **Join duel**
-    button in the middle (Enter does the same; **Esc** closes it without joining). Under each player:
-    their ping now and their usual ping over the duels the mod has counted; their rank now on each
-    ladder; **this season** and their **career** — duels, wins–losses, win rate; their **best rank
-    ever** and how they finished **the last season**; and the latest matches — yours, or the ones
-    between you and them. It opens only when no other screen is, or over chat.
+  - **VS screen** (on): at the arena, while you wait for the fight, a screen with you on the left
+    and your opponent on the right, each on a stand with their skin turning. Under each player: their
+    ping now and their usual ping over the duels the mod has counted; their rank now on each ladder;
+    **this season** and their **career** — duels, wins–losses, win rate; their **best rank ever** and
+    how they finished **the last season**; and the latest matches — yours, or the ones between you
+    and them. It **closes by itself when the fight starts**, and **Esc** closes it sooner. It opens
+    only when no other screen is, or over chat, and once per arrival.
+
+    It opens on arriving on another server or world after `Match Ready!` — Loka fights its duels on a
+    server of its own — as soon as the opponent can be told, which `Match Ready!` itself does not
+    say: a player on the server whose name is on the arena's **scoreboard**, else a name the
+    scoreboard labels (`Opponent: Name`, `vs Name`), else the only other player nearby, else the only
+    other player on the server. The fight is taken to have started at the first of: a title, subtitle
+    or action bar saying go (`FIGHT!`, `GO!`), a countdown reaching one (a second later), a chat line
+    saying the match has started, a swing near you, a hit, health lost, a teleport onto the start, a
+    new game mode, or the opponent coming four blocks closer. The arena's titles are shown on the
+    screen too (the game draws them under it), and written to the game log with what the scoreboard
+    said, to check against Loka's own wording.
   - **Stats** (on): when the duel ends, one line in chat — `Duel vs Knucior · 0:42 · Won` and
     *▸ Click to see the duel's stats*. The click opens the duel's screen: both sides' accuracy (hits
     landed of swings), hits, best combo, crits and sweeps (as a share of the hits landed), and ping
@@ -688,10 +699,8 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   - **Latest matches, your record against someone, usual ping**: Loka publishes no match history —
     not on its API, its leaderboard, EldritchBot or Loka Elo — so these are the duels **this mod**
     has counted, kept on your computer (`config/betterloka/duel-log.json`, the latest 300).
-  - **Who your opponent is**: Loka's line does not say, as far as is known, so before you join their
-    side shows a question mark. If the line names them (in its text or tooltip — `vs Name`,
-    `Opponent: Name`) they are shown; every `Match Ready!` line is written to the game log as it
-    arrived, to check what it carries.
+  - **Who your opponent is**: read at the arena, as above; every `Match Ready!` line is written to the
+    game log as it arrived too, in case it names them.
   - **Ping in the duel**: the one the server shows in the player list (Tab) — the only ping a client
     can see of somebody else. The server averages it itself and refreshes it there only about
     **every 30 seconds**, so a duel's ping rests on a few readings, not on every second; the tooltip

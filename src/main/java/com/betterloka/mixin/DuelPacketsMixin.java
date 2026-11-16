@@ -5,6 +5,9 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket;
 import org.spongepowered.asm.mixin.Mixin;
@@ -53,5 +56,22 @@ abstract class DuelPacketsMixin {
     @Inject(method = "handleEntityEvent", at = @At(value = "INVOKE", target = ON_GAME_THREAD, shift = At.Shift.AFTER))
     private void betterloka$entityEvent(ClientboundEntityEventPacket packet, CallbackInfo ci) {
         DuelTracker.onEntityEvent(packet, packet.getEventId());
+    }
+
+    // Titles, subtitles and the action bar: where an arena counts down to the fight.
+
+    @Inject(method = "setTitleText", at = @At(value = "INVOKE", target = ON_GAME_THREAD, shift = At.Shift.AFTER))
+    private void betterloka$title(ClientboundSetTitleTextPacket packet, CallbackInfo ci) {
+        DuelTracker.onTitle(packet.text());
+    }
+
+    @Inject(method = "setSubtitleText", at = @At(value = "INVOKE", target = ON_GAME_THREAD, shift = At.Shift.AFTER))
+    private void betterloka$subtitle(ClientboundSetSubtitleTextPacket packet, CallbackInfo ci) {
+        DuelTracker.onTitle(packet.text());
+    }
+
+    @Inject(method = "setActionBarText", at = @At(value = "INVOKE", target = ON_GAME_THREAD, shift = At.Shift.AFTER))
+    private void betterloka$actionBar(ClientboundSetActionBarTextPacket packet, CallbackInfo ci) {
+        DuelTracker.onTitle(packet.text());
     }
 }

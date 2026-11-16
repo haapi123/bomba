@@ -4,11 +4,8 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.duel.DuelLog;
 import com.betterloka.duel.Duelists;
 import com.betterloka.stats.ArenaService;
-import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
@@ -16,39 +13,28 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * "Match Ready!": the player and their opponent side by side — this season, their career, best rank,
- * last season, ping and latest matches — and a green button in the middle that joins the duel. Esc
- * closes it without joining.
- *
- * <p>Loka's line does not say who the opponent is, as far as is known; when it does (in its text or
- * tooltip) they are shown, otherwise their side says they are known once the duel starts.
+ * At the arena, waiting for the fight: the player and their opponent side by side — this season,
+ * their career, best rank, last season, ping and latest matches. It goes by itself the moment the
+ * fight starts ({@link com.betterloka.duel.DuelTracker} watches for that); Esc closes it sooner.
  */
 public final class DuelVersusScreen extends DuelScreen {
-    private static final int BUTTON_W = 112;
-    private static final int BUTTON_H = 26;
-    private static final int GREEN = 0xFF3FAF55;
-    private static final int GREEN_HOVER = 0xFF52C96A;
-
-    private final Runnable join;
-    private int buttonX;
-    private int buttonY;
-
-    /**
-     * @param opponentName the opponent if the line named them, else {@code null}
-     * @param join         sends the join command
-     */
-    public DuelVersusScreen(String selfName, UUID self, String opponentName, Runnable join) {
+    /** @param opponentUuid the opponent's account if the server lists them, else {@code null} */
+    public DuelVersusScreen(String selfName, UUID self, String opponentName, UUID opponentUuid) {
         super(Component.translatable("betterloka.duelscreen.found"),
                 new Corner(true, selfName, self, GuiTheme.ACCENT),
-                new Corner(false, opponentName, null, GuiTheme.BAD));
-        this.join = join;
+                new Corner(false, opponentName, opponentUuid, GuiTheme.BAD));
         Duelists duelists = BetterLokaClient.duelists();
         if (duelists != null) {
             you.record = duelists.load(selfName, self);
             if (opponentName != null) {
-                them.record = duelists.load(opponentName, null);
+                them.record = duelists.load(opponentName, opponentUuid);
             }
         }
+    }
+
+    /** Who this screen shows as the opponent. */
+    public String opponentName() {
+        return them.name;
     }
 
     @Override
@@ -56,29 +42,37 @@ public final class DuelVersusScreen extends DuelScreen {
         int centre = left + width / 2;
         bigText(context, Component.literal("VS").withStyle(ChatFormatting.BOLD, ChatFormatting.ITALIC), centre, 96, 3f, GuiTheme.LIVE);
 
-        buttonX = centre - BUTTON_W / 2;
-        buttonY = 140;
-        boolean hot = over(buttonX, buttonY, BUTTON_W, BUTTON_H);
-        int fill = hot ? GREEN_HOVER : GREEN;
-        context.fill(buttonX + 1, buttonY, buttonX + BUTTON_W - 1, buttonY + BUTTON_H, fill);
-        context.fill(buttonX, buttonY + 1, buttonX + BUTTON_W, buttonY + BUTTON_H - 1, fill);
-        context.fill(buttonX + 1, buttonY + BUTTON_H - 2, buttonX + BUTTON_W - 1, buttonY + BUTTON_H, 0xFF2A7D3B);
-        context.fill(buttonX + 1, buttonY, buttonX + BUTTON_W - 1, buttonY + 1, 0xFF8BE39D);
-        Component label = Component.translatable("betterloka.duelscreen.join").withStyle(ChatFormatting.BOLD);
-        context.centeredText(this.font, label, centre, buttonY + 9, 0xFFFFFFFF);
-
-        int y = buttonY + BUTTON_H + 8;
-        for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.esc"), width - 8)) {
+        int y = 138;
+        // The arena's countdown, which the game would draw under this screen.
+        Component title = com.betterloka.duel.DuelTracker.arenaTitle();
+        if (title != null) {
+            bigText(context, title, centre, y, this.font.width(title) * 3 <= width - 8 ? 3f : 1.5f, 0xFFFFFFFF);
+            y += 32;
+        } else {
+            // A slow pulse: waiting.
+            int pulse = (int) (System.currentTimeMillis() / 400 % 4);
+            Component waiting = Component.translatable("betterloka.duelscreen.waiting").withStyle(ChatFormatting.BOLD)
+                    .append(".".repeat(pulse));
+            for (FormattedCharSequence line : this.font.split(waiting, width - 12)) {
+                context.centeredText(this.font, line, centre, y, GuiTheme.LIVE);
+                y += LINE;
+            }
+            y += 4;
+        }
+        for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.closes_itself"), width - 8)) {
             context.centeredText(this.font, line, centre, y, GuiTheme.MUTED);
             y += LINE;
         }
+        y += 2;
+        context.centeredText(this.font, Component.translatable("betterloka.duelscreen.esc_only"), centre, y, GuiTheme.MUTED);
+        y += LINE;
 
         // The two of you, if you have met before.
         if (them.known()) {
             DuelLog log = BetterLokaClient.duelLog();
-            DuelLog.Record record = log == null ? null : log.between(you.uuid, null, them.name);
+            DuelLog.Record record = log == null ? null : log.between(you.uuid, them.uuid, them.name);
             if (record != null && !record.matches().isEmpty()) {
-                y += 6;
+                y += 8;
                 context.centeredText(this.font, Component.translatable("betterloka.duelscreen.head_to_head"), centre, y, GuiTheme.MUTED);
                 y += LINE;
                 bigText(context, Component.literal(record.wins() + " – " + record.losses()).withStyle(ChatFormatting.BOLD),
@@ -94,14 +88,6 @@ public final class DuelVersusScreen extends DuelScreen {
 
     @Override
     protected void drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
-        if (!corner.known()) {
-            y = section(context, x, y, width, Component.translatable("betterloka.duelscreen.who"), corner.color);
-            for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.unknown"), width)) {
-                context.text(this.font, line, x, y, GuiTheme.MUTED);
-                y += LINE;
-            }
-            return;
-        }
         Duelists.Duelist record = corner.duelist();
         int seasonNumber = record == null ? -1 : record.seasonNumber();
 
@@ -146,27 +132,5 @@ public final class DuelVersusScreen extends DuelScreen {
                         Component.translatable("betterloka.duelscreen.wl"), GuiTheme.ACCENT, tip),
                 new Tile(percent(totals.wins(), games), Component.translatable("betterloka.duelscreen.winrate"),
                         rateColor(totals.wins(), games), tip)));
-    }
-
-    @Override
-    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        int[] at = canvas(click);
-        if (click.button() == InputConstants.MOUSE_BUTTON_LEFT && at[0] >= buttonX && at[0] < buttonX + BUTTON_W
-                && at[1] >= buttonY && at[1] < buttonY + BUTTON_H) {
-            onClose();
-            join.run();
-            return true;
-        }
-        return super.mouseClicked(click, doubled);
-    }
-
-    @Override
-    public boolean keyPressed(KeyEvent input) {
-        if (input.key() == InputConstants.KEY_RETURN || input.key() == InputConstants.KEY_NUMPADENTER) {
-            onClose();
-            join.run();
-            return true;
-        }
-        return super.keyPressed(input);
     }
 }

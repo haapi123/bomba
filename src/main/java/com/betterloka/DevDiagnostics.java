@@ -1451,24 +1451,34 @@ public final class DevDiagnostics {
             server("execute in minecraft:the_nether run fill -6 100 -6 6 105 6 minecraft:air");
             server("effect give @a fire_resistance 600 0 true");
         });
-        // "Match Ready!" as Loka sends it: the VS screen, with the opponent not yet known.
-        step(20, () -> {
+        // The arena's scoreboard names the opponent, as Loka's does; "Match Ready!" itself does not.
+        step(2, () -> {
             BetterLokaClient.config().setDuelAutoAccept(false);
             BetterLokaClient.config().setDuelScreen(true);
+            server("scoreboard objectives add duel dummy \"Ranked Potion\"");
+            server("scoreboard objectives setdisplay sidebar duel");
+            server("scoreboard players set line1 duel 2");
+            server("scoreboard players display name line1 duel \"Opponent: Knucior\"");
+            server("scoreboard players set line2 duel 1");
+            server("scoreboard players display name line2 duel \"Map: Nether\"");
+        });
+        step(20, () -> {
             com.betterloka.duel.DuelTracker.get().onMessage(matchReady(null));
-            BetterLoka.LOGGER.info("DIAG duel versus screen open: {}", client().gui.screen());
+            BetterLoka.LOGGER.info("DIAG duel after Match Ready, screen: {}", client().gui.screen());
         });
-        shot(40, "duel-versus-unknown");
-        // And as it would be if the line named them: both sides, filled in from Loka once loaded.
-        step(2, () -> {
-            client().gui.setScreen(null);
-            com.betterloka.duel.DuelTracker.get().onMessage(matchReady("Ranked Potion vs Knucior"));
-        });
-        shot(30, "duel-versus-loading");
-        shot(500, "duel-versus");
-        step(2, () -> client().gui.setScreen(null));
         step(10, () -> server("execute in minecraft:the_nether run tp @a 0 100 0 0 0"));
-        step(80, () -> {
+        // At the arena: the VS screen opens by itself, fills in, and goes when the countdown ends.
+        shot(40, "duel-arena-opened");
+        step(2, () -> BetterLoka.LOGGER.info("DIAG duel at the arena, screen: {}", client().gui.screen()));
+        shot(400, "duel-versus");
+        step(2, () -> server("title @a title \"3\""));
+        step(20, () -> server("title @a title \"2\""));
+        step(20, () -> server("title @a title \"1\""));
+        shot(5, "duel-versus-countdown");
+        step(30, () -> BetterLoka.LOGGER.info("DIAG duel after the countdown, screen: {}", client().gui.screen()));
+        shot(2, "duel-fight-on");
+        step(2, () -> server("scoreboard objectives remove duel"));
+        step(20, () -> {
             BetterLoka.LOGGER.info("DIAG duel arrived at the duel: {} in {}", com.betterloka.duel.DuelTracker.get().devState(),
                     client().level.dimension());
             // An opponent that fights back with a sword, so its swings come as the server's swing
