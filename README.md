@@ -654,41 +654,50 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
   crosshair. The same places are pinned on **Loka Map**.
 
-- **Duels** — two switches.
-  - **Auto-accept** (off until you turn it on): when Loka says `Match Ready! [Click to join]`, `/join`
+- **Duels** — three switches.
+  - **Auto-join** (off until you turn it on): when Loka says `Match Ready! [Click to join]`, `/join`
     is sent for you, a quarter of a second later, with a line in chat saying so. Only Loka's own line
     counts — the same words typed by a player arrive as `Name: Match Ready!…` and do nothing — and
     the command is `/join` whatever the line's button says, once per three seconds at most.
-  - **Stats in chat** (on): when the duel ends, a line per side in your chat, seen by you alone —
-    `You: 56% (23/41) · crits 39% · sweeps 17% · combo 5`: hits landed of swings made, then how much
-    of what landed was crits and sweeps, and the longest run of hits before the other side hit back.
-    The same for your opponent; hover a line for the counts. A share shows as **—** when fewer swings
-    were seen than hits landed — then not all of them were visible, and a percentage would be made up.
+  - **VS screen** (on; not with auto-join): `Match Ready!` opens a screen with you on the left and
+    your opponent on the right, each on a stand with their skin turning, and a green **Join duel**
+    button in the middle (Enter does the same; **Esc** closes it without joining). Under each player:
+    their ping now and their usual ping over the duels the mod has counted; their rank now on each
+    ladder; **this season** and their **career** — duels, wins–losses, win rate; their **best rank
+    ever** and how they finished **the last season**; and the latest matches — yours, or the ones
+    between you and them. It opens only when no other screen is, or over chat.
+  - **Stats** (on): when the duel ends, one line in chat — `Duel vs Knucior · 0:42 · Won` and
+    *▸ Click to see the duel's stats*. The click opens the duel's screen: both sides' accuracy (hits
+    landed of swings), hits, best combo, crits and sweeps (as a share of the hits landed), and ping
+    in that duel — average, highest, spikes — then their season, career and ranks, and the record
+    between you two with its latest matches in the middle. Accuracy shows as **—** when fewer swings
+    were seen than hits landed: then not all of them were visible, and a percentage would be made up.
 
-    Under them, your opponent's **ping** over the duel and their **ranked record**:
+  ![VS screen](docs/duel-versus.png)
 
-    ```
-    Knucior's ping: avg 87 ms · max 108 ms
-    Spikes (±20 ms): 2 (↑1 ↓1) · biggest +46 ms · every 3 s
-    Ranked: best ever · last season (S24)
-     Potion: Bedrock (S22) · Netherite I
-     Barebones: Emerald I (S14) · Gold III
-    ```
+  ![Duel summary](docs/duel-result.png)
 
-    The ping is the one the server shows in the player list (Tab) — the only ping a client can see of
-    somebody else. The server averages it itself and refreshes it there only about **every 30
-    seconds**, so a duel's ping rests on a few readings, not on every second; the tooltip says how
-    many, lists each change with when it came, and gives your own for comparison. The average weighs
-    each value by how long it stood; a **spike** is a change of 20 ms or more from one reading to the
-    next, up or down; *every* is the average time between spikes (with one spike, when it came). A
-    server shows 0 for a player it has not measured yet — such readings are skipped, and a short duel
-    on a server you both just joined may end before there is any (*the server did not give it*).
-
-    The ranked lines are Loka's 1v1 ladders, the same ones the Player Finder reads: per ladder they
-    are on, the **highest rank they ever held** (with its season — *now* if it is this one) and where
-    they **finished the last season** Loka published; hover a ladder for where they stand now. They
-    are looked up as soon as the opponent is known, so they are usually there with the summary; if
-    Loka is slow they follow it in a line of their own.
+  Where the numbers come from:
+  - **This season**: the player's own Loka profile (`rankedStats`), which has every game of theirs.
+  - **Career, best rank, last season**: Loka's published season tables. Loka publishes a season's
+    table week by week while it is played, so the latest season in them is usually the one going on
+    — the mod tells by whether anybody has fewer games now than in its last week — and *last season*
+    is the last **finished** one. The tables list only the top 500 with ten games or more, so a
+    season someone played outside them is missing from their career (the tooltip says how many
+    seasons were counted).
+  - **Latest matches, your record against someone, usual ping**: Loka publishes no match history —
+    not on its API, its leaderboard, EldritchBot or Loka Elo — so these are the duels **this mod**
+    has counted, kept on your computer (`config/betterloka/duel-log.json`, the latest 300).
+  - **Who your opponent is**: Loka's line does not say, as far as is known, so before you join their
+    side shows a question mark. If the line names them (in its text or tooltip — `vs Name`,
+    `Opponent: Name`) they are shown; every `Match Ready!` line is written to the game log as it
+    arrived, to check what it carries.
+  - **Ping in the duel**: the one the server shows in the player list (Tab) — the only ping a client
+    can see of somebody else. The server averages it itself and refreshes it there only about
+    **every 30 seconds**, so a duel's ping rests on a few readings, not on every second; the tooltip
+    says how many. The average weighs each value by how long it stood; a **spike** is a change of
+    20 ms or more from one reading to the next, up or down; *every* is the average time between
+    spikes. A server shows 0 for a player it has not measured yet — such readings are skipped.
 
   The numbers come from what the server shows every player near a fight, so your opponent's are as
   good as yours: their **swings** are the arm swing the server shows (counted only with a weapon in
@@ -707,7 +716,8 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   nobody has struck for twenty seconds. The summary is said **after you arrive** where you are sent
   next, a second and a half in, past the server's own welcome; with no move within eight seconds of
   the end, it is said where you are. The opponent is whoever you traded the most hits with. Nothing
-  is sent to the server; the ranked lines only read Loka's public ladders.
+  is sent to the server but the `/join`; the ranked numbers only read Loka's public profile and
+  ladders.
 
 ![Important Waypoints](docs/helper-important.png)
 

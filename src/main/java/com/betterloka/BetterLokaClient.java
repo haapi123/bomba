@@ -79,6 +79,8 @@ public class BetterLokaClient implements ClientModInitializer {
     private static TownCache towns;
     private static PlayerStatsService stats;
     private static ArenaService arenaStats;
+    private static com.betterloka.duel.DuelLog duelLog;
+    private static com.betterloka.duel.Duelists duelists;
     private static BattleIndex battleIndex;
     private static NameplateKdService nameplateKd;
     private static com.betterloka.stats.EloService elo;
@@ -116,8 +118,10 @@ public class BetterLokaClient implements ClientModInitializer {
                 transport.backgroundExecutor());
         elo.start();
         stats.useElo(elo);
-        // v3: the index also keeps how the last season ended, for the duel summary.
-        arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v3.json"));
+        // v4: the index also keeps the last two seasons and every player's summed record.
+        arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v4.json"));
+        duelLog = new com.betterloka.duel.DuelLog(configDir().resolve("duel-log.json"));
+        duelists = new com.betterloka.duel.Duelists(BetterLokaClient::lokaApi, BetterLokaClient::arenaStats);
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
@@ -244,7 +248,7 @@ public class BetterLokaClient implements ClientModInitializer {
                 new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
         // Duels: /join when one is found (off until switched on), and the hit statistics afterwards.
-        new com.betterloka.duel.DuelTracker(config, BetterLokaClient::arenaStats).register();
+        new com.betterloka.duel.DuelTracker(config, BetterLokaClient::duelists, BetterLokaClient::duelLog).register();
         new com.betterloka.helper.ImportantWaypointsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -358,6 +362,16 @@ public class BetterLokaClient implements ClientModInitializer {
 
     public static PlayerStatsService stats() {
         return stats;
+    }
+
+    /** Every duel the mod has counted, kept on this computer. */
+    public static com.betterloka.duel.DuelLog duelLog() {
+        return duelLog;
+    }
+
+    /** Duelists' ranked records, for the duel screens. */
+    public static com.betterloka.duel.Duelists duelists() {
+        return duelists;
     }
 
     public static ArenaService arenaStats() {

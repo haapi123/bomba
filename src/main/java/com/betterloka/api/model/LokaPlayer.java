@@ -1,31 +1,45 @@
 package com.betterloka.api.model;
 
+import com.betterloka.api.ArenaApi;
 import com.google.gson.JsonObject;
 
 import java.time.Instant;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * A player as returned by {@code /players/search/findByName} and friends.
  *
- * <p>The API exposes only identity data here — no combat statistics. Everything
- * kill/death related is derived from {@link BattleZone} records instead.
+ * <p>The API exposes identity data here and this season's ranked 1v1 record ({@code rankedStats}) —
+ * no other combat statistics. Everything kill/death related is derived from {@link BattleZone}
+ * records instead.
  */
 public final class LokaPlayer {
+    /** This season on one ranked ladder, as the player's own record has it. */
+    public record Ranked(ArenaRank rank, int wins, int losses, int streak) {
+        public int games() {
+            return wins + losses;
+        }
+    }
+
     private final String id;
     private final String identityId;
     private final String name;
     private final String rank;
     private final UUID uuid;
     private final String townName;
+    private final Map<ArenaApi.Ladder, Ranked> ranked;
 
-    private LokaPlayer(String id, String identityId, String name, String rank, UUID uuid, String townName) {
+    private LokaPlayer(String id, String identityId, String name, String rank, UUID uuid, String townName,
+                       Map<ArenaApi.Ladder, Ranked> ranked) {
         this.id = id;
         this.identityId = identityId;
         this.name = name;
         this.rank = rank;
         this.uuid = uuid;
         this.townName = townName;
+        this.ranked = ranked;
     }
 
     public static LokaPlayer fromJson(JsonObject json) {
@@ -37,7 +51,29 @@ public final class LokaPlayer {
                 Json.uuid(json, "uuid"),
                 json.has("town") && json.get("town").isJsonObject()
                         ? Json.string(json.getAsJsonObject("town"), "name")
-                        : null);
+                        : null,
+                rankedOf(Json.object(json, "rankedStats")));
+    }
+
+    /** {@code rankedStats}: one object per ladder the player has played this season. */
+    static Map<ArenaApi.Ladder, Ranked> rankedOf(JsonObject stats) {
+        Map<ArenaApi.Ladder, Ranked> out = new EnumMap<>(ArenaApi.Ladder.class);
+        if (stats == null) {
+            return out;
+        }
+        for (ArenaApi.Ladder ladder : ArenaApi.Ladder.values()) {
+            JsonObject one = Json.object(stats, ladder.profileKey());
+            if (one != null) {
+                out.put(ladder, new Ranked(ArenaRank.parse(Json.string(one, "rank")),
+                        Json.integer(one, "wins", 0), Json.integer(one, "losses", 0), Json.integer(one, "streak", 0)));
+            }
+        }
+        return out;
+    }
+
+    /** This season's ranked record per ladder they have played; empty if none. */
+    public Map<ArenaApi.Ladder, Ranked> ranked() {
+        return ranked;
     }
 
     public String id() {

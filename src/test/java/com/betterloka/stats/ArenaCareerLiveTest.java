@@ -33,7 +33,9 @@ class ArenaCareerLiveTest {
             System.out.println("LIVE " + leader.name() + " now " + potion.current().rank()
                     + " · best " + potion.highest().entry().rank() + " (S" + potion.highest().season() + ")"
                     + " · last " + (potion.lastSeason() == null ? "-" : potion.lastSeason().entry().rank()
-                    + " (S" + potion.lastSeason().season() + ")") + " in " + took + " ms");
+                    + " (S" + potion.lastSeason().season() + ")") + " · season " + potion.season()
+                    + " · career " + potion.career() + " in " + took + " ms");
+            assertTrue(potion.lastNumber() < potion.season(), "the last season is a finished one");
             assertNotNull(potion.current());
             assertNotNull(potion.highest());
             assertTrue(potion.highest().entry().rank().compareTo(potion.current().rank()) >= 0,

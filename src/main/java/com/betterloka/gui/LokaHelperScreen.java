@@ -55,6 +55,7 @@ public class LokaHelperScreen extends Screen {
     private Button importantButton;
     private Button duelAcceptButton;
     private Button duelStatsButton;
+    private Button duelScreenButton;
     /** One switch per continent, right under the heading: no list to open and scroll for one click. */
     private final java.util.Map<ImportantPlaces.Region, Button> regionButtons =
             new java.util.EnumMap<>(ImportantPlaces.Region.class);
@@ -206,19 +207,26 @@ public class LokaHelperScreen extends Screen {
                 .bounds(left + width - moreWidth, y, moreWidth, BUTTON_HEIGHT).build());
         y += BUTTON_HEIGHT + gap;
 
-        // Duels: /join by itself when one is found, and the hit statistics afterwards.
+        // Duels: /join by itself when one is found, the screen with both duelists, and the
+        // statistics afterwards.
         duelsLabelY = y;
         y += ROW_HEIGHT;
+        int third = (width - 8) / 3;
         duelAcceptButton = place(Button.builder(duelAcceptLabel(), button -> {
                     config().setDuelAutoAccept(!config().duelAutoAccept());
                     refreshLabels();
                 })
-                .bounds(left, y, half, BUTTON_HEIGHT).build());
+                .bounds(left, y, third, BUTTON_HEIGHT).build());
+        duelScreenButton = place(Button.builder(duelScreenLabel(), button -> {
+                    config().setDuelScreen(!config().duelScreen());
+                    refreshLabels();
+                })
+                .bounds(left + third + 4, y, third, BUTTON_HEIGHT).build());
         duelStatsButton = place(Button.builder(duelStatsLabel(), button -> {
                     config().setDuelStats(!config().duelStats());
                     refreshLabels();
                 })
-                .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build());
+                .bounds(left + (third + 4) * 2, y, width - (third + 4) * 2, BUTTON_HEIGHT).build());
         y += BUTTON_HEIGHT;
         contentBottom = y;
 
@@ -276,6 +284,8 @@ public class LokaHelperScreen extends Screen {
         duelAcceptButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_accept_tip")));
         duelStatsButton.setMessage(duelStatsLabel());
         duelStatsButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_stats_tip")));
+        duelScreenButton.setMessage(duelScreenLabel());
+        duelScreenButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_screen_tip")));
         for (var entry : regionButtons.entrySet()) {
             entry.getValue().setMessage(regionLabel(entry.getKey()));
             entry.getValue().setTooltip(Tooltip.create(Component.translatable("betterloka.helper.important_region",
@@ -333,6 +343,10 @@ public class LokaHelperScreen extends Screen {
 
     private Component duelAcceptLabel() {
         return Component.translatable("betterloka.helper.duel_accept", onOff(config().duelAutoAccept()));
+    }
+
+    private Component duelScreenLabel() {
+        return Component.translatable("betterloka.helper.duel_screen", onOff(config().duelScreen()));
     }
 
     private Component duelStatsLabel() {

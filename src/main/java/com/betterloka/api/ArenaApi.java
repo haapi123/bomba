@@ -25,17 +25,24 @@ public final class ArenaApi {
 
     /** The two ranked 1v1 ladders Loka runs. */
     public enum Ladder {
-        POTION("potion", "potionranked", "betterloka.arena.potion"),
-        BAREBONES("barebones", "barebonesranked", "betterloka.arena.barebones");
+        POTION("potion", "potionranked", "pot", "betterloka.arena.potion"),
+        BAREBONES("barebones", "barebonesranked", "barebones", "betterloka.arena.barebones");
 
         private final String path;
         private final String statsKey;
+        private final String profileKey;
         private final String translationKey;
 
-        Ladder(String path, String statsKey, String translationKey) {
+        Ladder(String path, String statsKey, String profileKey, String translationKey) {
             this.path = path;
             this.statsKey = statsKey;
+            this.profileKey = profileKey;
             this.translationKey = translationKey;
+        }
+
+        /** The ladder's key in a player's own record ({@code rankedStats} of {@code /players}). */
+        public String profileKey() {
+            return profileKey;
         }
 
         public String translationKey() {

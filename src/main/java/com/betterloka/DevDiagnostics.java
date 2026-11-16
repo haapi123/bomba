@@ -1451,10 +1451,22 @@ public final class DevDiagnostics {
             server("execute in minecraft:the_nether run fill -6 100 -6 6 105 6 minecraft:air");
             server("effect give @a fire_resistance 600 0 true");
         });
-        step(20, () -> com.betterloka.duel.DuelTracker.get().onMessage(
-                net.minecraft.network.chat.Component.literal("Match Ready! ").append(
-                        net.minecraft.network.chat.Component.literal("[Click to join]").withStyle(style -> style
-                                .withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand("/join"))))));
+        // "Match Ready!" as Loka sends it: the VS screen, with the opponent not yet known.
+        step(20, () -> {
+            BetterLokaClient.config().setDuelAutoAccept(false);
+            BetterLokaClient.config().setDuelScreen(true);
+            com.betterloka.duel.DuelTracker.get().onMessage(matchReady(null));
+            BetterLoka.LOGGER.info("DIAG duel versus screen open: {}", client().gui.screen());
+        });
+        shot(40, "duel-versus-unknown");
+        // And as it would be if the line named them: both sides, filled in from Loka once loaded.
+        step(2, () -> {
+            client().gui.setScreen(null);
+            com.betterloka.duel.DuelTracker.get().onMessage(matchReady("Ranked Potion vs Knucior"));
+        });
+        shot(30, "duel-versus-loading");
+        shot(500, "duel-versus");
+        step(2, () -> client().gui.setScreen(null));
         step(10, () -> server("execute in minecraft:the_nether run tp @a 0 100 0 0 0"));
         step(80, () -> {
             BetterLoka.LOGGER.info("DIAG duel arrived at the duel: {} in {}", com.betterloka.duel.DuelTracker.get().devState(),
@@ -1495,6 +1507,22 @@ public final class DevDiagnostics {
                 client().level.dimension()));
         step(2, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen("", false)));
         shot(10, "duel-chat");
+        // The line's click, through the same path a click in chat takes.
+        step(2, () -> {
+            com.betterloka.duel.DuelLog log = BetterLokaClient.duelLog();
+            com.betterloka.duel.DuelLog.Entry last = log.recent(client().player.getUUID(), 1).get(0);
+            try {
+                java.lang.reflect.Method handle = net.minecraft.client.gui.screens.Screen.class.getDeclaredMethod(
+                        "defaultHandleGameClickEvent", net.minecraft.network.chat.ClickEvent.class,
+                        net.minecraft.client.Minecraft.class, net.minecraft.client.gui.screens.Screen.class);
+                handle.setAccessible(true);
+                handle.invoke(null, com.betterloka.duel.DuelTracker.openDuel(last.id()), client(), client().gui.screen());
+            } catch (ReflectiveOperationException e) {
+                BetterLoka.LOGGER.warn("DIAG duel: could not click", e);
+            }
+            BetterLoka.LOGGER.info("DIAG duel clicked duel #{}: {}", last.id(), client().gui.screen());
+        });
+        shot(200, "duel-result");
         // The ranked lines, if they had to follow the summary rather than come with it.
         step(400, DevDiagnostics::logDuelChat);
         shot(10, "duel-chat-later");
@@ -1502,6 +1530,16 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG duel checks done");
             client().stop();
         });
+    }
+
+    /** Loka's "Match Ready!" line, with a tooltip on its button if {@code tooltip} is given. */
+    private static net.minecraft.network.chat.Component matchReady(String tooltip) {
+        return net.minecraft.network.chat.Component.literal("Match Ready! ").append(
+                net.minecraft.network.chat.Component.literal("[Click to join]").withStyle(style -> {
+                    var styled = style.withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand("/join"));
+                    return tooltip == null ? styled : styled.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                            net.minecraft.network.chat.Component.literal(tooltip)));
+                }));
     }
 
     /** The zombie standing in for the opponent. */

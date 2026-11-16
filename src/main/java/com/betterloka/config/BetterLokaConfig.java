@@ -103,6 +103,8 @@ public final class BetterLokaConfig {
     private boolean duelAutoAccept = false;
     /** Whether each duel ends with its hit statistics in chat. On: it only ever writes to the player. */
     private boolean duelStats = true;
+    /** Whether "Match Ready!" opens the screen with both duelists and the Join button. On. */
+    private boolean duelScreen = true;
     /**
      * The continents whose important places are marked, by id. Empty until the player switches one
      * on: every continent starts off.
@@ -325,6 +327,15 @@ public final class BetterLokaConfig {
 
     public void setDuelStats(boolean duelStats) {
         this.duelStats = duelStats;
+        save();
+    }
+
+    public boolean duelScreen() {
+        return duelScreen;
+    }
+
+    public void setDuelScreen(boolean duelScreen) {
+        this.duelScreen = duelScreen;
         save();
     }
 

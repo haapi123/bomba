@@ -7,7 +7,8 @@
     "ClearLavaMixin",
     "PlayerNameplateKdMixin",
     "DuelPacketsMixin",
-    "DuelSwingMixin"
+    "DuelSwingMixin",
+    "DuelChatClickMixin"
   ],
   "injectors": {
     "defaultRequire": 1

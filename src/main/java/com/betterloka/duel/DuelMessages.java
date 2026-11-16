@@ -15,7 +15,35 @@ public final class DuelMessages {
     private static final Pattern MATCH_READY =
             Pattern.compile("(?i)^match ready!?\\s*(\\[?\\s*click to join\\s*]?)?\\s*$");
 
+    /** "vs Name", "against Name", "opponent: Name" — however a line might name the other player. */
+    private static final Pattern OPPONENT = Pattern.compile(
+            "(?i)(?:\\bvs\\.?|\\bversus|\\bagainst|\\bopponent\\s*:?|\\bfighting)\\s+([A-Za-z0-9_]{3,16})\\b");
+
     private DuelMessages() {
+    }
+
+    /**
+     * The opponent, if the duel's line names them anywhere — in its text or in what shows on
+     * hovering it. Loka's own line, as far as is known, does not; then this is {@code null} and
+     * the opponent is only known once the duel starts.
+     *
+     * @param texts the line's text and its tooltips
+     * @param self  the player's own name, never taken for the opponent
+     */
+    public static String opponentIn(Iterable<String> texts, String self) {
+        for (String text : texts) {
+            if (text == null) {
+                continue;
+            }
+            java.util.regex.Matcher matcher = OPPONENT.matcher(text);
+            while (matcher.find()) {
+                String name = matcher.group(1);
+                if (self == null || !name.equalsIgnoreCase(self)) {
+                    return name;
+                }
+            }
+        }
+        return null;
     }
 
     public static boolean isMatchReady(String line) {
