@@ -21,29 +21,31 @@ import java.util.function.Supplier;
  * <ul>
  *   <li>{@code /test} — is the bot alive, can it reach Loka, is the fallen-town watch running, and a
  *       sample alert posted where the real ones go.</li>
- *   <li>{@code /weryfikacja} — posts a message with a green button; whoever clicks it gets a role.</li>
- *   <li>{@code /propozycje} — posts a panel with a green button; it opens a form for a title and a
- *       suggestion, which the bot posts as its own message with a thread for discussing it, and the
- *       panel moves back to the bottom of the channel.</li>
+ *   <li>{@code /verification} — posts a message with a green button; whoever clicks it gets a role.</li>
+ *   <li>{@code /suggestions} — posts a panel with a green button; it opens a form for a title and a
+ *       suggestion, which the bot posts as its own message in the suggestions channel, with a thread
+ *       for discussing it.</li>
  * </ul>
  *
- * <p>Everything a button needs is in its id — the role it gives, the panel a form came from — so a
- * restart loses nothing, and nothing but the suggestion count is stored.
+ * <p>Everything a button needs is in its id — the role it gives, the channel suggestions go to, the
+ * panel a form came from — so a restart loses nothing, and nothing but the suggestion count is stored.
  */
 public final class ServerCommands {
     private static final Logger LOG = LoggerFactory.getLogger("BetterLokaBot");
 
     static final String PREFIX = "blb:";
     static final String VERIFY = PREFIX + "verify:";
+    /** The panel's button: {@code blb:suggest:<channel suggestions go to>}; bare on panels from 0.49. */
     static final String SUGGEST = PREFIX + "suggest";
+    /** The form: {@code blb:suggest-form:<channel suggestions go to>:<panel>}. */
     static final String SUGGEST_FORM = PREFIX + "suggest-form:";
 
-    static final String DEFAULT_PANEL_TITLE = "💡 Propozycje do moda";
+    static final String DEFAULT_PANEL_TITLE = "💡 Suggestions for the mod";
     static final String DEFAULT_PANEL_TEXT =
-            "Chciałbyś dodać coś do moda? Naciśnij w zielony przycisk i napisz propozycję!";
-    static final String DEFAULT_VERIFY_TITLE = "✅ Weryfikacja";
-    static final String DEFAULT_VERIFY_TEXT = "Kliknij przycisk poniżej, żeby się zweryfikować.";
-    static final String DEFAULT_VERIFY_BUTTON = "Zweryfikuj się";
+            "Want to add something to the mod? Press the green button and write your suggestion!";
+    static final String DEFAULT_VERIFY_TITLE = "✅ Verification";
+    static final String DEFAULT_VERIFY_TEXT = "Click the button below to verify.";
+    static final String DEFAULT_VERIFY_BUTTON = "Verify";
 
     static final int TITLE_MIN = 3;
     static final int TITLE_MAX = 80;
@@ -65,18 +67,22 @@ public final class ServerCommands {
         /** Why the watch is off, or {@code null} when it is running. */
         String offReason();
 
-        /** Where alerts go, as Discord shows it: a channel mention, or "webhook". */
-        String destination();
-
-        String roleId();
-
         int intervalSeconds();
 
         /** One cheap request to Loka; the number of deleted towns it reports. */
         int probeLoka() throws Exception;
 
-        /** Posts a sample alert where the real ones go. */
-        void postSample(String requestedBy, boolean ping) throws Exception;
+        /** Posts a sample alert to every place the real ones go, and says how each went. */
+        java.util.List<Delivery> postSample(String requestedBy, boolean ping);
+    }
+
+    /**
+     * One place a sample alert went.
+     *
+     * @param destination a channel mention, or "webhook"
+     * @param error       what went wrong, or {@code null}
+     */
+    public record Delivery(String destination, String roleId, String error) {
     }
 
     private final DiscordActions discord;
@@ -102,36 +108,42 @@ public final class ServerCommands {
         this.clock = clock;
     }
 
-    /** The commands this registers, alongside {@code /sprawdz}. */
+    /** The commands this registers, alongside {@code /check}. */
     public static JsonArray definitions() {
         JsonArray commands = new JsonArray();
 
-        JsonObject test = command("test", "Sprawdza, czy bot działa i wysyła powiadomienia o upadłych townach", "32");
+        JsonObject test = command("test", "Checks that the bot is running and posting fallen-town alerts", "32");
         test.add("options", options(
-                option(5, "ping", "Oznaczyć rangę w wiadomości testowej? (domyślnie nie)", false)));
+                option(5, "ping", "Ping the alert role in the test message? (off by default)", false)));
         commands.add(test);
 
-        JsonObject verify = command("weryfikacja", "Wysyła wiadomość z przyciskiem, który nadaje rangę", "268435456");
-        JsonObject channel = option(7, "kanal", "Kanał, na który wysłać (domyślnie ten)", false);
+        JsonObject verify = command("verification", "Posts a message with a button that gives a role", "268435456");
+        verify.add("options", options(
+                option(8, "role", "The role whoever clicks gets", true),
+                channel("channel", "Where to post it (this channel if left out)", false),
+                text("title", "The message's title", 256),
+                text("description", "The message's text", 2000),
+                text("button", "The button's label", 80)));
+        commands.add(verify);
+
+        JsonObject suggest = command("suggestions", "Posts the suggestions panel with a green button", "32");
+        suggest.add("options", options(
+                channel("post_to", "Where submitted suggestions are posted, each with its own thread", true),
+                channel("channel", "Where to post the panel (this channel if left out)", false),
+                text("title", "The panel's title", 256),
+                text("text", "The panel's text", 2000)));
+        commands.add(suggest);
+        return commands;
+    }
+
+    /** A text or announcement channel. */
+    private static JsonObject channel(String name, String description, boolean required) {
+        JsonObject channel = option(7, name, description, required);
         JsonArray types = new JsonArray();
         types.add(0);
         types.add(5);
         channel.add("channel_types", types);
-        verify.add("options", options(
-                option(8, "ranga", "Ranga, którą dostanie klikający", true),
-                channel,
-                text("tytul", "Tytuł wiadomości", 256),
-                text("opis", "Treść wiadomości", 2000),
-                text("przycisk", "Napis na przycisku", 80)));
-        commands.add(verify);
-
-        JsonObject suggest = command("propozycje", "Wysyła panel propozycji z zielonym przyciskiem", "32");
-        suggest.add("options", options(
-                channel.deepCopy(),
-                text("tytul", "Tytuł panelu", 256),
-                text("tekst", "Treść panelu", 2000)));
-        commands.add(suggest);
-        return commands;
+        return channel;
     }
 
     private static JsonObject command(String name, String description, String permissions) {
@@ -183,8 +195,8 @@ public final class ServerCommands {
             String name = string(data, "name");
             Runnable task = switch (name == null ? "" : name) {
                 case "test" -> () -> test(interaction);
-                case "weryfikacja" -> () -> setUpVerification(interaction);
-                case "propozycje" -> () -> setUpSuggestions(interaction);
+                case "verification" -> () -> setUpVerification(interaction);
+                case "suggestions" -> () -> setUpSuggestions(interaction);
                 default -> null;
             };
             if (task == null) {
@@ -199,10 +211,11 @@ public final class ServerCommands {
         }
         if (customId.startsWith(VERIFY)) {
             run(() -> verify(interaction, customId.substring(VERIFY.length())));
-        } else if (customId.equals(SUGGEST)) {
-            run(() -> openSuggestionForm(interaction));
         } else if (customId.startsWith(SUGGEST_FORM)) {
             run(() -> submitSuggestion(interaction, customId.substring(SUGGEST_FORM.length())));
+        } else if (customId.equals(SUGGEST) || customId.startsWith(SUGGEST + ":")) {
+            String target = customId.equals(SUGGEST) ? "" : customId.substring(SUGGEST.length() + 1);
+            run(() -> openSuggestionForm(interaction, target));
         } else {
             return false;
         }
@@ -234,66 +247,74 @@ public final class ServerCommands {
         long started = clock.getAsLong();
         try {
             int deleted = alerts.probeLoka();
-            loka = "✅ odpowiada (" + (clock.getAsLong() - started) + " ms) · usuniętych townów: " + deleted;
+            loka = "✅ answering (" + (clock.getAsLong() - started) + " ms) · deleted towns: " + deleted;
         } catch (Exception e) {
-            loka = "❌ nie odpowiada: " + describe(e);
+            loka = "❌ not answering: " + describe(e);
             bad = true;
         }
 
         String watch;
         String sample;
+        String places = null;
         String off = alerts.offReason();
         if (off != null) {
-            watch = "⏸ wyłączone: " + off;
-            sample = "⏸ nie wysłano, bo pilnowanie jest wyłączone";
+            watch = "⏸ off: " + off;
+            sample = "⏸ not sent, because the watch is off";
             warn = true;
         } else {
-            StringBuilder text = new StringBuilder("✅ działa, sprawdza Lokę co " + alerts.intervalSeconds() + " s");
+            StringBuilder text = new StringBuilder("✅ running, checks Loka every " + alerts.intervalSeconds() + " s");
             if (status.lastCheckAt() == 0) {
-                text.append("\nPierwsze sprawdzenie jeszcze trwa");
+                text.append("\nThe first check is still running");
             } else {
-                text.append("\nOstatnie sprawdzenie: ").append(ago(status.lastCheckAt()))
+                text.append("\nLast check: ").append(ago(status.lastCheckAt()))
                         .append(status.lastCheckOk() ? " ✅" : " ❌ " + status.lastCheckError());
                 if (!status.lastCheckOk()) {
                     warn = true;
                 }
             }
             if (status.lastSweepAt() != 0) {
-                text.append("\nPełny przegląd terytoriów: ").append(ago(status.lastSweepAt()));
+                text.append("\nFull territory sweep: ").append(ago(status.lastSweepAt()));
             }
             watch = text.toString();
-            try {
-                alerts.postSample(user, ping);
-                sample = "✅ wysłana " + ("webhook".equals(alerts.destination())
-                        ? "przez webhook" : "na " + alerts.destination())
-                        + (ping ? " z oznaczeniem rangi" : " (bez oznaczania rangi)");
-            } catch (Exception e) {
-                sample = "❌ " + describe(e);
-                bad = true;
+
+            StringBuilder sent = new StringBuilder();
+            StringBuilder where = new StringBuilder();
+            for (Delivery delivery : alerts.postSample(user, ping)) {
+                boolean hasRole = delivery.roleId() != null && !delivery.roleId().isBlank();
+                if (delivery.error() == null) {
+                    sent.append("✅ ").append(delivery.destination())
+                            .append(ping && hasRole ? " — pinged <@&" + delivery.roleId() + ">" : " (no role ping)");
+                } else {
+                    sent.append("❌ ").append(delivery.destination()).append(": ").append(delivery.error());
+                    bad = true;
+                }
+                sent.append('\n');
+                where.append(delivery.destination()).append(" · ")
+                        .append(hasRole ? "pings <@&" + delivery.roleId() + ">" : "no role ping").append('\n');
             }
+            sample = sent.length() == 0 ? "⏸ nowhere to send it" : sent.toString().strip();
+            places = where.length() == 0 ? null : where.toString().strip();
         }
 
         String last = status.lastAnnouncedAt() == 0
-                ? "jeszcze żadnego od uruchomienia bota (" + ago(status.startedAt()) + ")"
+                ? "none since the bot started (" + ago(status.startedAt()) + ")"
                 : ago(status.lastAnnouncedAt()) + " — " + status.lastAnnounced();
 
         JsonObject embed = new JsonObject();
-        embed.addProperty("title", bad ? "❌ Coś nie działa" : warn ? "⚠️ Bot działa, ale coś wymaga uwagi" : "✅ Bot działa");
+        embed.addProperty("title", bad ? "❌ Something isn't working"
+                : warn ? "⚠️ The bot is running, but something needs attention" : "✅ The bot is working");
         embed.addProperty("color", bad ? RED : warn ? ORANGE : GREEN);
         JsonArray fields = new JsonArray();
-        fields.add(field("Discord", "✅ połączony — ta odpowiedź to dowód"));
+        fields.add(field("Discord", "✅ connected — this reply is the proof"));
         fields.add(field("Loka API", loka));
-        fields.add(field("Pilnowanie upadłych townów", watch));
-        fields.add(field("Ostatnie powiadomienie", last));
+        fields.add(field("Fallen-town watch", watch));
+        fields.add(field("Last alert", last));
         if (status.lastPostErrorAt() != 0) {
-            fields.add(field("Ostatni błąd wysyłania", ago(status.lastPostErrorAt()) + " — " + status.lastPostError()));
+            fields.add(field("Last posting error", ago(status.lastPostErrorAt()) + " — " + status.lastPostError()));
         }
-        fields.add(field("Wiadomość testowa", sample));
-        if (off == null) {
-            String role = alerts.roleId() == null || alerts.roleId().isBlank()
-                    ? "bez oznaczania rangi" : "oznacza <@&" + alerts.roleId() + ">";
-            fields.add(field("Gdzie trafiają powiadomienia",
-                    ("webhook".equals(alerts.destination()) ? "webhook" : alerts.destination()) + " · " + role));
+        fields.add(field("Test message", sample));
+        if (places != null) {
+            fields.add(field("Where alerts go", places));
         }
         embed.add("fields", fields);
         footer(embed, "BetterLoka · /test");
@@ -308,32 +329,32 @@ public final class ServerCommands {
         }
         JsonObject data = object(interaction, "data");
         String guild = string(interaction, "guild_id");
-        String roleId = stringOption(data, "ranga");
-        String channel = firstNonBlank(stringOption(data, "kanal"), string(interaction, "channel_id"));
+        String roleId = stringOption(data, "role");
+        String channel = firstNonBlank(stringOption(data, "channel"), string(interaction, "channel_id"));
         if (guild == null || roleId == null || channel == null) {
-            editReply(interaction, "❌ Tej komendy można użyć tylko na serwerze.", null);
+            editReply(interaction, "❌ This command only works in a server.", null);
             return;
         }
         JsonObject role = resolved(data, "roles", roleId);
         if (roleId.equals(guild)) {
-            editReply(interaction, "❌ Ranga @everyone ma ją każdy — wybierz inną.", null);
+            editReply(interaction, "❌ Everybody already has @everyone — pick another role.", null);
             return;
         }
         if (role != null && role.has("managed") && role.get("managed").getAsBoolean()) {
-            editReply(interaction, "❌ Tej rangi nie da się nadać: należy do bota albo integracji.", null);
+            editReply(interaction, "❌ That role belongs to a bot or an integration and can't be given out.", null);
             return;
         }
 
-        JsonObject message = verificationMessage(roleId, stringOption(data, "tytul"), stringOption(data, "opis"),
-                stringOption(data, "przycisk"));
+        JsonObject message = verificationMessage(roleId, stringOption(data, "title"), stringOption(data, "description"),
+                stringOption(data, "button"));
         try {
             discord.post(channel, message);
         } catch (Exception e) {
             editReply(interaction, cannotPost(channel, e), null);
             return;
         }
-        StringBuilder reply = new StringBuilder("✅ Wiadomość weryfikacyjna wysłana na <#" + channel
-                + ">. Kliknięcie przycisku nada rangę <@&" + roleId + ">.");
+        StringBuilder reply = new StringBuilder("✅ Verification message posted in <#" + channel
+                + ">. Clicking its button gives <@&" + roleId + ">.");
         for (String warning : roleWarnings(guild, roleId, role)) {
             reply.append("\n\n").append(warning);
         }
@@ -344,7 +365,7 @@ public final class ServerCommands {
         JsonObject embed = new JsonObject();
         embed.addProperty("title", clip(firstNonBlank(title, DEFAULT_VERIFY_TITLE), 256));
         embed.addProperty("description", clip(firstNonBlank(text, DEFAULT_VERIFY_TEXT), 3800)
-                + "\n\nPo kliknięciu dostaniesz rangę <@&" + roleId + ">.");
+                + "\n\nYou'll get the <@&" + roleId + "> role.");
         embed.addProperty("color", GREEN);
         footer(embed, "BetterLoka");
         JsonObject message = new JsonObject();
@@ -398,12 +419,12 @@ public final class ServerCommands {
             }
             boolean administrator = permissions.and(ADMINISTRATOR).signum() != 0;
             if (!administrator && permissions.and(MANAGE_ROLES).signum() == 0) {
-                warnings.add("⚠️ Bot nie ma uprawnienia **Zarządzanie rolami** — nadaj je jego randze, "
-                        + "inaczej przycisk nie zadziała.");
+                warnings.add("⚠️ The bot doesn't have **Manage Roles** — give it to the bot's role, "
+                        + "or the button won't work.");
             }
             if (target >= top) {
-                warnings.add("⚠️ Ranga <@&" + roleId + "> jest wyżej niż najwyższa ranga bota. Przeciągnij rangę "
-                        + "bota nad nią w Ustawienia serwera → Role, inaczej przycisk nie zadziała.");
+                warnings.add("⚠️ <@&" + roleId + "> is above the bot's highest role. Drag the bot's role above it "
+                        + "in Server Settings → Roles, or the button won't work.");
             }
         } catch (Exception e) {
             LOG.info("Could not check the bot's roles: {}", e.getMessage());
@@ -423,28 +444,28 @@ public final class ServerCommands {
         String guild = string(interaction, "guild_id");
         String user = userId(interaction);
         if (guild == null || user == null || roleId.isBlank()) {
-            respond(interaction, ephemeral("❌ To działa tylko na serwerze."));
+            respond(interaction, ephemeral("❌ This only works in a server."));
             return;
         }
         if (memberRoles(interaction).contains(roleId)) {
-            respond(interaction, ephemeral("Masz już rangę <@&" + roleId + "> 🙂"));
+            respond(interaction, ephemeral("You already have <@&" + roleId + "> 🙂"));
             return;
         }
         if (!defer(interaction)) {
             return;
         }
         try {
-            discord.addRole(guild, user, roleId, "Weryfikacja przyciskiem (BetterLoka)");
-            editReply(interaction, "✅ Zweryfikowano! Masz teraz rangę <@&" + roleId + ">.", null);
+            discord.addRole(guild, user, roleId, "Verified with the button (BetterLoka)");
+            editReply(interaction, "✅ Verified! You now have <@&" + roleId + ">.", null);
         } catch (DiscordActions.Refused e) {
             LOG.warn("Could not give role {} to {}: {}", roleId, user, e.getMessage());
             editReply(interaction, e.status() == 404
-                    ? "❌ Tej rangi już nie ma na serwerze — daj znać administracji."
-                    : "❌ Nie mogę nadać tej rangi. Administracja musi dać botowi **Zarządzanie rolami** i "
-                    + "przesunąć jego rangę nad <@&" + roleId + ">.", null);
+                    ? "❌ That role no longer exists — please let the admins know."
+                    : "❌ I can't give you this role. An admin needs to give the bot **Manage Roles** and move "
+                    + "its role above <@&" + roleId + ">.", null);
         } catch (Exception e) {
             LOG.warn("Could not give role {} to {}: {}", roleId, user, e.getMessage());
-            editReply(interaction, "❌ Coś poszło nie tak — spróbuj ponownie za chwilę.", null);
+            editReply(interaction, "❌ Something went wrong — please try again in a moment.", null);
         }
     }
 
@@ -455,13 +476,16 @@ public final class ServerCommands {
             return;
         }
         JsonObject data = object(interaction, "data");
-        String channel = firstNonBlank(stringOption(data, "kanal"), string(interaction, "channel_id"));
-        if (channel == null) {
-            editReply(interaction, "❌ Tej komendy można użyć tylko na serwerze.", null);
+        String here = string(interaction, "channel_id");
+        String channel = firstNonBlank(stringOption(data, "channel"), here);
+        String target = firstNonBlank(stringOption(data, "post_to"), channel);
+        if (channel == null || target == null) {
+            editReply(interaction, "❌ This command only works in a server.", null);
             return;
         }
         try {
-            String id = discord.post(channel, suggestionPanel(stringOption(data, "tytul"), stringOption(data, "tekst")));
+            String id = discord.post(channel, suggestionPanel(target, stringOption(data, "title"),
+                    stringOption(data, "text")));
             synchronized (panels) {
                 panels.put(channel, id);
             }
@@ -469,30 +493,36 @@ public final class ServerCommands {
             editReply(interaction, cannotPost(channel, e), null);
             return;
         }
-        editReply(interaction, "✅ Panel propozycji wysłany na <#" + channel + ">.\n\n"
-                + "Bot potrzebuje tam: **Wysyłanie wiadomości**, **Osadzanie linków**, **Tworzenie wątków "
-                + "publicznych**, **Wysyłanie wiadomości w wątkach**, **Dodawanie reakcji** i **Czytanie historii "
-                + "wiadomości**.\n"
-                + "Wskazówka: zabierz graczom **Wysyłanie wiadomości** na tym kanale, a zostaw **Wysyłanie "
-                + "wiadomości w wątkach** — kanał zostanie czysty, a dyskusje pójdą do wątków.", null);
+        editReply(interaction, "✅ Suggestions panel posted in <#" + channel + ">. Suggestions will appear in <#"
+                + target + ">, each with its own thread.\n\n"
+                + "In <#" + target + "> the bot needs **Send Messages**, **Embed Links**, **Create Public Threads**, "
+                + "**Send Messages in Threads**, **Add Reactions** and **Read Message History**.\n"
+                + "Tip: take **Send Messages** away from everyone in <#" + target + "> but leave **Send Messages "
+                + "in Threads** — the channel holds only suggestions, and the talking happens in their threads.", null);
     }
 
-    static JsonObject suggestionPanel(String title, String text) {
+    /**
+     * The panel with its green button.
+     *
+     * @param target the channel suggestions go to; it travels in the button
+     */
+    static JsonObject suggestionPanel(String target, String title, String text) {
         JsonObject embed = new JsonObject();
         embed.addProperty("title", clip(firstNonBlank(title, DEFAULT_PANEL_TITLE), 256));
         embed.addProperty("description", clip(firstNonBlank(text, DEFAULT_PANEL_TEXT), 4000));
         embed.addProperty("color", GREEN);
-        footer(embed, "Każda propozycja dostaje swój wątek do dyskusji · BetterLoka");
+        footer(embed, "Every suggestion gets its own thread for discussion · BetterLoka");
         JsonObject message = new JsonObject();
         JsonArray embeds = new JsonArray();
         embeds.add(embed);
         message.add("embeds", embeds);
-        message.add("components", row(button(SUGGEST, "Napisz propozycję", "💡")));
+        String customId = target == null || target.isBlank() ? SUGGEST : SUGGEST + ":" + target;
+        message.add("components", row(button(customId, "Write a suggestion", "💡")));
         message.add("allowed_mentions", noMentions());
         return message;
     }
 
-    private void openSuggestionForm(JsonObject interaction) {
+    private void openSuggestionForm(JsonObject interaction, String target) {
         String wait = cooldown(userId(interaction));
         if (wait != null) {
             respond(interaction, ephemeral(wait));
@@ -500,18 +530,18 @@ public final class ServerCommands {
         }
         JsonObject message = object(interaction, "message");
         String panel = message == null ? null : string(message, "id");
-        respond(interaction, suggestionForm(panel == null ? "" : panel));
+        respond(interaction, suggestionForm(target, panel == null ? "" : panel));
     }
 
-    static JsonObject suggestionForm(String panelId) {
+    static JsonObject suggestionForm(String target, String panelId) {
         JsonArray rows = new JsonArray();
-        rows.add(inputRow(input("title", "Tytuł propozycji", 1, TITLE_MIN, TITLE_MAX,
-                "np. Licznik do restartu serwera na ekranie")));
-        rows.add(inputRow(input("body", "Twoja propozycja", 2, BODY_MIN, BODY_MAX,
-                "Opisz, co chcesz dodać do moda i dlaczego by się przydało.")));
+        rows.add(inputRow(input("title", "Title", 1, TITLE_MIN, TITLE_MAX,
+                "e.g. A countdown to the server restart on screen")));
+        rows.add(inputRow(input("body", "Your suggestion", 2, BODY_MIN, BODY_MAX,
+                "Describe what you'd like added to the mod, and why it would help.")));
         JsonObject data = new JsonObject();
-        data.addProperty("custom_id", SUGGEST_FORM + panelId);
-        data.addProperty("title", "Nowa propozycja");
+        data.addProperty("custom_id", SUGGEST_FORM + (target == null ? "" : target) + ":" + panelId);
+        data.addProperty("title", "New suggestion");
         data.add("components", rows);
         JsonObject response = new JsonObject();
         response.addProperty("type", 9);
@@ -519,15 +549,19 @@ public final class ServerCommands {
         return response;
     }
 
-    private void submitSuggestion(JsonObject interaction, String panelId) {
+    /** @param ids {@code <channel suggestions go to>:<panel>}, or just {@code <panel>} from 0.49 */
+    private void submitSuggestion(JsonObject interaction, String ids) {
         Map<String, String> values = formValues(object(interaction, "data"));
         String title = tidy(values.get("title"), false);
         String body = tidy(values.get("body"), true);
         String user = userId(interaction);
-        String channel = string(interaction, "channel_id");
-        if (title.length() < TITLE_MIN || body.length() < BODY_MIN || user == null || channel == null) {
-            respond(interaction, ephemeral("❌ Tytuł musi mieć co najmniej " + TITLE_MIN + " znaki, a propozycja "
-                    + BODY_MIN + ". Spróbuj jeszcze raz."));
+        String here = string(interaction, "channel_id");
+        String[] parts = ids.split(":", -1);
+        String target = firstNonBlank(parts.length >= 2 ? parts[0] : null, here);
+        String panelId = parts[parts.length - 1];
+        if (title.length() < TITLE_MIN || body.length() < BODY_MIN || user == null || target == null) {
+            respond(interaction, ephemeral("❌ The title needs at least " + TITLE_MIN + " characters and the "
+                    + "suggestion at least " + BODY_MIN + ". Please try again."));
             return;
         }
         String wait = cooldown(user);
@@ -543,28 +577,28 @@ public final class ServerCommands {
 
         String messageId;
         try {
-            messageId = discord.post(channel, suggestionMessage(number, clip(title, TITLE_MAX), clip(body, BODY_MAX),
+            messageId = discord.post(target, suggestionMessage(number, clip(title, TITLE_MAX), clip(body, BODY_MAX),
                     displayName(interaction), avatarUrl(interaction)));
         } catch (Exception e) {
             lastSuggestion.remove(user);
-            LOG.warn("Could not post suggestion #{}: {}", number, e.getMessage());
-            editReply(interaction, "❌ Nie udało się wysłać propozycji — bot nie może pisać na tym kanale. "
-                    + "Daj znać administracji.", null);
+            LOG.warn("Could not post suggestion #{} in channel {}: {}", number, target, e.getMessage());
+            editReply(interaction, "❌ Your suggestion couldn't be posted — the bot can't write in <#" + target
+                    + ">. Please let the admins know.", null);
             return;
         }
         for (String vote : new String[]{"👍", "👎"}) {
             try {
-                discord.react(channel, messageId, vote);
+                discord.react(target, messageId, vote);
             } catch (Exception e) {
                 LOG.info("Could not add {} to suggestion #{}: {}", vote, number, e.getMessage());
             }
         }
         String thread = null;
         try {
-            thread = discord.startThread(channel, messageId, threadName(number, title));
+            thread = discord.startThread(target, messageId, threadName(number, title));
             JsonObject welcome = new JsonObject();
-            welcome.addProperty("content", "<@" + user + "> — tutaj można dyskutować o tej propozycji. "
-                    + "Głosujcie 👍 / 👎 pod wiadomością.");
+            welcome.addProperty("content", "<@" + user + "> — discuss this suggestion here. "
+                    + "Vote 👍 / 👎 on the suggestion itself.");
             JsonObject allowed = noMentions();
             JsonArray users = new JsonArray();
             users.add(user);
@@ -574,12 +608,17 @@ public final class ServerCommands {
         } catch (Exception e) {
             LOG.warn("Could not open a thread for suggestion #{}: {}", number, e.getMessage());
         }
-        movePanel(channel, panelId);
+        // A panel in the suggestions channel itself would be pushed up by every suggestion; one in a
+        // channel of its own stays where it is.
+        if (target.equals(here)) {
+            movePanel(here, panelId);
+        }
 
         editReply(interaction, thread != null
-                ? "✅ Dzięki! Twoja propozycja **#" + number + "** jest już na kanale — dyskusja: <#" + thread + ">"
-                : "✅ Dzięki! Twoja propozycja **#" + number + "** jest już na kanale. (Wątku nie udało się "
-                + "otworzyć — bot potrzebuje uprawnienia Tworzenie wątków publicznych.)", null);
+                ? "✅ Thanks! Your suggestion **#" + number + "** is posted in <#" + target + "> — discussion: <#"
+                + thread + ">"
+                : "✅ Thanks! Your suggestion **#" + number + "** is posted in <#" + target + ">. (The thread "
+                + "couldn't be opened — the bot needs Create Public Threads there.)", null);
     }
 
     static JsonObject suggestionMessage(int number, String title, String body, String author, String avatar) {
@@ -593,7 +632,7 @@ public final class ServerCommands {
         embed.addProperty("title", clip("💡 " + title, 256));
         embed.addProperty("description", body);
         embed.addProperty("color", GOLD);
-        footer(embed, "Propozycja #" + number + " · głosuj 👍 / 👎 · dyskusja w wątku");
+        footer(embed, "Suggestion #" + number + " · vote 👍 / 👎 · discuss in the thread");
         embed.addProperty("timestamp", java.time.Instant.now().toString());
         JsonObject message = new JsonObject();
         JsonArray embeds = new JsonArray();
@@ -609,7 +648,8 @@ public final class ServerCommands {
 
     /**
      * Puts the panel back at the bottom of the channel, under the suggestion just posted, so the
-     * button is always where somebody opening the channel looks.
+     * button is always where somebody opening the channel looks. Only for a panel that shares its
+     * channel with the suggestions.
      */
     private void movePanel(String channel, String fromForm) {
         synchronized (panels) {
@@ -619,10 +659,10 @@ public final class ServerCommands {
             }
             try {
                 JsonObject old = discord.message(channel, current);
+                JsonObject fallback = suggestionPanel(channel, null, null);
                 JsonObject copy = new JsonObject();
-                copy.add("embeds", old.has("embeds") ? old.get("embeds") : suggestionPanel(null, null).get("embeds"));
-                copy.add("components", old.has("components") ? old.get("components")
-                        : suggestionPanel(null, null).get("components"));
+                copy.add("embeds", old.has("embeds") ? old.get("embeds") : fallback.get("embeds"));
+                copy.add("components", old.has("components") ? old.get("components") : fallback.get("components"));
                 copy.add("allowed_mentions", noMentions());
                 String moved = discord.post(channel, copy);
                 panels.put(channel, moved);
@@ -639,7 +679,7 @@ public final class ServerCommands {
             return null;
         }
         long left = SUGGEST_COOLDOWN_MILLIS - (clock.getAsLong() - last);
-        return left <= 0 ? null : "⏳ Następną propozycję możesz wysłać za " + Math.max(1, (left + 999) / 1000) + " s.";
+        return left <= 0 ? null : "⏳ You can send another suggestion in " + Math.max(1, (left + 999) / 1000) + " s.";
     }
 
     /** Trimmed, with runs of blank lines squeezed; a title stays on one line. */
@@ -708,8 +748,8 @@ public final class ServerCommands {
 
     private static String cannotPost(String channel, Exception e) {
         LOG.warn("Could not post in channel {}: {}", channel, e.getMessage());
-        return "❌ Nie mogę pisać na <#" + channel + ">. Daj botowi tam **Wyświetlanie kanału**, **Wysyłanie "
-                + "wiadomości** i **Osadzanie linków**." + (e instanceof DiscordActions.Refused refused
+        return "❌ I can't post in <#" + channel + ">. Give the bot **View Channel**, **Send Messages** and "
+                + "**Embed Links** there." + (e instanceof DiscordActions.Refused refused
                 ? " (Discord: " + refused.status() + ")" : "");
     }
 

@@ -13,7 +13,7 @@ import java.nio.file.StandardCopyOption;
 
 /**
  * The one number the server's own features have to remember across a restart: how many suggestions
- * there have been, so each gets a number of its own ("Propozycja #12") that is never handed out twice.
+ * there have been, so each gets a number of its own ("Suggestion #12") that is never handed out twice.
  *
  * <p>Everything else they need — which role a verification button gives, which panel a form came
  * from — travels in the button itself, so a restart loses nothing.

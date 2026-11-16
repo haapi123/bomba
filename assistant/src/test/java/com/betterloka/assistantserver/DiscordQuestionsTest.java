@@ -63,6 +63,8 @@ class DiscordQuestionsTest {
 
         config = new ServerConfig();
         config.discordQuestions.channelId = CHANNEL;
+        // The messages these tests read are the Polish ones; English is the default.
+        config.discordQuestions.language = "pl";
         config.discordQuestions.answerRoleIds = List.of(ANSWERER);
         config.discordQuestions.approveRoleIds = List.of(APPROVER);
         config.discordQuestions.pingRoleId = "444";

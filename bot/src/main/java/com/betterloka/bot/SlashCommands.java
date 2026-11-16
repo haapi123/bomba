@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 
 /** The REST half of slash commands: registering them, and answering an interaction. */
 public final class SlashCommands {
@@ -32,15 +33,8 @@ public final class SlashCommands {
         this.token = token;
     }
 
-    /**
-     * Registers {@code /sprawdz} and the server's own commands ({@link ServerCommands}) with Discord,
-     * all in one go: a registration replaces whatever set was there before.
-     *
-     * @param guildId a server to register in, which takes effect immediately, or blank to register
-     *                globally — which is what makes the command work everywhere the bot is, but can
-     *                take up to an hour to appear
-     */
-    public void register(String applicationId, String guildId) throws IOException, InterruptedException {
+    /** Every command the bot serves: {@code /check}, then the server's own ({@link ServerCommands}). */
+    public static JsonArray allCommands() {
         JsonObject option = new JsonObject();
         option.addProperty("type", 3);
         option.addProperty("name", "town");
@@ -51,7 +45,7 @@ public final class SlashCommands {
         options.add(option);
 
         JsonObject command = new JsonObject();
-        command.addProperty("name", "sprawdz");
+        command.addProperty("name", "check");
         command.addProperty("description", "When a town was founded, and how recently its members have been seen");
         command.addProperty("type", 1);
         command.add("options", options);
@@ -59,22 +53,55 @@ public final class SlashCommands {
         JsonArray commands = new JsonArray();
         commands.add(command);
         commands.addAll(ServerCommands.definitions());
+        return commands;
+    }
 
-        String url = guildId == null || guildId.isBlank()
-                ? API + "/applications/" + applicationId + "/commands"
-                : API + "/applications/" + applicationId + "/guilds/" + guildId + "/commands";
+    /**
+     * Registers every command with Discord. A registration replaces whatever set was there before, so
+     * a renamed command simply disappears under its old name.
+     *
+     * @param guildIds servers to register in, which takes effect immediately; or none, to register
+     *                 globally — which works everywhere the bot is, but can take up to an hour to appear
+     */
+    public void register(String applicationId, List<String> guildIds) throws IOException, InterruptedException {
+        String commands = allCommands().toString();
+        if (guildIds == null || guildIds.isEmpty()) {
+            put(API + "/applications/" + applicationId + "/commands", commands);
+            LOG.info("Registered /check, /test, /verification and /suggestions globally "
+                    + "(it can take up to an hour to appear)");
+            return;
+        }
+        int registered = 0;
+        for (String guildId : guildIds) {
+            try {
+                put(API + "/applications/" + applicationId + "/guilds/" + guildId + "/commands", commands);
+                registered++;
+                LOG.info("Registered /check, /test, /verification and /suggestions in server {}", guildId);
+            } catch (IOException e) {
+                // Usually a server the bot has not been invited to yet; the others still get theirs.
+                LOG.error("Could not register the commands in server {} (is the bot in it, invited with "
+                        + "applications.commands?): {}", guildId, e.getMessage());
+            }
+        }
+        if (registered > 0) {
+            // Per-server commands and global ones both show, so an earlier global registration would
+            // put every command in the list twice.
+            try {
+                put(API + "/applications/" + applicationId + "/commands", "[]");
+            } catch (IOException e) {
+                LOG.warn("Could not clear the global commands: {}", e.getMessage());
+            }
+        }
+    }
 
+    private void put(String url, String body) throws IOException, InterruptedException {
         HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(url))
                 .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(commands.toString(), StandardCharsets.UTF_8)));
-
+                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)));
         if (response.statusCode() >= 300) {
             throw new IOException("Discord refused the command registration: "
                     + response.statusCode() + " " + trimmed(response.body()));
         }
-        LOG.info("Registered /sprawdz, /test, /weryfikacja and /propozycje {}", guildId == null || guildId.isBlank()
-                ? "globally (it can take up to an hour to appear)"
-                : "in server " + guildId);
     }
 
     /** Tells Discord the bot is working on it, so the three second deadline stops running. */

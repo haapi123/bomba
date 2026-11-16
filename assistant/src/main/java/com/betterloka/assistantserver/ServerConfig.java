@@ -80,8 +80,8 @@ public final class ServerConfig {
         public List<String> approveRoleIds = new ArrayList<>();
         /** Optional: a role pinged when a new question is posted. */
         public String pingRoleId = "";
-        /** The language of the messages and buttons: pl or en. */
-        public String language = "pl";
+        /** The language of the messages and buttons: en or pl. */
+        public String language = "en";
     }
 
     /** What {@code crawl} reads. Every source can be turned off. */

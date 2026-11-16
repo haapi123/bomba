@@ -107,21 +107,12 @@ class ServerCommandsTest {
     static final class FakeAlerts implements ServerCommands.Alerts {
         String off;
         boolean lokaDown;
+        boolean secondFails;
         final List<String> samples = new ArrayList<>();
 
         @Override
         public String offReason() {
             return off;
-        }
-
-        @Override
-        public String destination() {
-            return "<#777>";
-        }
-
-        @Override
-        public String roleId() {
-            return "888";
         }
 
         @Override
@@ -138,8 +129,10 @@ class ServerCommandsTest {
         }
 
         @Override
-        public void postSample(String requestedBy, boolean ping) {
+        public List<ServerCommands.Delivery> postSample(String requestedBy, boolean ping) {
             samples.add(requestedBy + ":" + ping);
+            return List.of(new ServerCommands.Delivery("<#777>", "888", null),
+                    new ServerCommands.Delivery("<#779>", "889", secondFails ? "Discord answered 403" : null));
         }
     }
 
@@ -247,15 +240,27 @@ class ServerCommandsTest {
                 optionalSeen |= !required;
             }
         }
-        assertEquals(List.of("test", "weryfikacja", "propozycje"), names);
+        assertEquals(List.of("test", "verification", "suggestions"), names);
         assertEquals("268435456", definitions.get(1).getAsJsonObject().get("default_member_permissions").getAsString(),
                 "setting up verification takes Manage Roles");
+        JsonObject postTo = definitions.get(2).getAsJsonObject().getAsJsonArray("options").get(0).getAsJsonObject();
+        assertEquals("post_to", postTo.get("name").getAsString());
+        assertTrue(postTo.get("required").getAsBoolean(), "suggestions always say where they go");
+    }
+
+    @Test
+    void everyCommandIsRegisteredInEnglish() {
+        List<String> names = new ArrayList<>();
+        for (JsonElement element : SlashCommands.allCommands()) {
+            names.add(element.getAsJsonObject().get("name").getAsString());
+        }
+        assertEquals(List.of("check", "test", "verification", "suggestions"), names);
     }
 
     @Test
     void otherInteractionsAreLeftAlone(@TempDir Path dir) {
         ServerCommands commands = commands(dir);
-        assertFalse(commands.handle(interaction(2, command("sprawdz", null))));
+        assertFalse(commands.handle(interaction(2, command("check", null))));
         assertFalse(commands.handle(click("bla:answer:1", "5")), "the assistant's questions channel");
         assertTrue(discord.responses.isEmpty());
     }
@@ -269,9 +274,9 @@ class ServerCommandsTest {
                 [{"id": "%s", "position": 0, "permissions": "0"},
                  {"id": "%s", "position": 5, "permissions": "268435456"},
                  {"id": "%s", "position": 2, "permissions": "0"}]""".formatted(GUILD, BOT_ROLE, ROLE)).getAsJsonArray();
-        assertTrue(commands(dir).handle(interaction(2, command("weryfikacja",
-                "[{\"name\": \"ranga\", \"type\": 8, \"value\": \"" + ROLE + "\"}, "
-                        + "{\"name\": \"kanal\", \"type\": 7, \"value\": \"999\"}]"))));
+        assertTrue(commands(dir).handle(interaction(2, command("verification",
+                "[{\"name\": \"role\", \"type\": 8, \"value\": \"" + ROLE + "\"}, "
+                        + "{\"name\": \"channel\", \"type\": 7, \"value\": \"999\"}]"))));
 
         assertEquals("999", discord.postedTo.get(0)[0], "the channel picked, not the one typed in");
         JsonObject message = discord.posted.get(0);
@@ -291,18 +296,18 @@ class ServerCommandsTest {
                 [{"id": "%s", "position": 0, "permissions": "0"},
                  {"id": "%s", "position": 1, "permissions": "0"},
                  {"id": "%s", "position": 3, "permissions": "0"}]""".formatted(GUILD, BOT_ROLE, ROLE)).getAsJsonArray();
-        commands(dir).handle(interaction(2, command("weryfikacja",
-                "[{\"name\": \"ranga\", \"type\": 8, \"value\": \"" + ROLE + "\"}]")));
+        commands(dir).handle(interaction(2, command("verification",
+                "[{\"name\": \"role\", \"type\": 8, \"value\": \"" + ROLE + "\"}]")));
         String reply = content(discord.edits.get(0));
-        assertTrue(reply.contains("Zarządzanie rolami"), reply);
-        assertTrue(reply.contains("wyżej niż najwyższa ranga bota"), reply);
+        assertTrue(reply.contains("Manage Roles"), reply);
+        assertTrue(reply.contains("above the bot's highest role"), reply);
         assertEquals(CHANNEL, discord.postedTo.get(0)[0], "posted anyway, in the channel it was typed in");
     }
 
     @Test
     void everyoneCannotBeHandedOut(@TempDir Path dir) {
-        commands(dir).handle(interaction(2, command("weryfikacja",
-                "[{\"name\": \"ranga\", \"type\": 8, \"value\": \"" + GUILD + "\"}]")));
+        commands(dir).handle(interaction(2, command("verification",
+                "[{\"name\": \"role\", \"type\": 8, \"value\": \"" + GUILD + "\"}]")));
         assertTrue(discord.posted.isEmpty());
         assertTrue(content(discord.edits.get(0)).startsWith("❌"));
     }
@@ -313,7 +318,7 @@ class ServerCommandsTest {
         assertEquals(1, discord.rolesGiven.size());
         assertEquals(List.of(GUILD, USER, ROLE), List.of(discord.rolesGiven.get(0)));
         assertEquals(5, discord.responses.get(0).get("type").getAsInt(), "thinking first, then the answer");
-        assertTrue(content(discord.edits.get(0)).contains("Zweryfikowano"));
+        assertTrue(content(discord.edits.get(0)).contains("Verified"));
     }
 
     @Test
@@ -325,7 +330,7 @@ class ServerCommandsTest {
         JsonObject response = discord.responses.get(0);
         assertEquals(4, response.get("type").getAsInt());
         assertEquals(64, response.getAsJsonObject("data").get("flags").getAsInt(), "only they see it");
-        assertTrue(response.getAsJsonObject("data").get("content").getAsString().contains("Masz już"));
+        assertTrue(response.getAsJsonObject("data").get("content").getAsString().contains("already have"));
     }
 
     @Test
@@ -333,29 +338,35 @@ class ServerCommandsTest {
         discord.addRoleFailure = new DiscordActions.Refused(403, "Missing Permissions");
         commands(dir).handle(click("blb:verify:" + ROLE, "50"));
         String reply = content(discord.edits.get(0));
-        assertTrue(reply.startsWith("❌") && reply.contains("Zarządzanie rolami"), reply);
+        assertTrue(reply.startsWith("❌") && reply.contains("Manage Roles"), reply);
     }
 
     // ---- suggestions ----
 
+    private static final String SUGGESTIONS = "210";
+
     @Test
-    void thePanelCarriesTheGreenButton(@TempDir Path dir) {
-        commands(dir).handle(interaction(2, command("propozycje", null)));
+    void thePanelCarriesTheGreenButtonAndWhereSuggestionsGo(@TempDir Path dir) {
+        commands(dir).handle(interaction(2, command("suggestions",
+                "[{\"name\": \"post_to\", \"type\": 7, \"value\": \"" + SUGGESTIONS + "\"}]")));
+        assertEquals(CHANNEL, discord.postedTo.get(0)[0], "the panel goes where the command was typed");
         JsonObject panel = discord.posted.get(0);
         JsonObject embed = panel.getAsJsonArray("embeds").get(0).getAsJsonObject();
-        assertEquals("Chciałbyś dodać coś do moda? Naciśnij w zielony przycisk i napisz propozycję!",
+        assertEquals("Want to add something to the mod? Press the green button and write your suggestion!",
                 embed.get("description").getAsString());
-        assertEquals("blb:suggest", customIdOfFirstButton(panel));
-        assertTrue(content(discord.edits.get(0)).startsWith("✅"));
+        assertEquals("blb:suggest:" + SUGGESTIONS, customIdOfFirstButton(panel));
+        String reply = content(discord.edits.get(0));
+        assertTrue(reply.startsWith("✅") && reply.contains("<#" + SUGGESTIONS + ">"), reply);
     }
 
     @Test
     void theButtonOpensAFormForATitleAndTheSuggestion(@TempDir Path dir) {
-        commands(dir).handle(click("blb:suggest", "77"));
+        commands(dir).handle(click("blb:suggest:" + SUGGESTIONS, "77"));
         JsonObject response = discord.responses.get(0);
         assertEquals(9, response.get("type").getAsInt(), "a form");
         JsonObject data = response.getAsJsonObject("data");
-        assertEquals("blb:suggest-form:77", data.get("custom_id").getAsString(), "remembers which panel");
+        assertEquals("blb:suggest-form:" + SUGGESTIONS + ":77", data.get("custom_id").getAsString(),
+                "remembers where suggestions go and which panel it came from");
         JsonArray rows = data.getAsJsonArray("components");
         JsonObject title = rows.get(0).getAsJsonObject().getAsJsonArray("components").get(0).getAsJsonObject();
         JsonObject body = rows.get(1).getAsJsonObject().getAsJsonArray("components").get(0).getAsJsonObject();
@@ -363,62 +374,81 @@ class ServerCommandsTest {
         assertEquals(1, title.get("style").getAsInt());
         assertEquals("body", body.get("custom_id").getAsString());
         assertEquals(2, body.get("style").getAsInt(), "a paragraph");
-        assertTrue(data.get("title").getAsString().length() <= 45);
+        assertEquals("New suggestion", data.get("title").getAsString());
+        assertTrue(data.get("custom_id").getAsString().length() <= 100);
     }
 
     @Test
-    void aSentSuggestionBecomesTheBotsMessageWithAThreadAndThePanelMovesDown(@TempDir Path dir) {
-        discord.storedMessage = ServerCommands.suggestionPanel(null, null);
+    void aSuggestionIsPostedInItsOwnChannelWithAThreadAndThePanelStaysPut(@TempDir Path dir) {
         ServerCommands commands = commands(dir);
-        commands.handle(form("blb:suggest-form:77", "  Licznik do restartu  ", "Chciałbym widzieć na ekranie, ile zostało do restartu."));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":77", "  Restart countdown  ",
+                "I'd like to see on screen how long is left until the restart."));
 
-        // The suggestion, as the bot's own message.
-        assertEquals(CHANNEL, discord.postedTo.get(0)[0]);
+        // The suggestion, as the bot's own message, in the suggestions channel.
+        assertEquals(SUGGESTIONS, discord.postedTo.get(0)[0]);
         String suggestionId = discord.postedTo.get(0)[1];
         JsonObject embed = discord.posted.get(0).getAsJsonArray("embeds").get(0).getAsJsonObject();
-        assertEquals("💡 Licznik do restartu", embed.get("title").getAsString());
-        assertEquals("Chciałbym widzieć na ekranie, ile zostało do restartu.", embed.get("description").getAsString());
+        assertEquals("💡 Restart countdown", embed.get("title").getAsString());
+        assertEquals("I'd like to see on screen how long is left until the restart.", embed.get("description").getAsString());
         assertEquals("Steve", embed.getAsJsonObject("author").get("name").getAsString());
-        assertTrue(embed.getAsJsonObject("footer").get("text").getAsString().startsWith("Propozycja #1"));
+        assertTrue(embed.getAsJsonObject("footer").get("text").getAsString().startsWith("Suggestion #1"));
 
-        // Votes, and the thread on it, with its author called in.
+        // Votes, and the thread on it in that channel, with its author called in.
         assertEquals(List.of(suggestionId + ":👍", suggestionId + ":👎"), discord.reactions);
         assertEquals(1, discord.threads.size());
+        assertEquals(SUGGESTIONS, discord.threads.get(0)[0]);
         assertEquals(suggestionId, discord.threads.get(0)[1]);
-        assertEquals("#1 Licznik do restartu", discord.threads.get(0)[2]);
+        assertEquals("#1 Restart countdown", discord.threads.get(0)[2]);
         String thread = discord.threads.get(0)[3];
         assertEquals(thread, discord.postedTo.get(1)[0]);
         assertTrue(content(discord.posted.get(1)).contains("<@" + USER + ">"));
         assertEquals(USER, discord.posted.get(1).getAsJsonObject("allowed_mentions").getAsJsonArray("users")
                 .get(0).getAsString(), "the author, and nobody else, is pinged");
 
-        // The panel back at the bottom.
-        assertEquals(CHANNEL, discord.postedTo.get(2)[0]);
-        assertEquals("blb:suggest", customIdOfFirstButton(discord.posted.get(2)));
-        assertEquals(List.of("77"), discord.deleted);
+        // The panel has a channel to itself, so nothing pushed it up and it is not moved.
+        assertEquals(2, discord.posted.size());
+        assertTrue(discord.deleted.isEmpty());
 
         String reply = content(discord.edits.get(0));
-        assertTrue(reply.contains("#1") && reply.contains("<#" + thread + ">"), reply);
+        assertTrue(reply.contains("#1") && reply.contains("<#" + SUGGESTIONS + ">") && reply.contains("<#" + thread + ">"),
+                reply);
     }
 
     @Test
-    void aSecondSuggestionMovesThePanelPostedForTheFirst(@TempDir Path dir) {
-        discord.storedMessage = ServerCommands.suggestionPanel(null, null);
+    void aPanelInTheSuggestionsChannelItselfMovesBackDown(@TempDir Path dir) {
+        discord.storedMessage = ServerCommands.suggestionPanel(CHANNEL, null, null);
         ServerCommands commands = commands(dir);
-        commands.handle(form("blb:suggest-form:77", "Pierwsza", "Pierwsza propozycja, dość długa."));
+        commands.handle(form("blb:suggest-form:" + CHANNEL + ":77", "First idea", "The first suggestion, long enough."));
+        assertEquals(CHANNEL, discord.postedTo.get(0)[0]);
+        assertEquals(CHANNEL, discord.postedTo.get(2)[0]);
+        assertEquals("blb:suggest:" + CHANNEL, customIdOfFirstButton(discord.posted.get(2)));
+        assertEquals(List.of("77"), discord.deleted);
+
         String movedPanel = discord.postedTo.get(2)[1];
         now.addAndGet(ServerCommands.SUGGEST_COOLDOWN_MILLIS + 1);
-        JsonObject second = form("blb:suggest-form:77", "Druga", "Druga propozycja, też dość długa.");
+        JsonObject second = form("blb:suggest-form:" + CHANNEL + ":77", "Second idea", "The second suggestion, long enough.");
         second.getAsJsonObject("member").getAsJsonObject("user").addProperty("id", "301");
         commands.handle(second);
         assertEquals(List.of("77", movedPanel), discord.deleted, "the panel from the form is stale by now");
         JsonObject embed = discord.posted.get(3).getAsJsonArray("embeds").get(0).getAsJsonObject();
-        assertTrue(embed.getAsJsonObject("footer").get("text").getAsString().startsWith("Propozycja #2"));
+        assertTrue(embed.getAsJsonObject("footer").get("text").getAsString().startsWith("Suggestion #2"));
+    }
+
+    @Test
+    void aPanelFromTheLastVersionStillWorksInItsOwnChannel(@TempDir Path dir) {
+        discord.storedMessage = ServerCommands.suggestionPanel(null, null, null);
+        ServerCommands commands = commands(dir);
+        commands.handle(click("blb:suggest", "77"));
+        assertEquals("blb:suggest-form::77",
+                discord.responses.get(0).getAsJsonObject("data").get("custom_id").getAsString());
+        commands.handle(form("blb:suggest-form:77", "Old panel", "A suggestion from a panel posted by 0.49."));
+        assertEquals(CHANNEL, discord.postedTo.get(0)[0], "the channel it was sent from");
+        assertEquals(List.of("77"), discord.deleted, "and that panel moves down as before");
     }
 
     @Test
     void tooShortIsSentBackAndNothingIsPosted(@TempDir Path dir) {
-        commands(dir).handle(form("blb:suggest-form:77", "ab", "krótko"));
+        commands(dir).handle(form("blb:suggest-form:" + SUGGESTIONS + ":77", "ab", "short"));
         assertTrue(discord.posted.isEmpty());
         JsonObject response = discord.responses.get(0);
         assertEquals(4, response.get("type").getAsInt());
@@ -428,25 +458,25 @@ class ServerCommandsTest {
     @Test
     void oneSuggestionAMinute(@TempDir Path dir) {
         ServerCommands commands = commands(dir);
-        commands.handle(form("blb:suggest-form:", "Pierwsza", "Pierwsza propozycja, dość długa."));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "First idea", "The first suggestion, long enough."));
         int posts = discord.posted.size();
         now.addAndGet(30_000);
-        commands.handle(click("blb:suggest", "77"));
+        commands.handle(click("blb:suggest:" + SUGGESTIONS, "77"));
         JsonObject response = discord.responses.get(discord.responses.size() - 1);
         assertEquals(4, response.get("type").getAsInt(), "no form while waiting");
         assertTrue(response.getAsJsonObject("data").get("content").getAsString().contains("30 s"));
-        commands.handle(form("blb:suggest-form:", "Druga", "Druga propozycja, dość długa."));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "Second idea", "The second suggestion, long enough."));
         assertEquals(posts, discord.posted.size(), "and a form already open is refused too");
         now.addAndGet(31_000);
-        commands.handle(form("blb:suggest-form:", "Druga", "Druga propozycja, dość długa."));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "Second idea", "The second suggestion, long enough."));
         assertTrue(discord.posted.size() > posts);
     }
 
     @Test
     void numbersCarryOnAfterARestart(@TempDir Path dir) {
-        commands(dir).handle(form("blb:suggest-form:", "Pierwsza", "Pierwsza propozycja, dość długa."));
+        commands(dir).handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "First idea", "The first suggestion, long enough."));
         now.addAndGet(ServerCommands.SUGGEST_COOLDOWN_MILLIS + 1);
-        commands(dir).handle(form("blb:suggest-form:", "Druga", "Druga propozycja, dość długa."));
+        commands(dir).handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "Second idea", "The second suggestion, long enough."));
         JsonObject last = null;
         for (JsonObject message : discord.posted) {
             if (message.has("embeds") && message.getAsJsonArray("embeds").size() > 0) {
@@ -455,40 +485,54 @@ class ServerCommandsTest {
         }
         String footer = last.getAsJsonArray("embeds").get(0).getAsJsonObject().getAsJsonObject("footer")
                 .get("text").getAsString();
-        assertTrue(footer.startsWith("Propozycja #2"), footer);
+        assertTrue(footer.startsWith("Suggestion #2"), footer);
     }
 
     @Test
     void aChannelTheBotCannotWriteInIsSaidPlainly(@TempDir Path dir) {
         discord.postFailure = new DiscordActions.Refused(403, "Missing Access");
         ServerCommands commands = commands(dir);
-        commands.handle(form("blb:suggest-form:", "Pierwsza", "Pierwsza propozycja, dość długa."));
-        assertTrue(content(discord.edits.get(0)).startsWith("❌"));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "First idea", "The first suggestion, long enough."));
+        String reply = content(discord.edits.get(0));
+        assertTrue(reply.startsWith("❌") && reply.contains("<#" + SUGGESTIONS + ">"), reply);
         discord.postFailure = null;
-        commands.handle(form("blb:suggest-form:", "Pierwsza", "Pierwsza propozycja, dość długa."));
+        commands.handle(form("blb:suggest-form:" + SUGGESTIONS + ":", "First idea", "The first suggestion, long enough."));
         assertFalse(discord.posted.isEmpty(), "a failed post does not start the cooldown");
     }
 
     // ---- /test ----
 
     @Test
-    void testReportsEverythingAndPostsASample(@TempDir Path dir) {
+    void testReportsEverythingAndPostsASampleEverywhere(@TempDir Path dir) {
         status.watchStarted();
         status.checked(true, 1234);
         commands(dir).handle(interaction(2, command("test", null)));
         assertEquals(List.of(USER + ":false"), alerts.samples, "no role ping unless asked");
         JsonObject embed = discord.edits.get(0).getAsJsonArray("embeds").get(0).getAsJsonObject();
-        assertEquals("✅ Bot działa", embed.get("title").getAsString());
+        assertEquals("✅ The bot is working", embed.get("title").getAsString());
         String fields = embed.getAsJsonArray("fields").toString();
         assertTrue(fields.contains("1234"), fields);
-        assertTrue(fields.contains("co 30 s"), fields);
-        assertTrue(fields.contains("<@&888>"), fields);
+        assertTrue(fields.contains("every 30 s"), fields);
+        assertTrue(fields.contains("<#777>") && fields.contains("<#779>"), "both places: " + fields);
+        assertTrue(fields.contains("<@&888>") && fields.contains("<@&889>"), fields);
     }
 
     @Test
     void testCanPingTheRole(@TempDir Path dir) {
         commands(dir).handle(interaction(2, command("test", "[{\"name\": \"ping\", \"type\": 5, \"value\": true}]")));
         assertEquals(List.of(USER + ":true"), alerts.samples);
+        String fields = discord.edits.get(0).getAsJsonArray("embeds").get(0).getAsJsonObject()
+                .getAsJsonArray("fields").toString();
+        assertTrue(fields.contains("pinged <@&888>"), fields);
+    }
+
+    @Test
+    void onePlaceFailingIsNamed(@TempDir Path dir) {
+        alerts.secondFails = true;
+        commands(dir).handle(interaction(2, command("test", null)));
+        JsonObject embed = discord.edits.get(0).getAsJsonArray("embeds").get(0).getAsJsonObject();
+        assertTrue(embed.get("title").getAsString().startsWith("❌"));
+        assertTrue(embed.getAsJsonArray("fields").toString().contains("❌ <#779>: Discord answered 403"));
     }
 
     @Test

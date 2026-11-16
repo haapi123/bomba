@@ -21,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
 /**
- * Everything {@code /sprawdz} reports about one town: when it was founded, who is in it, and how
+ * Everything {@code /check} reports about one town: when it was founded, who is in it, and how
  * recently each of them has been seen doing anything.
  *
  * <p>The point of the command is guessing when a town is about to be deleted, which turns on whether

@@ -27,6 +27,47 @@ class BotConfigTest {
     }
 
     @Test
+    void severalServersCanBeListed() {
+        BotConfig config = new BotConfig();
+        assertEquals(java.util.List.of(), config.guildIds(), "none: register globally");
+        config.guildId = " 111, 222 ;333  111 ";
+        assertEquals(java.util.List.of("111", "222", "333"), config.guildIds());
+    }
+
+    @Test
+    void alertsGoToTheMainPlaceAndEveryExtraOne(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("bot.json");
+        java.nio.file.Files.writeString(file, """
+                {"botToken": "token", "channelId": "10", "roleId": "1",
+                 "alsoPostTo": [
+                   {"channelId": "20", "roleId": "2"},
+                   {"webhookUrl": "https://discord.com/api/webhooks/3/x"},
+                   {"roleId": "4"}
+                 ]}
+                """);
+        BotConfig config = BotConfig.load(file);
+        assertTrue(config.unknownKeys().isEmpty(), "alsoPostTo is a known setting");
+        java.util.List<BotConfig.Target> targets = config.targets();
+        assertEquals(3, targets.size(), "an entry with nowhere to post is left out");
+        assertEquals(new BotConfig.Target("", "10", "1"), targets.get(0));
+        assertEquals(new BotConfig.Target("", "20", "2"), targets.get(1));
+        assertTrue(targets.get(2).usesWebhook());
+        assertEquals("", targets.get(2).roleId());
+        assertEquals("<#20>", targets.get(1).describe());
+        assertEquals("webhook", targets.get(2).describe());
+    }
+
+    @Test
+    void anExtraChannelNeedsTheBotToken() {
+        BotConfig config = new BotConfig();
+        config.webhookUrl = "https://discord.com/api/webhooks/1/abc";
+        BotConfig.AlertTarget extra = new BotConfig.AlertTarget();
+        extra.channelId = "20";
+        config.alsoPostTo.add(extra);
+        assertEquals(1, config.targets().size(), "a channel cannot be posted to through a webhook");
+    }
+
+    @Test
     void acceptsATokenOnlyWithAChannel() {
         BotConfig config = new BotConfig();
         config.botToken = "token";

@@ -42,7 +42,7 @@ public final class BetterLokaBot {
         boolean test = List.of(args).contains("--test");
         String check = valueAfter(args, "--check");
 
-        // Runs the /sprawdz report on the console. No Discord involved, which makes it the way to
+        // Runs the /check report on the console. No Discord involved, which makes it the way to
         // see what the command would answer without a bot application — and the way to check the
         // report itself when something looks wrong.
         if (check != null) {
@@ -285,7 +285,7 @@ public final class BetterLokaBot {
         return null;
     }
 
-    /** The console form of {@code /sprawdz}. */
+    /** The console form of {@code /check}. */
     private static void printReport(TownReport reports, String townName) throws Exception {
         TownReport.Report report = reports.build(townName);
         if (report == null) {
@@ -315,10 +315,10 @@ public final class BetterLokaBot {
     }
 
     /**
-     * Connects to the gateway and registers {@code /sprawdz}, if a bot token is configured.
+     * Connects to the gateway and registers {@code /check}, if a bot token is configured.
      *
      * <p>Optional on purpose: the fallen-town watch is the bot's job and works over a webhook alone.
-     * Somebody who has not made a bot application gets a line saying what {@code /sprawdz} would
+     * Somebody who has not made a bot application gets a line saying what {@code /check} would
      * need, not a bot that refuses to start.
      *
      * @return the connection, or {@code null} if commands are not being served
@@ -329,7 +329,7 @@ public final class BetterLokaBot {
         boolean commandsOn = config.servesCommands();
         if (!commandsOn && (extra == null || config.botToken.isBlank())) {
             if (config.enableCommands) {
-                LOG.info("/sprawdz is off: it needs botToken (a webhook can only post, not listen). "
+                LOG.info("/check is off: it needs botToken (a webhook can only post, not listen). "
                         + "The fallen-town watch does not need one.");
             }
             return null;
@@ -339,7 +339,7 @@ public final class BetterLokaBot {
         TownCheckCommand check = null;
         if (commandsOn) {
             if (config.maxMembersChecked <= 0) {
-                LOG.warn("maxMembersChecked is 0, so /sprawdz will check every member of a town. "
+                LOG.warn("maxMembersChecked is 0, so /check will check every member of a town. "
                         + "Loka's largest has over 1200, which is a long report and a lot of traffic.");
             }
             check = new TownCheckCommand(
@@ -399,9 +399,9 @@ public final class BetterLokaBot {
             String applicationId = gateway.applicationId();
             if (applicationId != null) {
                 try {
-                    commands.register(applicationId, config.guildId);
+                    commands.register(applicationId, config.guildIds());
                 } catch (Exception e) {
-                    LOG.error("Could not register /sprawdz: {}", describe(e));
+                    LOG.error("Could not register the commands: {}", describe(e));
                 }
                 return;
             }
@@ -412,7 +412,7 @@ public final class BetterLokaBot {
                 return;
             }
         }
-        LOG.warn("The gateway never reported ready, so /sprawdz was not registered.");
+        LOG.warn("The gateway never reported ready, so the commands were not registered.");
     }
 
     /** Where the server's suggestion count is kept, next to the state file. */
@@ -427,16 +427,6 @@ public final class BetterLokaBot {
             }
 
             @Override
-            public String destination() {
-                return config.usesWebhook() ? "webhook" : "<#" + config.channelId + ">";
-            }
-
-            @Override
-            public String roleId() {
-                return config.roleId;
-            }
-
-            @Override
             public int intervalSeconds() {
                 return config.intervalSeconds();
             }
@@ -447,11 +437,24 @@ public final class BetterLokaBot {
             }
 
             @Override
-            public void postSample(String requestedBy, boolean ping) throws Exception {
-                String role = ping && !config.roleId.isBlank() ? "<@&" + config.roleId + "> " : "";
-                String by = requestedBy == null ? "" : " przez <@" + requestedBy + ">";
-                poster.post(role + "🧪 **TEST** — tak wygląda powiadomienie o upadłym townie (wywołane komendą "
-                        + "`/test`" + by + "). Żaden town nie upadł.", List.of(sampleEmbed()));
+            public List<ServerCommands.Delivery> postSample(String requestedBy, boolean ping) {
+                List<ServerCommands.Delivery> deliveries = new ArrayList<>();
+                String by = requestedBy == null ? "" : " by <@" + requestedBy + ">";
+                for (BotConfig.Target target : config.targets()) {
+                    String role = ping && !target.roleId().isBlank() ? "<@&" + target.roleId() + "> " : "";
+                    String error = null;
+                    try {
+                        poster.post(target, role + "🧪 **TEST** — this is what a fallen-town alert looks like "
+                                + "(sent with `/test`" + by + "). No town has fallen.", List.of(sampleEmbed()));
+                    } catch (Exception e) {
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                        error = describe(e);
+                    }
+                    deliveries.add(new ServerCommands.Delivery(target.describe(), target.roleId(), error));
+                }
+                return deliveries;
             }
         };
     }
@@ -488,13 +491,17 @@ public final class BetterLokaBot {
         footer.addProperty("text", "BetterLoka · --test");
         embed.add("footer", footer);
 
-        String ping = config.roleId.isBlank() ? "" : "<@&" + config.roleId + "> ";
-        try {
-            poster.post(ping + "**BetterLoka is connected.**", List.of(embed));
-            LOG.info("Test message posted. Check the channel — and whether the role was notified.");
-        } catch (Exception e) {
-            LOG.error("Could not post the test message: {}", describe(e), e);
-            LOG.error("Check webhookUrl (or botToken and channelId) in the config.");
+        for (BotConfig.Target target : config.targets()) {
+            String ping = target.roleId().isBlank() ? "" : "<@&" + target.roleId() + "> ";
+            try {
+                poster.post(target, ping + "**BetterLoka is connected.**", List.of(embed));
+                LOG.info("Test message posted to {}. Check the channel — and whether the role was notified.",
+                        target.usesWebhook() ? "the webhook" : "channel " + target.channelId());
+            } catch (Exception e) {
+                LOG.error("Could not post the test message to {}: {}",
+                        target.usesWebhook() ? "the webhook" : "channel " + target.channelId(), describe(e), e);
+                LOG.error("Check webhookUrl (or botToken and channelId) in the config.");
+            }
         }
     }
 
@@ -513,20 +520,27 @@ public final class BetterLokaBot {
             for (FallenTowns.Fallen town : batch) {
                 embeds.add(embedFor(town));
             }
-            try {
-                poster.post(headline(batch, config), embeds);
-                List<String> names = new ArrayList<>();
-                for (FallenTowns.Fallen town : batch) {
-                    names.add(town.town().name());
+            List<String> names = new ArrayList<>();
+            for (FallenTowns.Fallen town : batch) {
+                names.add(town.town().name());
+            }
+            // Each place on its own: one channel the bot cannot reach must not cost the others.
+            for (BotConfig.Target target : config.targets()) {
+                try {
+                    poster.post(target, headline(batch, target.roleId()), embeds);
+                    status.announced(String.join(", ", names));
+                } catch (Exception e) {
+                    if (e instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    String where = target.usesWebhook() ? "webhook" : "channel " + target.channelId();
+                    status.postFailed(where + ": " + describe(e));
+                    // The message alone is often null on a connection failure, and "could not post: null"
+                    // tells somebody debugging their webhook nothing at all.
+                    LOG.error("Could not post to Discord ({}): {}", where, describe(e), e);
+                    // Not rethrown: the state already records these as announced, and a Discord outage
+                    // should not stop the watch. The next genuine fall still gets through.
                 }
-                status.announced(String.join(", ", names));
-            } catch (Exception e) {
-                status.postFailed(describe(e));
-                // The message alone is often null on a connection failure, and "could not post: null"
-                // tells somebody debugging their webhook nothing at all.
-                LOG.error("Could not post to Discord: {}", describe(e), e);
-                // Not rethrown: the state already records these as announced, and a Discord outage
-                // should not stop the watch. The next genuine fall still gets through.
             }
         }
     }
@@ -540,8 +554,8 @@ public final class BetterLokaBot {
         return cause == null ? detail : detail + " (caused by " + describe(cause) + ")";
     }
 
-    private static String headline(List<FallenTowns.Fallen> batch, BotConfig config) {
-        String ping = config.roleId.isBlank() ? "" : "<@&" + config.roleId + "> ";
+    private static String headline(List<FallenTowns.Fallen> batch, String roleId) {
+        String ping = roleId == null || roleId.isBlank() ? "" : "<@&" + roleId + "> ";
         if (batch.size() == 1) {
             return ping + "**" + batch.get(0).town().name() + "** has fallen — its territory is open.";
         }

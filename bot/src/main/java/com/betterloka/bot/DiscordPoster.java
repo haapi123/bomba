@@ -37,12 +37,13 @@ public final class DiscordPoster {
     }
 
     /**
-     * Sends one message.
+     * Sends one message to one place.
      *
      * @param content the line above the embeds, which is where the role ping goes
      * @param embeds  at most {@link #MAX_EMBEDS}
      */
-    public void post(String content, List<JsonObject> embeds) throws IOException, InterruptedException {
+    public void post(BotConfig.Target target, String content, List<JsonObject> embeds)
+            throws IOException, InterruptedException {
         JsonObject payload = new JsonObject();
         payload.addProperty("content", content);
 
@@ -57,27 +58,27 @@ public final class DiscordPoster {
         JsonObject allowed = new JsonObject();
         JsonArray parse = new JsonArray();
         JsonArray roles = new JsonArray();
-        if (!config.roleId.isBlank()) {
-            roles.add(config.roleId);
+        if (target.roleId() != null && !target.roleId().isBlank()) {
+            roles.add(target.roleId());
         }
         allowed.add("parse", parse);
         allowed.add("roles", roles);
         payload.add("allowed_mentions", allowed);
 
-        send(payload.toString());
+        send(target, payload.toString());
     }
 
-    private void send(String body) throws IOException, InterruptedException {
+    private void send(BotConfig.Target target, String body) throws IOException, InterruptedException {
         HttpRequest.Builder builder = HttpRequest
-                .newBuilder(URI.create(config.usesWebhook()
-                        ? config.webhookUrl
-                        : API + "/channels/" + config.channelId + "/messages"))
+                .newBuilder(URI.create(target.usesWebhook()
+                        ? target.webhookUrl()
+                        : API + "/channels/" + target.channelId() + "/messages"))
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "BetterLokaBot (https://github.com/haapi123/bomba, 1.0)")
                 .timeout(Duration.ofSeconds(30))
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
 
-        if (!config.usesWebhook()) {
+        if (!target.usesWebhook()) {
             builder.header("Authorization", "Bot " + config.botToken);
         }
         HttpRequest request = builder.build();

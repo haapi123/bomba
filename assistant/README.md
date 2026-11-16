@@ -42,7 +42,7 @@ wiedzy, bez Claude i za darmo.
 
 ### Discord: bot od townów i pytania z „Pomóż mu się uczyć” (po polsku)
 
-Ten sam jar uruchamia też **bota od upadłych townów** (`/sprawdz` też działa), więc na panelu typu
+Ten sam jar uruchamia też **bota od upadłych townów** (`/check` też działa), więc na panelu typu
 Pterodactyl wystarczy **jeden serwer**. Bot i asystent używają jednego połączenia z Discordem.
 
 1. **Bot na Discordzie** (jeśli jeszcze go nie masz): discord.com/developers/applications →
@@ -59,7 +59,7 @@ Pterodactyl wystarczy **jeden serwer**. Bot i asystent używają jednego połąc
      "answerRoleIds": ["ID rangi, która może odpowiadać"],
      "approveRoleIds": ["ID rangi, która zatwierdza"],
      "pingRoleId": "",
-     "language": "pl"
+     "language": "en"
    }
    ```
    - **answerRoleIds**: odpowiadają przyciskiem **Odpowiedz**; ich odpowiedź czeka na zatwierdzenie.
@@ -171,7 +171,7 @@ Written with defaults on first start.
 | `concurrentAnswers` | `4` | Claude calls at once; the rest wait. |
 | `admins` | `[]` | Minecraft UUIDs (or names) with no daily question limit. (Mods before 0.45.1 also showed them an in-game Review tab.) |
 | `discordWebhookUrl` | `""` | Optional. Treat it as a secret. |
-| `discordQuestions` | | `channelId`, `answerRoleIds`, `approveRoleIds`, `pingRoleId`, `language` (`pl` or `en`): see *Answering on Discord*. Added to an older `assistant.json` on start. |
+| `discordQuestions` | | `channelId`, `answerRoleIds`, `approveRoleIds`, `pingRoleId`, `language` (`en`, the default, or `pl`): see *Answering on Discord*. Added to an older `assistant.json` on start. |
 | `skipMojangCheck` | `false` | **Testing only**: trusts any name. Anyone could then pose as anyone. |
 | `trustForwardedFor` | `false` | Behind Caddy/nginx on the same machine. |
 | `crawl` | | What `crawl` reads and how politely: `userAgent`, `delayMillis` (1200), `site`, `forum`, `forumIds` (`[5]`, the announcements), `maxForumThreads`, `wiki`, `maxWikiPages`. |

@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Handles {@code /sprawdz <town>}: answers with when the town was founded and how recently each of
+ * Handles {@code /check <town>}: answers with when the town was founded and how recently each of
  * its members has been seen doing anything on the server.
  *
  * <p>The work runs off the gateway thread — a forty-member town is a minute of HTTP — so the
@@ -76,7 +76,7 @@ public final class TownCheckCommand {
     /** @return true if this interaction was ours to handle */
     public boolean handle(JsonObject interaction, String applicationId) {
         JsonObject data = interaction.has("data") ? interaction.getAsJsonObject("data") : null;
-        if (data == null || !"sprawdz".equals(string(data, "name"))) {
+        if (data == null || !"check".equals(string(data, "name"))) {
             return false;
         }
 
@@ -110,7 +110,7 @@ public final class TownCheckCommand {
         } catch (TimeoutException e) {
             // The abandoned lookup finishes in the background and is thrown away; there is nothing
             // useful to do with a half-built report, and the token is the thing running out.
-            LOG.warn("Gave up on /sprawdz {} after {} minutes", townName, REPLY_DEADLINE.toMinutes());
+            LOG.warn("Gave up on /check {} after {} minutes", townName, REPLY_DEADLINE.toMinutes());
             payload.addProperty("content", "**" + townName + "** has too many members to check in one"
                     + " reply. Discord gives a command fifteen minutes to answer, and this one ran"
                     + " out. Lower `maxMembersChecked` in the bot's config and try again.");
@@ -121,7 +121,7 @@ public final class TownCheckCommand {
         try {
             api.reply(applicationId, interactionToken, payload);
         } catch (Exception e) {
-            LOG.warn("Could not answer /sprawdz {}: {}", townName, e.getMessage());
+            LOG.warn("Could not answer /check {}: {}", townName, e.getMessage());
         }
     }
 

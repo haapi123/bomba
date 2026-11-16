@@ -48,16 +48,17 @@ public final class BotConfig {
     public String channelId = "";
 
     /**
-     * The server to register {@code /sprawdz} in.
+     * The server, or servers, to register the commands in: one id, or several separated by commas.
      *
-     * <p>Optional. With it the command appears in that server straight away; without it the command
-     * is registered globally, which works everywhere the bot is but can take Discord up to an hour
-     * to publish. Right-click the server with Developer Mode on to copy the id.
+     * <p>Optional. With it the commands appear in those servers straight away; without it they are
+     * registered globally, which works everywhere the bot is but can take Discord up to an hour to
+     * publish. Right-click the server with Developer Mode on to copy the id.
      */
     public String guildId = "";
 
     /**
-     * Whether to connect to Discord's gateway and serve {@code /sprawdz}.
+     * Whether to connect to Discord's gateway and serve the commands ({@code /check}, {@code /test},
+     * {@code /verification}, {@code /suggestions}).
      *
      * <p>Needs {@link #botToken}: a webhook can only speak, and a slash command has to be listened
      * for. The fallen-town watch runs either way.
@@ -109,7 +110,7 @@ public final class BotConfig {
     public boolean testOnStart = false;
 
     /**
-     * How many town members {@code /sprawdz} looks up.
+     * How many town members {@code /check} looks up.
      *
      * <p>The owner and sub-owners are always checked on top of this, so raising or lowering it never
      * costs you the people who actually decide whether a town survives.
@@ -123,6 +124,37 @@ public final class BotConfig {
 
     /** Where the bot remembers what it has already announced. */
     public String stateFile = "betterloka-bot-state.json";
+
+    /**
+     * More places to post the fallen-town alerts, besides the main one above — another channel, or a
+     * channel on another Discord server, each with the role to ping there (a role belongs to one
+     * server, so the main {@link #roleId} cannot be pinged anywhere else). A channel needs
+     * {@link #botToken} and the bot in that server; a webhook needs nothing else.
+     */
+    public List<AlertTarget> alsoPostTo = new ArrayList<>();
+
+    /** One more place for the alerts. */
+    public static final class AlertTarget {
+        public String webhookUrl = "";
+        public String channelId = "";
+        public String roleId = "";
+    }
+
+    /**
+     * Where an alert goes and whom it pings.
+     *
+     * @param webhookUrl the webhook, or blank to post as the bot in {@code channelId}
+     */
+    public record Target(String webhookUrl, String channelId, String roleId) {
+        public boolean usesWebhook() {
+            return webhookUrl != null && !webhookUrl.isBlank();
+        }
+
+        /** As Discord shows it in a message: the channel's mention, or just "webhook". */
+        public String describe() {
+            return usesWebhook() ? "webhook" : "<#" + channelId + ">";
+        }
+    }
 
     /**
      * Keys found in the config file that this bot does not know.
@@ -184,6 +216,7 @@ public final class BotConfig {
         lines.add("  channelId:  " + state(channelId));
         lines.add("  roleId:     " + state(roleId));
         lines.add("  guildId:    " + state(guildId));
+        lines.add("  alsoPostTo: " + (alsoPostTo == null ? 0 : alsoPostTo.size()) + " more place(s)");
         return lines;
     }
 
@@ -249,6 +282,50 @@ public final class BotConfig {
 
     public boolean usesWebhook() {
         return !webhookUrl.isBlank();
+    }
+
+    /**
+     * Every place the alerts go: the main one first, then {@link #alsoPostTo}. An extra place with
+     * neither a webhook nor (with a bot token) a channel is left out.
+     */
+    public List<Target> targets() {
+        List<Target> targets = new ArrayList<>();
+        if (usesWebhook()) {
+            targets.add(new Target(webhookUrl.trim(), "", roleId.trim()));
+        } else if (usesBotToken()) {
+            targets.add(new Target("", channelId.trim(), roleId.trim()));
+        }
+        if (alsoPostTo != null) {
+            for (AlertTarget extra : alsoPostTo) {
+                if (extra == null) {
+                    continue;
+                }
+                String webhook = extra.webhookUrl == null ? "" : extra.webhookUrl.trim();
+                String channel = extra.channelId == null ? "" : extra.channelId.trim();
+                String role = extra.roleId == null ? "" : extra.roleId.trim();
+                if (!webhook.isEmpty()) {
+                    targets.add(new Target(webhook, "", role));
+                } else if (!channel.isEmpty() && !botToken.isBlank()) {
+                    targets.add(new Target("", channel, role));
+                }
+            }
+        }
+        return targets;
+    }
+
+    /** The servers in {@link #guildId}, in order, without blanks or repeats. */
+    public List<String> guildIds() {
+        List<String> ids = new ArrayList<>();
+        if (guildId == null) {
+            return ids;
+        }
+        for (String part : guildId.split("[,;\\s]+")) {
+            String id = part.trim();
+            if (!id.isEmpty() && !ids.contains(id)) {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     public boolean usesBotToken() {

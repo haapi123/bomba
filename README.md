@@ -511,12 +511,14 @@ java -jar bot/build/libs/betterloka-bot-<version>.jar
 ### Server commands
 
 With a bot token the bot also serves the Discord server itself: **`/test`** (is it connected, can it
-reach Loka, is the watch running — and a sample alert where the real ones go), **`/weryfikacja`** (a
-message with a green button that gives a role) and **`/propozycje`** (a panel whose green button opens
-a form; a suggestion becomes the bot's message with a discussion thread). See
+reach Loka, is the watch running — and a sample alert everywhere the real ones go),
+**`/verification`** (a message with a green button that gives a role) and **`/suggestions`** (a panel
+whose green button opens a form; a suggestion is posted by the bot in the suggestions channel, with a
+discussion thread). Alerts can go to several channels and servers (`alsoPostTo`), and the commands can
+be registered in several servers (`guildId: "id1, id2"`). See
 [the bot's README](bot/README.md#the-servers-own-commands).
 
-### `/sprawdz <town>`
+### `/check <town>`
 
 The bot also answers a slash command: **when a town was founded, and how recently each of its members
 has been seen doing anything.** It exists to guess which towns are close to being deleted.
@@ -524,7 +526,7 @@ has been seen doing anything.** It exists to guess which towns are close to bein
 It needs a **bot token**, not a webhook — a webhook can only speak, and a slash command has to be
 listened for. With one set, the bot opens a gateway connection (about 200 lines of `java.net.http`,
 no Discord library) and registers the command itself. Without one, the fallen-town watch runs exactly
-as before and the log says what `/sprawdz` would need.
+as before and the log says what `/check` would need.
 
 **"Last seen" is not a login time, and the reply says so every time.** Loka publishes no last-login
 field anywhere — there is no `lastSeen` on a player record and no online-players endpoint — so the

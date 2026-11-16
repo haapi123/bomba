@@ -72,7 +72,7 @@ java -jar betterloka-bot-<version>.jar
 Setting `"testOnStart": true` in the config does the same thing at startup and then carries on
 watching, which is easier on a hosting panel where the startup command is awkward to edit.
 
-`--check <town>` prints the `/sprawdz` report on the console and exits, with no Discord involved.
+`--check <town>` prints the `/check` report on the console and exits, with no Discord involved.
 `--test` posts one clearly-labelled test message, so you can confirm the webhook works and the role
 actually gets notified without waiting for a town to fall. `--list` prints the towns currently
 standing as fallen and exits. `--once` runs a single check.
@@ -80,13 +80,40 @@ standing as fallen and exits. `--once` runs a single check.
 If the role appears as plain text rather than a notification, make it mentionable:
 Server Settings → Roles → the role → **Allow anyone to @mention this role**.
 
+### More than one channel, or more than one server
+
+`alsoPostTo` lists more places for the alerts, each with the role to ping there — a role belongs to
+one server, so the main `roleId` cannot be pinged anywhere else:
+
+```json
+{
+  "botToken": "…",
+  "channelId": "111111111111111111",
+  "roleId": "222222222222222222",
+  "guildId": "333333333333333333, 444444444444444444",
+  "alsoPostTo": [
+    { "channelId": "555555555555555555", "roleId": "666666666666666666" },
+    { "webhookUrl": "https://discord.com/api/webhooks/…", "roleId": "" }
+  ]
+}
+```
+
+A channel needs `botToken` and the bot invited to that server; a webhook needs nothing else. Each
+place is posted to on its own, so one the bot cannot reach does not cost the others, and `/test`
+reports each of them.
+
+`guildId` takes several servers, separated by commas: the commands are registered in each of them
+and appear at once. A server the bot has not been invited to yet is skipped with a line in the log.
+With servers listed, any global registration left from before is cleared, so no command shows up
+twice.
+
 ### As a bot user instead of a webhook
 
 If you would rather it posted under its own bot account, set `botToken` and `channelId` instead of
 `webhookUrl`. The application needs to be in the server with permission to post in that channel.
 Everything else is the same.
 
-## `/sprawdz <town>`
+## `/check <town>`
 
 Answers with **when a town was founded and how recently each of its members has been seen**, so you
 can guess which towns are close to being deleted.
@@ -190,8 +217,8 @@ expected: fill the config in and start it again.
 ## The server's own commands
 
 With a bot token the bot also runs three commands for the Discord server itself. They are registered
-together with `/sprawdz` and, until an admin changes it under **Server Settings → Integrations**,
-only people with **Manage Server** (`/test`, `/propozycje`) or **Manage Roles** (`/weryfikacja`) see
+together with `/check` and, until an admin changes it under **Server Settings → Integrations**,
+only people with **Manage Server** (`/test`, `/suggestions`) or **Manage Roles** (`/verification`) see
 them. Every reply to whoever typed a command is visible to them alone.
 
 ### `/test [ping]`
@@ -203,13 +230,13 @@ Is everything working, without waiting for a town to fall. It answers with:
 - **the fallen-town watch** — on or off (and why), how often it checks, when it last did and whether
   that worked, when it last swept every territory;
 - **the last alert** since the bot started, and the last error posting one, if any;
-- a **sample alert**, posted where the real ones go — the same webhook or channel, the same embed —
-  marked as a test. It pings the role only with `ping: True`.
+- a **sample alert**, posted to every place the real ones go — the same webhooks or channels, the
+  same embed — marked as a test, with how each one went. It pings the roles only with `ping: True`.
 
-### `/weryfikacja ranga [kanal] [tytul] [opis] [przycisk]`
+### `/verification role [channel] [title] [description] [button]`
 
-Posts a message with a green **Zweryfikuj się** button. Whoever clicks it gets `ranga`; somebody who
-already has it is told so, and nothing else happens. The role is carried in the button itself, so the
+Posts a message with a green **Verify** button. Whoever clicks it gets `role`; somebody who already
+has it is told so, and nothing else happens. The role is carried in the button itself, so the
 message keeps working across restarts and there is nothing to configure.
 
 Discord only lets a bot give a role that sits **below its own highest role**, and only with **Manage
@@ -218,29 +245,34 @@ the first person to click to find out. `@everyone` and roles that belong to a bo
 are refused.
 
 A button rather than a reaction: a reaction needs the bot to read every reaction in the server (a
-gateway intent this bot does not ask for), and a click can be answered — the person sees
-"Zweryfikowano" at once, or why not.
+gateway intent this bot does not ask for), and a click can be answered — the person sees "Verified!"
+at once, or why not.
 
-### `/propozycje [kanal] [tytul] [tekst]`
+### `/suggestions post_to [channel] [title] [text]`
 
-Posts a panel — *"Chciałbyś dodać coś do moda? Naciśnij w zielony przycisk i napisz propozycję!"* by
-default — with a green **Napisz propozycję** button. It opens a form with a **title** (3–80
-characters) and the **suggestion** (10–1500). Sent, it becomes the bot's own message: the suggestion
-with its author's name and picture, numbered (`Propozycja #12`, counted in
-`betterloka-community.json` next to the state file), with 👍 and 👎 to vote. A **thread** opens on it,
-named after the title, with the author called in so they follow the discussion. Then the panel
-**moves back to the bottom** of the channel, so the button is always where people look.
+Posts a panel — *"Want to add something to the mod? Press the green button and write your
+suggestion!"* by default — with a green **Write a suggestion** button, in `channel` (the one the
+command is typed in, if left out). The button opens a form with a **title** (3–80 characters) and the
+**suggestion** (10–1500). Sent, it becomes the bot's own message **in `post_to`**: the suggestion with
+its author's name and picture, numbered (`Suggestion #12`, counted in `betterloka-community.json` next
+to the state file), with 👍 and 👎 to vote. A **thread** opens on it, named after the title, with the
+author called in so they follow the discussion. The channel suggestions go to travels in the button,
+so the panel keeps working across restarts.
+
+The panel sits in a channel of its own and stays put. If `post_to` is the panel's own channel, the
+panel moves back to the bottom after each suggestion instead, so the button is always where people
+look. (Panels posted by 0.49, which had no `post_to`, keep working that way.)
 
 One suggestion a minute per person.
 
-For a tidy channel, take **Send Messages** away from everyone there and leave **Send Messages in
-Threads**: the channel holds only suggestions, and the talking happens in their threads.
+For a tidy suggestions channel, take **Send Messages** away from everyone there and leave **Send
+Messages in Threads**: the channel holds only suggestions, and the talking happens in their threads.
 
 ### Permissions
 
 The bot's role needs, besides what the alerts need: **Manage Roles** (verification), **Create Public
-Threads**, **Send Messages in Threads**, **Add Reactions** and **Read Message History**
-(suggestions). Re-opening the bot's invite link with these ticked updates an existing bot.
+Threads**, **Send Messages in Threads**, **Add Reactions** and **Read Message History** (in the
+suggestions channel). Re-opening the bot's invite link with these ticked updates an existing bot.
 
 ## What it does on the first run
 
