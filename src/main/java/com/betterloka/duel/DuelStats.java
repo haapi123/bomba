@@ -97,7 +97,8 @@ public final class DuelStats {
     public record Summary(Side you, Side them, int opponentId, long millis, Result result) {
     }
 
-    private final int self;
+    /** This player's entity id — a different number on every server, so it can change before the fight. */
+    private int self;
     private final long armedAt;
     private final Side you = new Side();
     private final Map<Integer, Side> others = new HashMap<>();
@@ -113,6 +114,20 @@ public final class DuelStats {
     public DuelStats(int self, long now) {
         this.self = self;
         this.armedAt = now;
+    }
+
+    /**
+     * The player is now {@code newSelf}: on Loka a duel is found on one server and fought on another,
+     * and every server numbers its entities its own way. Only before the fight: after it, being moved
+     * somewhere is the end of the duel, not a new start.
+     */
+    public void rebind(int newSelf) {
+        if (fought() || newSelf == self) {
+            return;
+        }
+        self = newSelf;
+        you.swings = 0;
+        others.clear();
     }
 
     private Side side(int entityId) {

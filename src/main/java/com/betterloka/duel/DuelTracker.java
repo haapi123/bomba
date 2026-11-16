@@ -34,9 +34,11 @@ import java.util.Optional;
  * the duel's hit statistics in chat when it ends (on).
  *
  * <p>A duel starts with Loka's {@code Match Ready! [Click to join]} line, whoever answers it, and ends
- * when one of the two dies, when the player is moved far away or to another world after fighting, or
- * when nobody has struck for twenty seconds. The numbers come from {@link DuelStats}; this class only
- * feeds it from the game and says what it found. Nothing is sent to the server except the one
+ * when one of the two dies, when the player is sent to another server or world after fighting, or
+ * when nobody has struck for twenty seconds. Loka fights its duels on a server of their own, so the
+ * summary is said once the player has arrived where they are sent afterwards — see
+ * {@link DuelSession}. The numbers come from {@link DuelStats}; this class only feeds them from the
+ * game and says what they came to. Nothing is sent to the server except the one
  * {@code /join}, and only with the option on.
  */
 public final class DuelTracker {
@@ -48,8 +50,8 @@ public final class DuelTracker {
     private static final double SWING_RANGE = 8;
     /** How far from the sweep sound its attacker can be: the sound is played where they stand. */
     private static final double SWEEP_RANGE = 1.5;
-    /** A jump this far in one tick is a teleport, and after a fight, the end of it. */
-    private static final double TELEPORT_BLOCKS = 48;
+    /** A jump this far in one tick is a teleport, and after a fight, the end of it. Past a pearl's reach. */
+    private static final double TELEPORT_BLOCKS = 128;
 
     /** Development only: count fights against any creature, so a dummy can stand in for a player. */
     public static boolean devAnyTarget;
@@ -57,9 +59,11 @@ public final class DuelTracker {
     private static DuelTracker instance;
 
     private final BetterLokaConfig config;
-    private DuelStats duel;
+    private final DuelSession session = new DuelSession();
     private final Map<Integer, String> names = new HashMap<>();
-    private ClientLevel level;
+    /** Where the player was last tick: a different player or world is a move. */
+    private net.minecraft.client.player.LocalPlayer seenPlayer;
+    private ClientLevel seenLevel;
     private Vec3 lastPosition;
     private int joinIn = -1;
     private String joinCommand;
@@ -91,15 +95,12 @@ public final class DuelTracker {
             return;
         }
         long now = System.currentTimeMillis();
-        // A new match: whatever came before it is over.
-        if (duel != null) {
-            finish(client);
-        }
         if (config.duelStats()) {
-            duel = new DuelStats(client.player.getId(), now);
+            // A new match: whatever came before it is said now, before its names are forgotten.
+            say(client, session.arm(client.player.getId(), now));
             names.clear();
-            level = client.level;
-            lastPosition = client.player.position();
+        } else {
+            session.forget();
         }
         if (config.duelAutoAccept() && now - lastJoinAt > JOIN_COOLDOWN_MILLIS) {
             lastJoinAt = now;
@@ -119,7 +120,7 @@ public final class DuelTracker {
 
     public static void onAnimate(int entityId, int action) {
         DuelTracker tracker = instance;
-        if (tracker == null || tracker.duel == null) {
+        if (tracker == null || tracker.session.duel() == null) {
             return;
         }
         Minecraft client = Minecraft.getInstance();
@@ -127,21 +128,21 @@ public final class DuelTracker {
             return;
         }
         if (action == ClientboundAnimatePacket.CRITICAL_HIT) {
-            tracker.duel.crit(entityId, System.currentTimeMillis());
+            tracker.session.duel().crit(entityId, System.currentTimeMillis());
         } else if (action == 0 && entityId != client.player.getId()) {
             // Main hand. Only with a weapon in it and near this player: throwing a potion or placing
             // a block swings the arm too, and so does somebody fighting somebody else.
             Entity entity = client.level.getEntity(entityId);
             if (entity instanceof LivingEntity living && counts(living) && holdsWeapon(living.getMainHandItem())
                     && living.distanceTo(client.player) <= SWING_RANGE) {
-                tracker.duel.swing(entityId);
+                tracker.session.duel().swing(entityId);
             }
         }
     }
 
     public static void onDamage(int victimId, int causeId, int directId) {
         DuelTracker tracker = instance;
-        if (tracker == null || tracker.duel == null || causeId < 0 || causeId != directId) {
+        if (tracker == null || tracker.session.duel() == null || causeId < 0 || causeId != directId) {
             // Not melee: an arrow, a potion, a fall.
             return;
         }
@@ -157,12 +158,12 @@ public final class DuelTracker {
         }
         tracker.remember(hurt);
         tracker.remember(hitter);
-        tracker.duel.hit(causeId, victimId, System.currentTimeMillis());
+        tracker.session.duel().hit(causeId, victimId, System.currentTimeMillis());
     }
 
     public static void onSound(Identifier sound, double x, double y, double z) {
         DuelTracker tracker = instance;
-        if (tracker == null || tracker.duel == null || !SoundEvents.PLAYER_ATTACK_SWEEP.location().equals(sound)) {
+        if (tracker == null || tracker.session.duel() == null || !SoundEvents.PLAYER_ATTACK_SWEEP.location().equals(sound)) {
             return;
         }
         Minecraft client = Minecraft.getInstance();
@@ -183,19 +184,19 @@ public final class DuelTracker {
             }
         }
         if (nearest != null) {
-            tracker.duel.sweep(nearest.getId(), System.currentTimeMillis());
+            tracker.session.duel().sweep(nearest.getId(), System.currentTimeMillis());
         }
     }
 
     public static void onEntityEvent(ClientboundEntityEventPacket packet, byte event) {
         DuelTracker tracker = instance;
-        if (tracker == null || tracker.duel == null || event != EntityEvent.DEATH) {
+        if (tracker == null || tracker.session.duel() == null || event != EntityEvent.DEATH) {
             return;
         }
         Minecraft client = Minecraft.getInstance();
         Entity entity = client.level == null ? null : packet.getEntity(client.level);
         if (entity != null) {
-            tracker.duel.died(entity.getId(), System.currentTimeMillis());
+            tracker.session.duel().died(entity.getId(), System.currentTimeMillis());
         }
     }
 
@@ -203,12 +204,12 @@ public final class DuelTracker {
     public static void onOwnSwing(HitResult hit) {
         DuelTracker tracker = instance;
         Minecraft client = Minecraft.getInstance();
-        if (tracker == null || tracker.duel == null || client.player == null
+        if (tracker == null || tracker.session.duel() == null || client.player == null
                 || (hit != null && hit.getType() == HitResult.Type.BLOCK)
                 || !holdsWeapon(client.player.getMainHandItem())) {
             return;
         }
-        tracker.duel.swing(client.player.getId());
+        tracker.session.duel().swing(client.player.getId());
     }
 
     private static boolean counts(LivingEntity entity) {
@@ -230,33 +231,25 @@ public final class DuelTracker {
         if (joinIn >= 0 && joinIn-- == 0) {
             sendJoin(client);
         }
-        if (duel == null) {
-            return;
-        }
-        if (client.player == null) {
-            // Left the server: there is nobody to tell.
-            duel = null;
-            return;
-        }
         long now = System.currentTimeMillis();
-        if (client.player.isDeadOrDying()) {
-            duel.died(client.player.getId(), now);
+        var player = client.player;
+        if (player != seenPlayer || client.level != seenLevel) {
+            // Another server (with no player at all while the proxy switches), another world, or a
+            // respawn: on the way to a duel, or the end of one.
+            seenPlayer = player;
+            seenLevel = client.level;
+            session.moved(player == null ? null : player.getId(), now);
+            lastPosition = player == null ? null : player.position();
         }
-        Vec3 position = client.player.position();
-        boolean moved = client.level != level
-                || (lastPosition != null && position.distanceTo(lastPosition) > TELEPORT_BLOCKS);
-        level = client.level;
-        lastPosition = position;
-        if (moved && duel.fought()) {
-            // Sent back to spawn, or anywhere else, after the fight: it is over.
-            finish(client);
+        if (player == null) {
             return;
         }
-        if (duel.over(now)) {
-            finish(client);
-        } else if (duel.stale(now)) {
-            duel = null;
+        Vec3 position = player.position();
+        if (lastPosition != null && position.distanceTo(lastPosition) > TELEPORT_BLOCKS) {
+            session.moved(player.getId(), now);
         }
+        lastPosition = position;
+        say(client, session.tick(player.getId(), player.isDeadOrDying(), now));
     }
 
     private void sendJoin(Minecraft client) {
@@ -270,15 +263,14 @@ public final class DuelTracker {
         joinCommand = null;
     }
 
-    private void finish(Minecraft client) {
-        DuelStats ended = duel;
-        duel = null;
-        if (ended == null || !ended.fought() || !config.duelStats() || client.player == null) {
+    /** Says how a duel went, if there is one to say and the player still wants to hear it. */
+    private void say(Minecraft client, DuelStats.Summary summary) {
+        if (summary == null || !config.duelStats() || client.player == null) {
             return;
         }
-        DuelStats.Summary summary = ended.summary();
         String opponent = names.getOrDefault(summary.opponentId(), "?");
         chat(client, summaryText(summary, client.player.getName().getString(), opponent));
+        BetterLoka.LOGGER.info("[betterloka] duel vs {} said in chat", opponent);
     }
 
     /** The duel in three lines: who and how long, then each side's hits, crits and sweeps. */
@@ -338,8 +330,9 @@ public final class DuelTracker {
     }
 
     public String devState() {
+        DuelStats duel = session.duel();
         if (duel == null) {
-            return "no duel";
+            return session.waiting() ? "duel over, summary waiting" : "no duel";
         }
         DuelStats.Summary summary = duel.summary();
         return "you " + summary.you().hits() + "/" + summary.you().swings() + " crits " + summary.you().crits()
@@ -347,7 +340,8 @@ public final class DuelTracker {
                 + " | opponent " + summary.opponentId() + " fought " + duel.fought();
     }
 
-    public void devFinish() {
-        finish(Minecraft.getInstance());
+    /** Development only: the duel's numbers, as the summary would give them. */
+    public DuelStats.Summary devSummary() {
+        return session.duel() == null ? null : session.duel().summary();
     }
 }

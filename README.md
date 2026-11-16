@@ -673,10 +673,15 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   red flash — which the server plays the sound for but does not count as a hit — is not counted
   either. Your own swings are your left clicks at a player or at the air, with a weapon.
 
-  A duel starts with Loka's `Match Ready!` line (whether or not you joined automatically) and ends
-  when one of you dies (then the line says **Won** or **Lost**), when you are moved far away or to
-  another world after fighting, or when nobody has struck for twenty seconds. The opponent is whoever
-  you traded the most hits with. Nothing is sent anywhere.
+  A duel starts with Loka's `Match Ready!` line (whether or not you joined automatically). Loka fights
+  its duels on a server of its own, so being sent there is the way to the duel, not the end of it:
+  the count carries on across the switch — when, for a moment, the game has no world and no player —
+  and follows you under the new id the duel server gives you. It ends when one of you dies (then the
+  line says **Won** or **Lost**), when you are sent to another server or world after fighting, or when
+  nobody has struck for twenty seconds. The summary is said **after you arrive** where you are sent
+  next, a second and a half in, past the server's own welcome; with no move within eight seconds of
+  the end, it is said where you are. The opponent is whoever you traded the most hits with. Nothing
+  is sent anywhere.
 
 ![Important Waypoints](docs/helper-important.png)
 

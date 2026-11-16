@@ -1442,14 +1442,27 @@ public final class DevDiagnostics {
             server("tp @a 0 -60 0 0 0");
             server("item replace entity @a weapon.mainhand with diamond_sword");
         });
-        step(20, () -> server("execute as @p at @p run summon zombie ^ ^ ^2.5 "
-                + "{NoAI:1b,PersistenceRequired:1b,Health:500f,attributes:[{id:\"minecraft:max_health\",base:500}]}"));
+        // A world of its own for the duel, as Loka has a server of its own for it.
+        step(2, () -> server("execute in minecraft:the_nether run forceload add -16 -16 16 16"));
+        step(40, () -> {
+            server("execute in minecraft:the_nether run fill -6 99 -6 6 99 6 minecraft:obsidian");
+            server("execute in minecraft:the_nether run fill -6 100 -6 6 105 6 minecraft:air");
+            server("effect give @a fire_resistance 600 0 true");
+        });
         step(20, () -> com.betterloka.duel.DuelTracker.get().onMessage(
                 net.minecraft.network.chat.Component.literal("Match Ready! ").append(
                         net.minecraft.network.chat.Component.literal("[Click to join]").withStyle(style -> style
                                 .withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand("/join"))))));
-        // Five full-strength hits standing still: a sword sweeps.
-        for (int i = 0; i < 5; i++) {
+        step(10, () -> server("execute in minecraft:the_nether run tp @a 0 100 0 0 0"));
+        step(80, () -> {
+            BetterLoka.LOGGER.info("DIAG duel arrived at the duel: {} in {}", com.betterloka.duel.DuelTracker.get().devState(),
+                    client().level.dimension());
+            server("execute as @a at @s run summon zombie ^ ^ ^2.5 "
+                    + "{NoAI:1b,PersistenceRequired:1b,Health:500f,attributes:[{id:\"minecraft:max_health\",base:500}]}");
+        });
+        shot(20, "duel-nether");
+        // Full-strength hits standing still: a sword sweeps.
+        for (int i = 0; i < 4; i++) {
             step(14, DevDiagnostics::attack);
         }
         // Two crits: jump, and hit on the way down.
@@ -1459,15 +1472,16 @@ public final class DevDiagnostics {
             step(8, DevDiagnostics::attack);
         }
         step(2, () -> client().player.setXRot(0));
-        // Two misses: turned away, at the air.
+        // A miss: turned away, at the air.
         step(14, () -> client().player.setYRot(180));
         step(2, DevDiagnostics::attack);
-        step(14, DevDiagnostics::attack);
         step(14, () -> client().player.setYRot(0));
-        step(14, DevDiagnostics::attack);
-        step(10, () -> BetterLoka.LOGGER.info("DIAG duel before the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
-        step(2, () -> server("kill @e[type=zombie]"));
-        step(30, () -> BetterLoka.LOGGER.info("DIAG duel after the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        step(20, () -> BetterLoka.LOGGER.info("DIAG duel before the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        // Sent on after the duel, as Loka sends its players to another server.
+        step(2, () -> server("execute in minecraft:overworld run tp @a 0 -60 0 0 0"));
+        step(10, () -> BetterLoka.LOGGER.info("DIAG duel just after the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        step(80, () -> BetterLoka.LOGGER.info("DIAG duel after arriving: {} in {}", com.betterloka.duel.DuelTracker.get().devState(),
+                client().level.dimension()));
         step(2, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen("", false)));
         shot(10, "duel-chat");
         step(2, () -> {
@@ -1482,9 +1496,19 @@ public final class DevDiagnostics {
             var method = Minecraft.class.getDeclaredMethod("startAttack");
             method.setAccessible(true);
             Object hit = method.invoke(client());
-            BetterLoka.LOGGER.info("DIAG duel click: hit={} target={} result={}", hit,
+            StringBuilder dummies = new StringBuilder();
+            for (var entity : client().level.entitiesForRendering()) {
+                if (entity instanceof net.minecraft.world.entity.LivingEntity living && entity != client().player
+                        && entity.distanceTo(client().player) < 8) {
+                    dummies.append(' ').append(entity.getType().toShortString()).append('#').append(entity.getId())
+                            .append(String.format(java.util.Locale.ROOT, "@%.1f,%.1f,%.1f hp%.0f", entity.getX(), entity.getY(),
+                                    entity.getZ(), living.getHealth()));
+                }
+            }
+            BetterLoka.LOGGER.info("DIAG duel click: hit={} target={} result={} me={} at {} | near:{}", hit,
                     client().hitResult == null ? null : client().hitResult.getType(),
-                    com.betterloka.duel.DuelTracker.get().devState());
+                    com.betterloka.duel.DuelTracker.get().devState(), client().player.getId(),
+                    client().player.position(), dummies);
         } catch (ReflectiveOperationException e) {
             BetterLoka.LOGGER.error("DIAG could not click", e);
         }
