@@ -158,10 +158,29 @@ class DuelTest {
     }
 
     @Test
-    void noSwingsSeenStillShowsTheHits() {
+    void fewerSwingsSeenThanHitsIsNoShareAtAll() {
         DuelStats duel = new DuelStats(ME, 0);
         duel.hit(ME, THEM, 100);
-        assertEquals(100, duel.summary().you().accuracy(), "a hit means at least one swing");
-        assertEquals(0, duel.summary().them().accuracy());
+        duel.hit(THEM, ME, 600);
+        duel.hit(THEM, ME, 1200);
+        duel.swing(THEM);
+        assertEquals(1, duel.summary().you().hits());
+        assertEquals(-1, duel.summary().you().accuracy(), "a hit with no swing seen: not 100%");
+        assertEquals(-1, duel.summary().them().accuracy(), "two hits, one swing seen: not 100% either");
+        duel.swing(THEM);
+        duel.swing(THEM);
+        assertEquals(67, duel.summary().them().accuracy());
+        assertEquals(0, new DuelStats(ME, 0).summary().you().accuracy(), "nothing at all is 0, not unknown");
+    }
+
+    @Test
+    void theSummaryKnowsWhenTheFightWas() {
+        DuelStats duel = new DuelStats(ME, 1000);
+        duel.hit(ME, THEM, 5000);
+        duel.hit(THEM, ME, 9000);
+        DuelStats.Summary summary = duel.summary();
+        assertEquals(5000, summary.startedAt());
+        assertEquals(9000, summary.endedAt());
+        assertEquals(4000, summary.millis());
     }
 }

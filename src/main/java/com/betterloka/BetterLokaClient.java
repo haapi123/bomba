@@ -116,7 +116,8 @@ public class BetterLokaClient implements ClientModInitializer {
                 transport.backgroundExecutor());
         elo.start();
         stats.useElo(elo);
-        arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v2.json"));
+        // v3: the index also keeps how the last season ended, for the duel summary.
+        arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v3.json"));
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));
@@ -243,7 +244,7 @@ public class BetterLokaClient implements ClientModInitializer {
                 new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
         // Duels: /join when one is found (off until switched on), and the hit statistics afterwards.
-        new com.betterloka.duel.DuelTracker(config).register();
+        new com.betterloka.duel.DuelTracker(config, BetterLokaClient::arenaStats).register();
         new com.betterloka.helper.ImportantWaypointsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

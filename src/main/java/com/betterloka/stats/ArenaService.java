@@ -65,6 +65,20 @@ public final class ArenaService {
         }
     }
 
+    /** The {@link Best#season()} of a rank held in the season being played now. */
+    public static final int THIS_SEASON = 0;
+
+    /**
+     * A player's ranked record on one ladder as a duel's summary gives it: where they are now, the
+     * highest rank they ever held — this season's counts too, with {@link #THIS_SEASON} — and how the
+     * last season Loka published standings for ended for them.
+     */
+    public record Career(Ladder ladder, ArenaEntry current, Best highest, Best lastSeason) {
+        public boolean isEmpty() {
+            return current == null && highest == null && lastSeason == null;
+        }
+    }
+
     private final ArenaApi api;
     private final JsonStore<Map<String, Map<String, SavedBest>>> disk;
 
@@ -149,6 +163,37 @@ public final class ArenaService {
         });
     }
 
+    /**
+     * The duel summary's look at an opponent: on each ladder, now, at best, and last season. Waits
+     * for both the current ladders and the history index, which is usually built by then.
+     */
+    public CompletableFuture<List<Career>> careers(String name, UUID uuid) {
+        return loadCurrent().thenCombine(loadHistory(), (ignored, index) -> {
+            List<Career> careers = new ArrayList<>();
+            for (Ladder ladder : Ladder.values()) {
+                careers.add(career(ladder, findCurrent(ladder, name, uuid), index.get(ladder), name, uuid));
+            }
+            return careers;
+        });
+    }
+
+    /** One ladder's {@link Career}, out of the current row and the history index. */
+    static Career career(Ladder ladder, ArenaEntry current, Map<String, Best> index, String name, UUID uuid) {
+        return new Career(ladder, current, highest(current, lookup(index, "", name, uuid)),
+                lookup(index, "l", name, uuid));
+    }
+
+    /** The higher of this season's rank and the best of the past ones; a tie goes to the past. */
+    static Best highest(ArenaEntry current, Best past) {
+        if (current == null || current.rank() == null) {
+            return past;
+        }
+        if (past == null || current.rank().compareTo(past.entry().rank()) > 0) {
+            return new Best(THIS_SEASON, current);
+        }
+        return past;
+    }
+
     private ArenaEntry findCurrent(Ladder ladder, String name, UUID uuid) {
         List<ArenaEntry> rows;
         synchronized (current) {
@@ -173,14 +218,22 @@ public final class ArenaService {
     }
 
     private static Best lookup(Map<String, Best> index, String name, UUID uuid) {
+        return lookup(index, "", name, uuid);
+    }
+
+    /**
+     * @param kind {@code ""} for the best season, {@code "l"} for the last one: the index keeps both,
+     *             under {@code u:}/{@code n:} and {@code lu:}/{@code ln:}
+     */
+    private static Best lookup(Map<String, Best> index, String kind, String name, UUID uuid) {
         if (index == null) {
             return null;
         }
-        Best byUuid = uuid == null ? null : index.get("u:" + uuid);
+        Best byUuid = uuid == null ? null : index.get(kind + "u:" + uuid);
         if (byUuid != null) {
             return byUuid;
         }
-        return name == null ? null : index.get("n:" + name.toLowerCase(Locale.ROOT));
+        return name == null ? null : index.get(kind + "n:" + name.toLowerCase(Locale.ROOT));
     }
 
     /** Fetches both ladders at once — they are independent, and one after the other doubled the wait. */
@@ -288,9 +341,11 @@ public final class ArenaService {
 
         // Every season at once, a short task each in the bulk lane: one after the other was forty
         // round trips end to end, the better part of ten seconds before Best rank could say anything.
+        int latest = seasons.stream().mapToInt(Integer::intValue).max().orElse(-1);
         List<CompletableFuture<Boolean>> tasks = new ArrayList<>();
         for (int season : seasons) {
-            tasks.add(CompletableFuture.supplyAsync(() -> recordSeason(index, season), api.bulkExecutor()));
+            tasks.add(CompletableFuture.supplyAsync(() -> recordSeason(index, season, season == latest),
+                    api.bulkExecutor()));
         }
         boolean complete = true;
         for (CompletableFuture<Boolean> task : tasks) {
@@ -310,8 +365,13 @@ public final class ArenaService {
         return index;
     }
 
-    /** One season's final standings on both ladders. @return whether all of it was read. */
-    private boolean recordSeason(Map<Ladder, Map<String, Best>> index, int season) {
+    /**
+     * One season's final standings on both ladders.
+     *
+     * @param latest whether it is the last season published, which is also kept on its own
+     * @return whether all of it was read
+     */
+    private boolean recordSeason(Map<Ladder, Map<String, Best>> index, int season, boolean latest) {
         int week;
         try {
             List<Integer> weeks = api.fetchWeeks(season);
@@ -327,8 +387,9 @@ public final class ArenaService {
         for (Ladder ladder : Ladder.values()) {
             try {
                 List<ArenaEntry> rows = api.fetchHistory(ladder, season, week);
+                rememberNames(rows);
                 synchronized (index) {
-                    record(index.get(ladder), season, rows);
+                    record(index.get(ladder), season, rows, latest);
                 }
             } catch (ApiException e) {
                 BetterLoka.LOGGER.debug("Could not load {} season {} week {}", ladder, season, week, e);
@@ -387,8 +448,11 @@ public final class ArenaService {
         disk.write(saved);
     }
 
-    private void record(Map<String, Best> index, int season, List<ArenaEntry> rows) {
-        rememberNames(rows);
+    /**
+     * Indexes one season's final table: each player's best season so far, and with {@code latest}
+     * also how this one ended for them.
+     */
+    static void record(Map<String, Best> index, int season, List<ArenaEntry> rows, boolean latest) {
         for (ArenaEntry entry : rows) {
             if (entry.rank() == null) {
                 continue;
@@ -396,9 +460,16 @@ public final class ArenaService {
             Best candidate = new Best(season, entry);
             if (entry.uuid() != null) {
                 keepBetter(index, "u:" + entry.uuid(), candidate);
+                if (latest) {
+                    index.putIfAbsent("lu:" + entry.uuid(), candidate);
+                }
             }
             if (entry.name() != null) {
-                keepBetter(index, "n:" + entry.name().toLowerCase(Locale.ROOT), candidate);
+                String name = entry.name().toLowerCase(Locale.ROOT);
+                keepBetter(index, "n:" + name, candidate);
+                if (latest) {
+                    index.putIfAbsent("ln:" + name, candidate);
+                }
             }
         }
     }

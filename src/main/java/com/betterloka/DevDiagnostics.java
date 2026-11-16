@@ -1437,8 +1437,10 @@ public final class DevDiagnostics {
             client().gui.setScreen(null);
             com.betterloka.duel.DuelTracker.devAnyTarget = true;
             server("gamemode survival @a");
+            server("difficulty easy");
             server("time set day");
             server("effect give @a resistance 600 4 true");
+            server("effect give @a regeneration 600 4 true");
             server("tp @a 0 -60 0 0 0");
             server("item replace entity @a weapon.mainhand with diamond_sword");
         });
@@ -1457,14 +1459,22 @@ public final class DevDiagnostics {
         step(80, () -> {
             BetterLoka.LOGGER.info("DIAG duel arrived at the duel: {} in {}", com.betterloka.duel.DuelTracker.get().devState(),
                     client().level.dimension());
+            // An opponent that fights back with a sword, so its swings come as the server's swing
+            // packet — the one an opponent's swings were missed on. Named after a ranked player, for
+            // the ranked lines (found by name: the zombie's UUID is nobody's).
             server("execute as @a at @s run summon zombie ^ ^ ^2.5 "
-                    + "{NoAI:1b,PersistenceRequired:1b,Health:500f,attributes:[{id:\"minecraft:max_health\",base:500}]}");
+                    + "{PersistenceRequired:1b,Silent:1b,CustomName:'Knucior',Health:500f,"
+                    + "attributes:[{id:\"minecraft:max_health\",base:500},{id:\"minecraft:knockback_resistance\",base:1.0}],"
+                    + "equipment:{mainhand:{id:\"minecraft:iron_sword\",count:1}}}");
         });
+        // Its ping, as the player list would show it: 62, then a spike up, then one down.
+        step(8, () -> com.betterloka.duel.DuelTracker.get().devPing(duelZombie(), 62));
         shot(20, "duel-nether");
         // Full-strength hits standing still: a sword sweeps.
         for (int i = 0; i < 4; i++) {
             step(14, DevDiagnostics::attack);
         }
+        step(1, () -> com.betterloka.duel.DuelTracker.get().devPing(duelZombie(), 108));
         // Two crits: jump, and hit on the way down.
         step(2, () -> client().player.setXRot(30));
         for (int i = 0; i < 2; i++) {
@@ -1472,6 +1482,7 @@ public final class DevDiagnostics {
             step(8, DevDiagnostics::attack);
         }
         step(2, () -> client().player.setXRot(0));
+        step(1, () -> com.betterloka.duel.DuelTracker.get().devPing(duelZombie(), 80));
         // A miss: turned away, at the air.
         step(14, () -> client().player.setYRot(180));
         step(2, DevDiagnostics::attack);
@@ -1484,10 +1495,55 @@ public final class DevDiagnostics {
                 client().level.dimension()));
         step(2, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.ChatScreen("", false)));
         shot(10, "duel-chat");
+        // The ranked lines, if they had to follow the summary rather than come with it.
+        step(400, DevDiagnostics::logDuelChat);
+        shot(10, "duel-chat-later");
         step(2, () -> {
             BetterLoka.LOGGER.info("DIAG duel checks done");
             client().stop();
         });
+    }
+
+    /** The zombie standing in for the opponent. */
+    private static java.util.UUID duelZombie() {
+        for (net.minecraft.world.entity.Entity entity : client().level.entitiesForRendering()) {
+            // Exactly a zombie: in the Nether a zombified piglin is one too.
+            if (entity.getClass() == net.minecraft.world.entity.monster.zombie.Zombie.class) {
+                return entity.getUUID();
+            }
+        }
+        BetterLoka.LOGGER.warn("DIAG duel: no zombie found");
+        return new java.util.UUID(0, 0);
+    }
+
+    /** Every line the mod said in chat, with what each tooltip says. */
+    private static void logDuelChat() {
+        try {
+            java.lang.reflect.Field field = net.minecraft.client.gui.components.ChatComponent.class.getDeclaredField("allMessages");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.List<net.minecraft.client.multiplayer.chat.GuiMessage> messages =
+                    (java.util.List<net.minecraft.client.multiplayer.chat.GuiMessage>) field.get(client().gui.hud.getChat());
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                net.minecraft.network.chat.Component content = messages.get(i).content();
+                if (!content.getString().startsWith("[BetterLoka]")) {
+                    continue;
+                }
+                StringBuilder out = new StringBuilder();
+                java.util.Set<String> hovers = new java.util.LinkedHashSet<>();
+                content.visit((style, text) -> {
+                    out.append(text);
+                    if (style.getHoverEvent() instanceof net.minecraft.network.chat.HoverEvent.ShowText show
+                            && hovers.add(show.value().getString())) {
+                        out.append(" {hover: ").append(show.value().getString().replace("\n", " / ")).append("}");
+                    }
+                    return java.util.Optional.empty();
+                }, net.minecraft.network.chat.Style.EMPTY);
+                BetterLoka.LOGGER.info("DIAG duel chat: {}", out.toString().replace("\n", " ⏎ "));
+            }
+        } catch (ReflectiveOperationException e) {
+            BetterLoka.LOGGER.warn("DIAG duel: could not read the chat", e);
+        }
     }
 
     /** A left click, as the attack key does it. */

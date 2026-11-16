@@ -73,9 +73,16 @@ public final class DuelStats {
             return bestCombo;
         }
 
-        /** Hits landed of swings made, 0–100. A swing missed by this client still counts its hit. */
+        /**
+         * Hits landed of swings made, 0–100, or -1 when fewer swings were seen than hits landed: then
+         * this client did not see all of them, and a share of what it did see would be made up —
+         * which is how an opponent once always came out at 100%.
+         */
         public int accuracy() {
-            return swings == 0 ? (hits == 0 ? 0 : 100) : Math.min(100, Math.round(hits * 100f / swings));
+            if (swings < hits) {
+                return -1;
+            }
+            return swings == 0 ? 0 : Math.round(hits * 100f / swings);
         }
 
         /** Of the hits landed, the share that were crits, 0–100. */
@@ -93,8 +100,11 @@ public final class DuelStats {
         WON, LOST, UNKNOWN
     }
 
-    /** What the duel came to. */
-    public record Summary(Side you, Side them, int opponentId, long millis, Result result) {
+    /** What the duel came to: from its first hit to its last, both as wall-clock times. */
+    public record Summary(Side you, Side them, int opponentId, long startedAt, long endedAt, Result result) {
+        public long millis() {
+            return Math.max(0, endedAt - startedAt);
+        }
     }
 
     /** This player's entity id — a different number on every server, so it can change before the fight. */
@@ -223,7 +233,8 @@ public final class DuelStats {
         int opponent = opponent();
         Side them = opponent == -1 ? new Side() : others.getOrDefault(opponent, new Side());
         Result result = died == null ? Result.UNKNOWN : died == self ? Result.LOST : Result.WON;
-        long length = fought() ? Math.max(0, lastCombatAt - firstHitAt) : 0;
-        return new Summary(you, them, opponent, length, result);
+        return fought()
+                ? new Summary(you, them, opponent, firstHitAt, Math.max(firstHitAt, lastCombatAt), result)
+                : new Summary(you, them, opponent, armedAt, armedAt, result);
     }
 }

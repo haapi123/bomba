@@ -1,12 +1,16 @@
 package com.betterloka.duel;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.api.model.ArenaRank;
 import com.betterloka.config.BetterLokaConfig;
+import com.betterloka.stats.ArenaService;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -25,9 +29,15 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Loka Helper's duels: {@code /join} sent by itself when a duel is found (off until switched on), and
@@ -52,6 +62,8 @@ public final class DuelTracker {
     private static final double SWEEP_RANGE = 1.5;
     /** A jump this far in one tick is a teleport, and after a fight, the end of it. Past a pearl's reach. */
     private static final double TELEPORT_BLOCKS = 128;
+    /** How long the ranked lookup may take before the summary says it got no answer. */
+    private static final long RANKS_TIMEOUT_SECONDS = 30;
 
     /** Development only: count fights against any creature, so a dummy can stand in for a player. */
     public static boolean devAnyTarget;
@@ -59,8 +71,15 @@ public final class DuelTracker {
     private static DuelTracker instance;
 
     private final BetterLokaConfig config;
+    private final Supplier<ArenaService> arena;
     private final DuelSession session = new DuelSession();
     private final Map<Integer, String> names = new HashMap<>();
+    private final Map<Integer, UUID> uuids = new HashMap<>();
+    /** Everybody's ping in the player list while a duel is on, by UUID: ids change between servers. */
+    private final Map<UUID, PingTrace> pings = new HashMap<>();
+    /** The opponent's ranked record, looked up as soon as they are known so the summary has it. */
+    private UUID ranksFor;
+    private CompletableFuture<List<ArenaService.Career>> ranks;
     /** Where the player was last tick: a different player or world is a move. */
     private net.minecraft.client.player.LocalPlayer seenPlayer;
     private ClientLevel seenLevel;
@@ -69,8 +88,10 @@ public final class DuelTracker {
     private String joinCommand;
     private long lastJoinAt;
 
-    public DuelTracker(BetterLokaConfig config) {
+    /** @param arena Loka's ranked ladders, for the opponent's ranks; may give {@code null} */
+    public DuelTracker(BetterLokaConfig config, Supplier<ArenaService> arena) {
         this.config = config;
+        this.arena = arena;
     }
 
     public void register() {
@@ -99,6 +120,8 @@ public final class DuelTracker {
             // A new match: whatever came before it is said now, before its names are forgotten.
             say(client, session.arm(client.player.getId(), now));
             names.clear();
+            uuids.clear();
+            pings.clear();
         } else {
             session.forget();
         }
@@ -123,20 +146,27 @@ public final class DuelTracker {
         if (tracker == null || tracker.session.duel() == null) {
             return;
         }
-        Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.level == null) {
-            return;
-        }
         if (action == ClientboundAnimatePacket.CRITICAL_HIT) {
             tracker.session.duel().crit(entityId, System.currentTimeMillis());
-        } else if (action == 0 && entityId != client.player.getId()) {
-            // Main hand. Only with a weapon in it and near this player: throwing a potion or placing
-            // a block swings the arm too, and so does somebody fighting somebody else.
-            Entity entity = client.level.getEntity(entityId);
-            if (entity instanceof LivingEntity living && counts(living) && holdsWeapon(living.getMainHandItem())
-                    && living.distanceTo(client.player) <= SWING_RANGE) {
-                tracker.session.duel().swing(entityId);
-            }
+        }
+    }
+
+    /** Somebody else swung an arm (the server never shows a player their own). */
+    public static void onSwing(int entityId, boolean mainHand) {
+        DuelTracker tracker = instance;
+        if (tracker == null || tracker.session.duel() == null || !mainHand) {
+            return;
+        }
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null || entityId == client.player.getId()) {
+            return;
+        }
+        // Only with a weapon in that hand and near this player: throwing a potion or placing a block
+        // swings the arm too, and so does somebody fighting somebody else.
+        Entity entity = client.level.getEntity(entityId);
+        if (entity instanceof LivingEntity living && counts(living) && holdsWeapon(living.getMainHandItem())
+                && living.distanceTo(client.player) <= SWING_RANGE) {
+            tracker.session.duel().swing(entityId);
         }
     }
 
@@ -223,6 +253,37 @@ public final class DuelTracker {
 
     private void remember(Entity entity) {
         names.put(entity.getId(), entity.getName().getString());
+        uuids.put(entity.getId(), entity.getUUID());
+    }
+
+    /**
+     * Reads the ping of everybody the player can see from the player list. The server refreshes it
+     * there on its own schedule — about every thirty seconds — so most ticks read the same values,
+     * and {@link PingTrace} keeps only a change.
+     */
+    private void samplePings(Minecraft client, long now) {
+        ClientPacketListener connection = client.getConnection();
+        if (connection == null || client.level == null) {
+            return;
+        }
+        for (Player player : client.level.players()) {
+            PlayerInfo listed = connection.getPlayerInfo(player.getUUID());
+            if (listed != null) {
+                pings.computeIfAbsent(player.getUUID(), id -> new PingTrace()).sample(now, listed.getLatency());
+            }
+        }
+    }
+
+    /** Starts the ranked lookup for whoever the opponent has turned out to be, once per opponent. */
+    private void lookUpRanks(UUID uuid, String name) {
+        ArenaService service = arena == null ? null : arena.get();
+        if (service == null || uuid == null
+                || (uuid.equals(ranksFor) && ranks != null && !ranks.isCompletedExceptionally())) {
+            // Already asked — unless that ask failed, when a rematch asks again.
+            return;
+        }
+        ranksFor = uuid;
+        ranks = service.careers(name, uuid).orTimeout(RANKS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     // ---- the clock ----
@@ -238,7 +299,7 @@ public final class DuelTracker {
             // respawn: on the way to a duel, or the end of one.
             seenPlayer = player;
             seenLevel = client.level;
-            session.moved(player == null ? null : player.getId(), now);
+            moved(player == null ? null : player.getId(), now);
             lastPosition = player == null ? null : player.position();
         }
         if (player == null) {
@@ -246,10 +307,26 @@ public final class DuelTracker {
         }
         Vec3 position = player.position();
         if (lastPosition != null && position.distanceTo(lastPosition) > TELEPORT_BLOCKS) {
-            session.moved(player.getId(), now);
+            moved(player.getId(), now);
         }
         lastPosition = position;
+        DuelStats duel = session.duel();
+        if (duel != null) {
+            samplePings(client, now);
+            int opponent = duel.opponent();
+            if (opponent != -1) {
+                lookUpRanks(uuids.get(opponent), names.get(opponent));
+            }
+        }
         say(client, session.tick(player.getId(), player.isDeadOrDying(), now));
+    }
+
+    private void moved(Integer self, long now) {
+        if (session.duel() != null && !session.duel().fought()) {
+            // On the way to the duel: what the last server said of anybody's ping is not this one's.
+            pings.clear();
+        }
+        session.moved(self, now);
     }
 
     private void sendJoin(Minecraft client) {
@@ -269,12 +346,39 @@ public final class DuelTracker {
             return;
         }
         String opponent = names.getOrDefault(summary.opponentId(), "?");
-        chat(client, summaryText(summary, client.player.getName().getString(), opponent));
-        BetterLoka.LOGGER.info("[betterloka] duel vs {} said in chat", opponent);
+        UUID uuid = uuids.get(summary.opponentId());
+        PingTrace theirs = uuid == null ? null : pings.get(uuid);
+        PingTrace yours = pings.get(client.player.getUUID());
+        PingTrace.Summary ping = theirs == null ? null : theirs.summary(summary.startedAt(), summary.endedAt());
+        PingTrace.Summary own = yours == null ? null : yours.summary(summary.startedAt(), summary.endedAt());
+
+        MutableComponent text = summaryText(summary, client.player.getName().getString(), opponent);
+        for (Component line : pingLines(opponent, ping, own)) {
+            text.append(Component.literal("\n ")).append(line);
+        }
+        lookUpRanks(uuid, opponent);
+        CompletableFuture<List<ArenaService.Career>> lookup = uuid != null && uuid.equals(ranksFor) ? ranks : null;
+        if (lookup != null && lookup.isDone()) {
+            for (Component line : rankLines(lookup)) {
+                text.append(Component.literal("\n ")).append(line);
+            }
+        } else if (lookup != null) {
+            // Not in yet — Loka's ladders were slow, or the index is still being built: said when
+            // it comes, under the summary.
+            lookup.whenComplete((careers, failure) -> client.execute(() -> {
+                for (Component line : rankLines(lookup)) {
+                    chat(client, line);
+                }
+            }));
+        }
+        chat(client, text);
+        BetterLoka.LOGGER.info("[betterloka] duel vs {} said in chat (ping {}, ranks {})", opponent,
+                ping == null ? "none" : ping.readings() + " readings",
+                lookup == null ? "none" : lookup.isDone() ? "in" : "to follow");
     }
 
     /** The duel in three lines: who and how long, then each side's hits, crits and sweeps. */
-    static Component summaryText(DuelStats.Summary summary, String you, String opponent) {
+    static MutableComponent summaryText(DuelStats.Summary summary, String you, String opponent) {
         MutableComponent text = Component.translatable("betterloka.duel.summary",
                 Component.literal(opponent).withStyle(ChatFormatting.GOLD), clock(summary.millis()));
         if (summary.result() == DuelStats.Result.WON) {
@@ -300,14 +404,140 @@ public final class DuelTracker {
     private static Component line(Component who, DuelStats.Side side) {
         Component details = Component.translatable("betterloka.duel.line_hover",
                 side.hits(), side.swings(), side.crits(), side.sweeps(), side.bestCombo());
+        boolean known = side.accuracy() >= 0;
         return Component.translatable("betterloka.duel.line", who,
-                        Component.literal(side.accuracy() + "%").withStyle(ChatFormatting.YELLOW),
-                        Component.literal(side.hits() + "/" + side.swings()).withStyle(ChatFormatting.WHITE),
+                        Component.literal(known ? side.accuracy() + "%" : "—").withStyle(ChatFormatting.YELLOW),
+                        Component.literal(side.hits() + "/" + (known ? side.swings() : "?")).withStyle(ChatFormatting.WHITE),
                         Component.literal(side.critShare() + "%").withStyle(ChatFormatting.YELLOW),
                         Component.literal(side.sweepShare() + "%").withStyle(ChatFormatting.YELLOW),
                         Component.literal(String.valueOf(side.bestCombo())).withStyle(ChatFormatting.WHITE))
                 .withStyle(style -> style.withColor(ChatFormatting.GRAY)
                         .withHoverEvent(new HoverEvent.ShowText(details)));
+    }
+
+    /**
+     * The opponent's ping over the duel, in two lines: the average and the highest, then the spikes.
+     * Both carry a tooltip saying where the numbers come from and how many readings they rest on —
+     * the server refreshes the player list's ping only every half a minute or so.
+     */
+    static List<Component> pingLines(String opponent, PingTrace.Summary ping, PingTrace.Summary own) {
+        Component name = Component.literal(opponent).withStyle(ChatFormatting.RED);
+        if (ping == null) {
+            return List.of(Component.translatable("betterloka.duel.ping_none", name)
+                    .withStyle(style -> style.withColor(ChatFormatting.GRAY)
+                            .withHoverEvent(new HoverEvent.ShowText(Component.translatable("betterloka.duel.ping_none_hover")))));
+        }
+        MutableComponent hover = Component.translatable("betterloka.duel.ping_hover", ping.readings(), PingTrace.SPIKE_MS);
+        if (ping.spikeCount() > 0) {
+            List<String> changes = new ArrayList<>();
+            for (PingTrace.Spike spike : ping.spikes()) {
+                changes.add(clock(spike.afterMillis()) + " " + signed(spike.change()));
+            }
+            hover.append(Component.literal("\n")).append(Component.translatable("betterloka.duel.ping_changes",
+                    String.join(", ", changes)));
+        }
+        if (own != null) {
+            hover.append(Component.literal("\n")).append(Component.translatable("betterloka.duel.ping_yours",
+                    ms(own.average()), ms(own.max())));
+        }
+        Style tip = Style.EMPTY.withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent.ShowText(hover));
+
+        Component first = Component.translatable("betterloka.duel.ping", name,
+                Component.literal(ms(ping.average())).withStyle(ChatFormatting.YELLOW),
+                Component.literal(ms(ping.max())).withStyle(ChatFormatting.YELLOW)).withStyle(tip);
+        Component second;
+        if (ping.spikeCount() == 0) {
+            second = Component.translatable("betterloka.duel.spikes_none", PingTrace.SPIKE_MS).withStyle(tip);
+        } else {
+            Component count = Component.literal(ping.spikeCount() + " (↑" + ping.up() + " ↓" + ping.down() + ")")
+                    .withStyle(ChatFormatting.WHITE);
+            Component biggest = Component.literal(signed(ping.biggest())).withStyle(ChatFormatting.YELLOW);
+            second = ping.spikeCount() == 1
+                    ? Component.translatable("betterloka.duel.spikes_one", PingTrace.SPIKE_MS, count, biggest,
+                    Component.literal(clock(ping.spikes().get(0).afterMillis())).withStyle(ChatFormatting.WHITE)).withStyle(tip)
+                    : Component.translatable("betterloka.duel.spikes", PingTrace.SPIKE_MS, count, biggest,
+                    Component.literal(Math.round(ping.everySeconds()) + " s").withStyle(ChatFormatting.YELLOW)).withStyle(tip);
+        }
+        return List.of(first, second);
+    }
+
+    /**
+     * The opponent's ranked record: per ladder they have one on, the highest rank they ever held and
+     * how the last published season ended for them, each with its season. Where they stand now is in
+     * the tooltip.
+     */
+    static List<Component> rankLines(CompletableFuture<List<ArenaService.Career>> lookup) {
+        List<ArenaService.Career> careers;
+        try {
+            careers = lookup.getNow(null);
+        } catch (RuntimeException failed) {
+            careers = null;
+        }
+        if (careers == null) {
+            return List.of(Component.translatable("betterloka.duel.ranks_failed").withStyle(ChatFormatting.GRAY));
+        }
+        List<Component> lines = new ArrayList<>();
+        int lastSeason = -1;
+        for (ArenaService.Career career : careers) {
+            if (career.isEmpty()) {
+                continue;
+            }
+            if (career.lastSeason() != null) {
+                lastSeason = career.lastSeason().season();
+            }
+            Component now = career.current() == null || career.current().rank() == null
+                    ? Component.translatable("betterloka.duel.rank_unranked")
+                    : Component.translatable("betterloka.duel.rank_now", rank(career.current().rank()),
+                    career.current().wins(), career.current().losses());
+            // Short enough for one line of chat however long the ranks: what each column is, is
+            // said once above them.
+            lines.add(Component.literal(" ").append(Component.translatable("betterloka.duel.rank",
+                            Component.literal(career.ladder().shortName()).withStyle(ChatFormatting.GOLD),
+                            seasonRank(career.highest(), true), seasonRank(career.lastSeason(), false)))
+                    .withStyle(style -> style.withColor(ChatFormatting.GRAY)
+                            .withHoverEvent(new HoverEvent.ShowText(now))));
+        }
+        if (lines.isEmpty()) {
+            return List.of(Component.translatable("betterloka.duel.ranks_none").withStyle(ChatFormatting.GRAY));
+        }
+        Component header = (lastSeason > 0
+                ? Component.translatable("betterloka.duel.ranks_header", lastSeason)
+                : Component.translatable("betterloka.duel.ranks_header_no_last"))
+                .withStyle(style -> style.withColor(ChatFormatting.GRAY)
+                        .withHoverEvent(new HoverEvent.ShowText(Component.translatable("betterloka.duel.ranks_hover"))));
+        lines.add(0, header);
+        return lines;
+    }
+
+    /**
+     * "Bedrock (S23)" or "Diamond I (now)" with its season, or just the rank for the last season,
+     * whose number the header gives; a dash for a season they were not ranked in.
+     */
+    private static Component seasonRank(ArenaService.Best best, boolean withSeason) {
+        if (best == null || best.entry().rank() == null) {
+            return Component.literal("—").withStyle(ChatFormatting.DARK_GRAY);
+        }
+        if (!withSeason) {
+            return rank(best.entry().rank());
+        }
+        Component season = best.season() == ArenaService.THIS_SEASON
+                ? Component.translatable("betterloka.duel.this_season")
+                : Component.literal("S" + best.season());
+        return Component.empty().append(rank(best.entry().rank()))
+                .append(Component.literal(" (").append(season).append(")").withStyle(ChatFormatting.DARK_GRAY));
+    }
+
+    /** A rank in the colour Loka draws its tier in. */
+    private static Component rank(ArenaRank rank) {
+        return Component.literal(rank.toString()).withStyle(style -> style.withColor(rank.color() & 0xFFFFFF));
+    }
+
+    private static String ms(int value) {
+        return value + " ms";
+    }
+
+    private static String signed(int change) {
+        return (change > 0 ? "+" : "-") + Math.abs(change) + " ms";
     }
 
     private static String clock(long millis) {
@@ -338,6 +568,11 @@ public final class DuelTracker {
         return "you " + summary.you().hits() + "/" + summary.you().swings() + " crits " + summary.you().crits()
                 + " sweeps " + summary.you().sweeps() + " | them " + summary.them().hits() + "/" + summary.them().swings()
                 + " | opponent " + summary.opponentId() + " fought " + duel.fought();
+    }
+
+    /** Development only: a reading of somebody's ping, as the player list would give it. */
+    public void devPing(UUID uuid, int ms) {
+        pings.computeIfAbsent(uuid, id -> new PingTrace()).sample(System.currentTimeMillis(), ms);
     }
 
     /** Development only: the duel's numbers, as the summary would give them. */
