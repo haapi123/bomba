@@ -187,6 +187,61 @@ name that will not change between versions — the startup command points at it 
 The first start writes the config and exits, which the panel reports as the server stopping. That is
 expected: fill the config in and start it again.
 
+## The server's own commands
+
+With a bot token the bot also runs three commands for the Discord server itself. They are registered
+together with `/sprawdz` and, until an admin changes it under **Server Settings → Integrations**,
+only people with **Manage Server** (`/test`, `/propozycje`) or **Manage Roles** (`/weryfikacja`) see
+them. Every reply to whoever typed a command is visible to them alone.
+
+### `/test [ping]`
+
+Is everything working, without waiting for a town to fall. It answers with:
+
+- **Discord** — that it is connected (the answer itself is the proof);
+- **Loka API** — one kilobyte-sized request, with how long it took and Loka's deleted-town count;
+- **the fallen-town watch** — on or off (and why), how often it checks, when it last did and whether
+  that worked, when it last swept every territory;
+- **the last alert** since the bot started, and the last error posting one, if any;
+- a **sample alert**, posted where the real ones go — the same webhook or channel, the same embed —
+  marked as a test. It pings the role only with `ping: True`.
+
+### `/weryfikacja ranga [kanal] [tytul] [opis] [przycisk]`
+
+Posts a message with a green **Zweryfikuj się** button. Whoever clicks it gets `ranga`; somebody who
+already has it is told so, and nothing else happens. The role is carried in the button itself, so the
+message keeps working across restarts and there is nothing to configure.
+
+Discord only lets a bot give a role that sits **below its own highest role**, and only with **Manage
+Roles**. The command checks both when the message is posted and says what to fix, rather than leaving
+the first person to click to find out. `@everyone` and roles that belong to a bot or an integration
+are refused.
+
+A button rather than a reaction: a reaction needs the bot to read every reaction in the server (a
+gateway intent this bot does not ask for), and a click can be answered — the person sees
+"Zweryfikowano" at once, or why not.
+
+### `/propozycje [kanal] [tytul] [tekst]`
+
+Posts a panel — *"Chciałbyś dodać coś do moda? Naciśnij w zielony przycisk i napisz propozycję!"* by
+default — with a green **Napisz propozycję** button. It opens a form with a **title** (3–80
+characters) and the **suggestion** (10–1500). Sent, it becomes the bot's own message: the suggestion
+with its author's name and picture, numbered (`Propozycja #12`, counted in
+`betterloka-community.json` next to the state file), with 👍 and 👎 to vote. A **thread** opens on it,
+named after the title, with the author called in so they follow the discussion. Then the panel
+**moves back to the bottom** of the channel, so the button is always where people look.
+
+One suggestion a minute per person.
+
+For a tidy channel, take **Send Messages** away from everyone there and leave **Send Messages in
+Threads**: the channel holds only suggestions, and the talking happens in their threads.
+
+### Permissions
+
+The bot's role needs, besides what the alerts need: **Manage Roles** (verification), **Create Public
+Threads**, **Send Messages in Threads**, **Add Reactions** and **Read Message History**
+(suggestions). Re-opening the bot's invite link with these ticked updates an existing bot.
+
 ## What it does on the first run
 
 **It does not announce the backlog.** There are usually a dozen or more towns standing as fallen at

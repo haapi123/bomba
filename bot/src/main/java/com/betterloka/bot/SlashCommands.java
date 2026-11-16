@@ -33,7 +33,8 @@ public final class SlashCommands {
     }
 
     /**
-     * Registers {@code /sprawdz} with Discord.
+     * Registers {@code /sprawdz} and the server's own commands ({@link ServerCommands}) with Discord,
+     * all in one go: a registration replaces whatever set was there before.
      *
      * @param guildId a server to register in, which takes effect immediately, or blank to register
      *                globally — which is what makes the command work everywhere the bot is, but can
@@ -57,6 +58,7 @@ public final class SlashCommands {
 
         JsonArray commands = new JsonArray();
         commands.add(command);
+        commands.addAll(ServerCommands.definitions());
 
         String url = guildId == null || guildId.isBlank()
                 ? API + "/applications/" + applicationId + "/commands"
@@ -70,7 +72,7 @@ public final class SlashCommands {
             throw new IOException("Discord refused the command registration: "
                     + response.statusCode() + " " + trimmed(response.body()));
         }
-        LOG.info("Registered /sprawdz {}", guildId == null || guildId.isBlank()
+        LOG.info("Registered /sprawdz, /test, /weryfikacja and /propozycje {}", guildId == null || guildId.isBlank()
                 ? "globally (it can take up to an hour to appear)"
                 : "in server " + guildId);
     }

@@ -118,8 +118,9 @@ public final class BetterLokaBot {
                 postTestMessage(poster, config);
             }
 
-            DiscordGateway gateway = startCommands(config, api, transport, null);
-            watch(watcher, state, poster, config, once);
+            BotStatus status = new BotStatus();
+            DiscordGateway gateway = startCommands(config, api, transport, null, poster, status);
+            watch(watcher, state, poster, config, once, status);
             if (gateway != null) {
                 gateway.stop();
             }
@@ -213,20 +214,21 @@ public final class BetterLokaBot {
         }
         HttpTransport transport = new HttpTransport();
         LokaApi api = new LokaApi(transport);
-        DiscordGateway gateway = wantsGateway ? startCommands(config, api, transport, extra) : null;
+        BotStatus status = new BotStatus();
+        DiscordPoster poster = problem == null ? new DiscordPoster(config) : null;
+        DiscordGateway gateway = wantsGateway ? startCommands(config, api, transport, extra, poster, status) : null;
 
         Thread watchThread = null;
         if (problem == null) {
             BotState state = new BotState(Path.of(config.stateFile));
             state.load();
             FallenTownWatcher watcher = new FallenTownWatcher(api, state);
-            DiscordPoster poster = new DiscordPoster(config);
             watchThread = new Thread(() -> {
                 if (config.testOnStart) {
                     postTestMessage(poster, config);
                 }
                 try {
-                    watch(watcher, state, poster, config, false);
+                    watch(watcher, state, poster, config, false, status);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -241,7 +243,8 @@ public final class BetterLokaBot {
 
     /** Checks Loka for fallen towns until interrupted, or once. */
     private static void watch(FallenTownWatcher watcher, BotState state, DiscordPoster poster,
-                              BotConfig config, boolean once) throws InterruptedException {
+                              BotConfig config, boolean once, BotStatus status) throws InterruptedException {
+        status.watchStarted();
         LOG.info("Watching Loka every {}s, full sweep at least every {} min; "
                         + "{} territory record(s) already announced",
                 config.intervalSeconds(), config.fullSweepIntervalMinutes, state.announcedCount());
@@ -253,14 +256,17 @@ public final class BetterLokaBot {
             try {
                 FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
                         config.fullSweepIntervalMillis());
+                status.checked(result.sweptFully(), result.deletedCount());
                 if (result.sweptFully()) {
                     LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
                             result.deletedCount(), result.announce().size());
                 }
-                announce(result.announce(), poster, config);
+                announce(result.announce(), poster, config, status);
             } catch (ApiException e) {
+                status.checkFailed(e.getMessage());
                 LOG.warn("Could not check Loka: {}", e.getMessage());
             } catch (RuntimeException e) {
+                status.checkFailed(describe(e));
                 LOG.warn("Check failed", e);
             }
             if (once) {
@@ -318,7 +324,8 @@ public final class BetterLokaBot {
      * @return the connection, or {@code null} if commands are not being served
      */
     private static DiscordGateway startCommands(BotConfig config, LokaApi api, HttpTransport transport,
-                                                Predicate<JsonObject> extra) {
+                                                Predicate<JsonObject> extra, DiscordPoster poster,
+                                                BotStatus status) {
         boolean commandsOn = config.servesCommands();
         if (!commandsOn && (extra == null || config.botToken.isBlank())) {
             if (config.enableCommands) {
@@ -340,10 +347,26 @@ public final class BetterLokaBot {
         }
         TownCheckCommand townCheck = check;
 
+        java.util.concurrent.atomic.AtomicReference<DiscordGateway> connection =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ServerCommands server = new ServerCommands(new DiscordRest(config.botToken), status,
+                new CommunityStore(Path.of(config.stateFile).toAbsolutePath().resolveSibling(COMMUNITY_FILE)),
+                alerts(config, api, poster),
+                () -> connection.get() == null ? null : connection.get().userId(),
+                java.util.concurrent.Executors.newFixedThreadPool(2, runnable -> {
+                    Thread thread = new Thread(runnable, "betterloka-server");
+                    thread.setDaemon(true);
+                    return thread;
+                }),
+                System::currentTimeMillis);
+
         // The application ID arrives with READY, so registration waits for the connection rather
         // than guessing it: it is not the same number as the bot token's prefix on every account.
         DiscordGateway gateway = new DiscordGateway(config.botToken, interaction -> {
             if (extra != null && extra.test(interaction)) {
+                return;
+            }
+            if (server.handle(interaction)) {
                 return;
             }
             String applicationId = interactionApplicationId(interaction);
@@ -351,6 +374,7 @@ public final class BetterLokaBot {
                 townCheck.handle(interaction, applicationId);
             }
         });
+        connection.set(gateway);
         gateway.start();
 
         if (commandsOn) {
@@ -391,6 +415,60 @@ public final class BetterLokaBot {
         LOG.warn("The gateway never reported ready, so /sprawdz was not registered.");
     }
 
+    /** Where the server's suggestion count is kept, next to the state file. */
+    static final String COMMUNITY_FILE = "betterloka-community.json";
+
+    /** What {@code /test} reports on and does: the same poster and the same Loka the watch uses. */
+    private static ServerCommands.Alerts alerts(BotConfig config, LokaApi api, DiscordPoster poster) {
+        return new ServerCommands.Alerts() {
+            @Override
+            public String offReason() {
+                return poster == null ? config.validate() : null;
+            }
+
+            @Override
+            public String destination() {
+                return config.usesWebhook() ? "webhook" : "<#" + config.channelId + ">";
+            }
+
+            @Override
+            public String roleId() {
+                return config.roleId;
+            }
+
+            @Override
+            public int intervalSeconds() {
+                return config.intervalSeconds();
+            }
+
+            @Override
+            public int probeLoka() throws Exception {
+                return api.countDeletedTowns();
+            }
+
+            @Override
+            public void postSample(String requestedBy, boolean ping) throws Exception {
+                String role = ping && !config.roleId.isBlank() ? "<@&" + config.roleId + "> " : "";
+                String by = requestedBy == null ? "" : " przez <@" + requestedBy + ">";
+                poster.post(role + "🧪 **TEST** — tak wygląda powiadomienie o upadłym townie (wywołane komendą "
+                        + "`/test`" + by + "). Żaden town nie upadł.", List.of(sampleEmbed()));
+            }
+        };
+    }
+
+    /** A made-up fallen town, in exactly the form a real one is announced, marked as a test. */
+    static JsonObject sampleEmbed() {
+        FallenTowns.Fallen sample = new FallenTowns.Fallen(
+                com.betterloka.api.model.LokaTown.deleted("test", "Example Town", "north"),
+                List.of(new Territory("test", "north", "12", "Example Ridge", "test", 3727, 80, 4205, 0)));
+        JsonObject embed = embedFor(sample);
+        embed.addProperty("title", "Example Town (TEST)");
+        JsonObject footer = new JsonObject();
+        footer.addProperty("text", "BetterLoka · /test");
+        embed.add("footer", footer);
+        return embed;
+    }
+
     /**
      * Posts one obviously-labelled test message.
      *
@@ -421,7 +499,8 @@ public final class BetterLokaBot {
     }
 
     /** Posts one message per batch, split when there are more towns than Discord allows embeds. */
-    private static void announce(List<FallenTowns.Fallen> fallen, DiscordPoster poster, BotConfig config) {
+    private static void announce(List<FallenTowns.Fallen> fallen, DiscordPoster poster, BotConfig config,
+                                 BotStatus status) {
         if (fallen.isEmpty()) {
             return;
         }
@@ -436,7 +515,13 @@ public final class BetterLokaBot {
             }
             try {
                 poster.post(headline(batch, config), embeds);
+                List<String> names = new ArrayList<>();
+                for (FallenTowns.Fallen town : batch) {
+                    names.add(town.town().name());
+                }
+                status.announced(String.join(", ", names));
             } catch (Exception e) {
+                status.postFailed(describe(e));
                 // The message alone is often null on a connection failure, and "could not post: null"
                 // tells somebody debugging their webhook nothing at all.
                 LOG.error("Could not post to Discord: {}", describe(e), e);
@@ -463,7 +548,7 @@ public final class BetterLokaBot {
         return ping + "**" + batch.size() + " towns** have fallen — their territory is open.";
     }
 
-    private static JsonObject embedFor(FallenTowns.Fallen fallen) {
+    static JsonObject embedFor(FallenTowns.Fallen fallen) {
         JsonObject embed = new JsonObject();
         embed.addProperty("title", fallen.town().name());
         embed.addProperty("color", EMBED_COLOR);

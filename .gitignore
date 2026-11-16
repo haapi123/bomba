@@ -29,6 +29,7 @@ logs/
 bot/betterloka-bot.json
 betterloka-bot.json
 betterloka-bot-state.json
+betterloka-community.json
 
 # Assistant server: its key, config and state live next to the jar, never in git
 api-key.txt

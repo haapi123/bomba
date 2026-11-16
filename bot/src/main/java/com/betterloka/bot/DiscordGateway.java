@@ -58,6 +58,8 @@ public final class DiscordGateway {
 
     /** The application's own ID, learned from READY — needed to answer an interaction. */
     private volatile String applicationId;
+    /** The bot's own user ID, from READY — to look up its roles in a server. */
+    private volatile String userId;
     private volatile ScheduledFuture<?> heartbeat;
     private volatile Integer sequence;
 
@@ -68,6 +70,10 @@ public final class DiscordGateway {
 
     public String applicationId() {
         return applicationId;
+    }
+
+    public String userId() {
+        return userId;
     }
 
     /** Connects, and keeps reconnecting until {@link #stop()}. Returns as soon as it is running. */
@@ -211,6 +217,9 @@ public final class DiscordGateway {
             JsonObject data = message.getAsJsonObject("d");
             if ("READY".equals(type)) {
                 applicationId = data.getAsJsonObject("application").get("id").getAsString();
+                if (data.has("user") && data.get("user").isJsonObject()) {
+                    userId = data.getAsJsonObject("user").get("id").getAsString();
+                }
                 LOG.info("Gateway ready as application {}", applicationId);
                 return;
             }

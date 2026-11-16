@@ -508,6 +508,14 @@ muted.
 java -jar bot/build/libs/betterloka-bot-<version>.jar
 ```
 
+### Server commands
+
+With a bot token the bot also serves the Discord server itself: **`/test`** (is it connected, can it
+reach Loka, is the watch running — and a sample alert where the real ones go), **`/weryfikacja`** (a
+message with a green button that gives a role) and **`/propozycje`** (a panel whose green button opens
+a form; a suggestion becomes the bot's message with a discussion thread). See
+[the bot's README](bot/README.md#the-servers-own-commands).
+
 ### `/sprawdz <town>`
 
 The bot also answers a slash command: **when a town was founded, and how recently each of its members
