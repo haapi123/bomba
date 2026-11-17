@@ -114,6 +114,11 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
+        if ("shulker".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            shulkerInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
         if ("duel".equals(System.getenv("BETTERLOKA_DIAG"))) {
             duelInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1622,6 +1627,74 @@ public final class DevDiagnostics {
      * 0.48: Loka Helper's continent switches, its places pinned on Loka Map, and the Brewer
      * Calculator both ways round. {@code BETTERLOKA_SCALE} sets the GUI scale (3 by default).
      */
+    /**
+     * Shulker Scanner: its switch and legend in Loka Helper, then six shulkers in the inventory — 20,
+     * 16 and 15 splash Instant Health II, 5 among other things, none at all, and only the wrong kinds
+     * (drinkable Heal II, splash Heal I) — tinted green, green, yellow, yellow, red, red.
+     */
+    private void shulkerInput() {
+        int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
+        step(2, () -> {
+            client().options.guiScale().set(scale);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+            BetterLokaClient.config().setShulkerScanner(true);
+            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
+        });
+        step(4, () -> client().gui.screen().mouseScrolled(10, 100, 0, -20));
+        shot(6, "shulker-helper");
+        step(2, () -> {
+            client().gui.setScreen(null);
+            server("gamemode survival @a");
+            server("clear @a");
+            String heal = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
+            String drink = "{id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
+            String weak = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:healing\"}}}";
+            String steak = "{id:\"minecraft:cooked_beef\",count:32}";
+            server("item replace entity @a container.9 with " + shulker("lime_shulker_box", heal, 20, null, 0));
+            server("item replace entity @a container.10 with " + shulker("shulker_box", heal, 16, null, 0));
+            server("item replace entity @a container.11 with " + shulker("shulker_box", heal, 15, null, 0));
+            server("item replace entity @a container.12 with " + shulker("blue_shulker_box", heal, 5, steak, 3));
+            server("item replace entity @a container.13 with minecraft:shulker_box");
+            server("item replace entity @a container.14 with " + shulker("purple_shulker_box", drink, 10, weak, 10));
+            server("item replace entity @a hotbar.0 with " + shulker("shulker_box", heal, 27, null, 0));
+            server("item replace entity @a hotbar.1 with minecraft:diamond_sword");
+        });
+        step(20, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(client().player)));
+        step(5, () -> {
+            var screen = client().gui.screen();
+            if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container) {
+                for (var slot : container.getMenu().slots) {
+                    var stack = slot.getItem();
+                    if (com.betterloka.helper.ShulkerScanner.isShulker(stack)) {
+                        int heals = com.betterloka.helper.ShulkerScanner.heals(stack);
+                        BetterLoka.LOGGER.info("DIAG shulker slot {}: {} heals -> {}", slot.index, heals,
+                                com.betterloka.helper.ShulkerScan.level(heals));
+                    }
+                }
+            }
+        });
+        shot(5, "shulker-inventory");
+        step(2, () -> {
+            BetterLokaClient.config().setShulkerScanner(false);
+        });
+        shot(5, "shulker-inventory-off");
+        step(2, () -> client().stop());
+    }
+
+    /** A shulker box item with {@code count} of {@code item} and {@code extraCount} of {@code extra}, a slot each. */
+    private static String shulker(String box, String item, int count, String extra, int extraCount) {
+        StringBuilder slots = new StringBuilder();
+        int slot = 0;
+        for (int i = 0; i < count; i++, slot++) {
+            slots.append(slots.isEmpty() ? "" : ",").append("{slot:").append(slot).append(",item:").append(item).append('}');
+        }
+        for (int i = 0; i < extraCount; i++, slot++) {
+            slots.append(",{slot:").append(slot).append(",item:").append(extra).append('}');
+        }
+        return "minecraft:" + box + "[minecraft:container=[" + slots + "]]";
+    }
+
     private void v48Input() {
         int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
         step(2, () -> {

@@ -56,6 +56,7 @@ public class LokaHelperScreen extends Screen {
     private Button duelAcceptButton;
     private Button duelStatsButton;
     private Button duelScreenButton;
+    private Button shulkerButton;
     /** One switch per continent, right under the heading: no list to open and scroll for one click. */
     private final java.util.Map<ImportantPlaces.Region, Button> regionButtons =
             new java.util.EnumMap<>(ImportantPlaces.Region.class);
@@ -70,6 +71,10 @@ public class LokaHelperScreen extends Screen {
     private int tlLabelY;
     private int importantLabelY;
     private int duelsLabelY;
+    private int shulkerLabelY;
+    /** The row of the scanner's switch, with its colour legend beside it. */
+    private int shulkerRowY;
+    private int shulkerLegendX;
     private int scaleHintY;
     private boolean showScaleHint;
 
@@ -115,7 +120,7 @@ public class LokaHelperScreen extends Screen {
 
         // Six sections: their headings and buttons are fixed, the gaps between them and the hint under
         // the GUI scale are what gives when the screen is short.
-        int sections = 6;
+        int sections = 7;
         int fixed = ROW_HEIGHT + BUTTON_HEIGHT + 3 + BUTTON_HEIGHT + 2 + (sections - 1) * (ROW_HEIGHT + BUTTON_HEIGHT);
         int room = viewBottom() - viewTop();
         showScaleHint = room - fixed - (sections - 1) * 3 >= ROW_HEIGHT;
@@ -227,6 +232,19 @@ public class LokaHelperScreen extends Screen {
                     refreshLabels();
                 })
                 .bounds(left + (third + 4) * 2, y, width - (third + 4) * 2, BUTTON_HEIGHT).build());
+        y += BUTTON_HEIGHT + gap;
+
+        // Shulker Scanner: the switch, and what its colours mean beside it.
+        shulkerLabelY = y;
+        y += ROW_HEIGHT;
+        shulkerRowY = y;
+        int switchWidth = Math.min(third, 100);
+        shulkerButton = place(Button.builder(shulkerLabel(), button -> {
+                    config().setShulkerScanner(!config().shulkerScanner());
+                    refreshLabels();
+                })
+                .bounds(left, y, switchWidth, BUTTON_HEIGHT).build());
+        shulkerLegendX = left + switchWidth + 8;
         y += BUTTON_HEIGHT;
         contentBottom = y;
 
@@ -284,6 +302,8 @@ public class LokaHelperScreen extends Screen {
         duelAcceptButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_accept_tip")));
         duelStatsButton.setMessage(duelStatsLabel());
         duelStatsButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_stats_tip")));
+        shulkerButton.setMessage(shulkerLabel());
+        shulkerButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.shulker_tip")));
         duelScreenButton.setMessage(duelScreenLabel());
         duelScreenButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_screen_tip")));
         for (var entry : regionButtons.entrySet()) {
@@ -343,6 +363,10 @@ public class LokaHelperScreen extends Screen {
 
     private Component duelAcceptLabel() {
         return Component.translatable("betterloka.helper.duel_accept", onOff(config().duelAutoAccept()));
+    }
+
+    private Component shulkerLabel() {
+        return Component.translatable("betterloka.helper.shulker_switch", onOff(config().shulkerScanner()));
     }
 
     private Component duelScreenLabel() {
@@ -418,6 +442,8 @@ public class LokaHelperScreen extends Screen {
                     0xFF6E6E7A);
         }
         label(context, Component.translatable("betterloka.helper.duels"), duelsLabelY);
+        label(context, Component.translatable("betterloka.helper.shulker"), shulkerLabelY);
+        drawShulkerLegend(context);
 
         if (maxScroll() > 0) {
             // A thin bar on the right: there is more, and roughly where in it this is.
@@ -428,6 +454,37 @@ public class LokaHelperScreen extends Screen {
             int barX = left + contentWidth() + 6;
             context.fill(barX, top, barX + 2, top + height, 0x40FFFFFF);
             context.fill(barX, barY, barX + 2, barY + barHeight, 0xC0FFFFFF);
+        }
+    }
+
+    /**
+     * What the scanner's colours mean, beside its switch: a swatch drawn as the slots are tinted, then
+     * the count it stands for. Shrunk to the room there is, the explanation in the switch's tooltip.
+     */
+    private void drawShulkerLegend(GuiGraphicsExtractor context) {
+        int rowY = shulkerRowY + (BUTTON_HEIGHT - 9) / 2;
+        if (!visible(rowY)) {
+            return;
+        }
+        int x = shulkerLegendX;
+        int y = rowY - scroll;
+        int end = contentLeft() + contentWidth();
+        String[] keys = {"betterloka.helper.shulker_full", "betterloka.helper.shulker_low", "betterloka.helper.shulker_none"};
+        com.betterloka.helper.ShulkerScan.Level[] levels = com.betterloka.helper.ShulkerScan.Level.values();
+        for (int i = 0; i < keys.length; i++) {
+            String text = Component.translatable(keys[i]).getString();
+            int needed = 9 + 3 + this.font.width(text);
+            if (x + needed > end) {
+                break;
+            }
+            int rgb = levels[i].rgb();
+            context.fill(x, y, x + 9, y + 9, 0x70000000 | rgb);
+            context.fill(x, y, x + 9, y + 1, 0xFF000000 | rgb);
+            context.fill(x, y + 8, x + 9, y + 9, 0xFF000000 | rgb);
+            context.fill(x, y + 1, x + 1, y + 8, 0xFF000000 | rgb);
+            context.fill(x + 8, y + 1, x + 9, y + 8, 0xFF000000 | rgb);
+            context.text(this.font, text, x + 12, y + 1, GuiTheme.TEXT);
+            x += needed + 10;
         }
     }
 

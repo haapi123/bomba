@@ -730,6 +730,15 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   is sent to the server but the `/join`; the ranked numbers only read Loka's public profile and
   ladders.
 
+- **Shulker Scanner** (off until you turn it on) — in your inventory and in every chest, ender chest
+  or other container screen, each shulker box's slot is tinted by the **splash Instant Health II**
+  potions inside it: **green** over 15, **yellow** 1–15, **red** none (empty, or nothing but other
+  things). The legend sits beside the switch. Potions are told by their effect, not their name, so a
+  renamed one or one with the effect set by hand counts too, as do stronger ones; drinkable potions
+  and Instant Health I do not. Read from the shulker's own contents, which the game already has.
+
+  ![Shulker Scanner](docs/shulker-scanner.png)
+
 ![Important Waypoints](docs/helper-important.png)
 
 ![Important Waypoints at spawn](docs/helper-important-hud.png)

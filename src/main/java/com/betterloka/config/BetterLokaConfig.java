@@ -105,6 +105,8 @@ public final class BetterLokaConfig {
     private boolean duelStats = true;
     /** Whether "Match Ready!" opens the screen with both duelists and the Join button. On. */
     private boolean duelScreen = true;
+    /** Whether shulker boxes' slots are tinted by the splash Instant Health II inside. Off until turned on. */
+    private boolean shulkerScanner = false;
     /**
      * The continents whose important places are marked, by id. Empty until the player switches one
      * on: every continent starts off.
@@ -336,6 +338,15 @@ public final class BetterLokaConfig {
 
     public void setDuelScreen(boolean duelScreen) {
         this.duelScreen = duelScreen;
+        save();
+    }
+
+    public boolean shulkerScanner() {
+        return shulkerScanner;
+    }
+
+    public void setShulkerScanner(boolean shulkerScanner) {
+        this.shulkerScanner = shulkerScanner;
         save();
     }
 
