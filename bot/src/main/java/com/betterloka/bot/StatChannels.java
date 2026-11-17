@@ -216,6 +216,17 @@ public final class StatChannels {
         JsonArray options = data.has("options") && data.get("options").isJsonArray() ? data.getAsJsonArray("options") : new JsonArray();
         JsonObject sub = options.isEmpty() ? null : options.get(0).getAsJsonObject();
         String which = sub == null ? "" : string(sub, "name");
+        // Discord gives three seconds to answer. "Thinking…" goes out right here, before anything can
+        // queue behind other work — just after a restart, with the server busy loading, the queue
+        // alone was enough to miss it — and the rest takes as long as it takes.
+        try {
+            if (!defer(interaction)) {
+                return true;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return true;
+        }
         work.execute(() -> {
             try {
                 if ("remove".equals(which)) {
@@ -232,10 +243,8 @@ public final class StatChannels {
         return true;
     }
 
+    /** Already acknowledged by {@link #handle}. */
     void setup(JsonObject interaction, JsonObject sub) throws InterruptedException {
-        if (!defer(interaction)) {
-            return;
-        }
         String guild = string(interaction, "guild_id");
         if (guild == null) {
             reply(interaction, "❌ This only works in a server.");
@@ -305,10 +314,8 @@ public final class StatChannels {
         return set.category.isEmpty() ? "" : "\nWhat was made so far can be deleted with `/stats remove`.";
     }
 
+    /** Already acknowledged by {@link #handle}. */
     void remove(JsonObject interaction) throws InterruptedException {
-        if (!defer(interaction)) {
-            return;
-        }
         String guild = string(interaction, "guild_id");
         CommunityStore.StatChannelSet set = guild == null ? null : store.statChannels().get(guild);
         if (set == null) {

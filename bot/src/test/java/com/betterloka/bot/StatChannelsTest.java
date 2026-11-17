@@ -133,6 +133,29 @@ class StatChannelsTest {
     }
 
     @Test
+    void theAnswerGoesOutBeforeAnyQueuedWorkRuns(@TempDir Path dir) {
+        ServerCommandsTest.FakeDiscord discord = new ServerCommandsTest.FakeDiscord();
+        java.util.List<Runnable> queued = new java.util.ArrayList<>();
+        StatChannels channels = new StatChannels(discord, new CommunityStore(dir.resolve("c.json")), () -> null, 10,
+                queued::add);
+        assertTrue(channels.handle(statsCommand("setup", null)));
+        assertEquals(1, discord.responses.size(), "\"thinking…\" at once, inside Discord's three seconds");
+        assertEquals(5, discord.responses.get(0).get("type").getAsInt());
+        assertEquals(0, discord.createdChannels.size(), "the work itself waits its turn");
+        queued.forEach(Runnable::run);
+        assertEquals(6, discord.createdChannels.size());
+        assertEquals(1, discord.responses.size(), "answered once");
+    }
+
+    @Test
+    void registrationWaitsAsLongAsDiscordSays() {
+        assertEquals(3000, SlashCommands.retryAfterMillis(
+                "{\"message\": \"Service resource is being rate limited.\", \"retry_after\": 3, \"global\": false, \"code\": 40062}"));
+        assertEquals(500, SlashCommands.retryAfterMillis("{\"retry_after\": 0.01}"));
+        assertEquals(5000, SlashCommands.retryAfterMillis("not json"));
+    }
+
+    @Test
     void aNamedCategory(@TempDir Path dir) {
         ServerCommandsTest.FakeDiscord discord = new ServerCommandsTest.FakeDiscord();
         StatChannels channels = new StatChannels(discord, new CommunityStore(dir.resolve("c.json")), () -> null, 10, Runnable::run);

@@ -95,14 +95,41 @@ public final class SlashCommands {
         }
     }
 
+    /**
+     * Replaces a set of commands. Discord limits how often that may be done ("Service resource is
+     * being rate limited", 429) — several restarts in a row hit it — so its wait is waited out and
+     * the request sent again, a few times, rather than given up on.
+     */
     private void put(String url, String body) throws IOException, InterruptedException {
-        HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)));
+        HttpResponse<String> response = null;
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            response = send(HttpRequest.newBuilder(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)));
+            if (response.statusCode() != 429 || attempt == 4) {
+                break;
+            }
+            long wait = retryAfterMillis(response.body());
+            LOG.info("Discord asks to wait {} s before registering the commands again", (wait + 999) / 1000);
+            Thread.sleep(wait);
+        }
         if (response.statusCode() >= 300) {
             throw new IOException("Discord refused the command registration: "
                     + response.statusCode() + " " + trimmed(response.body()));
         }
+    }
+
+    /** Discord's {@code retry_after}, in milliseconds, kept between half a second and a minute. */
+    static long retryAfterMillis(String body) {
+        try {
+            JsonObject json = com.google.gson.JsonParser.parseString(body).getAsJsonObject();
+            if (json.has("retry_after")) {
+                return Math.min(60_000L, Math.max(500L, (long) Math.ceil(json.get("retry_after").getAsDouble() * 1000)));
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to a safe default.
+        }
+        return 5000L;
     }
 
     /** Tells Discord the bot is working on it, so the three second deadline stops running. */

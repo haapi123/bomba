@@ -357,12 +357,14 @@ public final class BetterLokaBot {
             thread.setDaemon(true);
             return thread;
         });
-        ServerCommands server = new ServerCommands(new DiscordRest(config.botToken), status, community,
+        // One client for both, so the connection to Discord is already open when an answer is due.
+        DiscordRest rest = new DiscordRest(config.botToken);
+        ServerCommands server = new ServerCommands(rest, status, community,
                 alerts(config, api, poster),
                 () -> connection.get() == null ? null : connection.get().userId(),
                 work,
                 System::currentTimeMillis);
-        StatChannels stats = startStats(config, api, transport, community, work);
+        StatChannels stats = startStats(config, api, transport, community, work, rest);
 
         // The application ID arrives with READY, so registration waits for the connection rather
         // than guessing it: it is not the same number as the bot token's prefix on every account.
@@ -396,12 +398,13 @@ public final class BetterLokaBot {
      * them, and at once after one sets them up.
      */
     private static StatChannels startStats(BotConfig config, LokaApi api, HttpTransport transport,
-                                           CommunityStore community, java.util.concurrent.Executor work) {
+                                           CommunityStore community, java.util.concurrent.Executor work,
+                                           DiscordActions discord) {
         LiveStats live = new LiveStats(config.statsServerAddress, config.statsStatusFallback, config.statsZone(),
                 config.statsCountRivina, api, new com.betterloka.api.ArenaApi(transport));
         java.util.concurrent.atomic.AtomicReference<LiveStats.Snapshot> latest = new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.BlockingQueue<Boolean> wake = new java.util.concurrent.LinkedBlockingQueue<>();
-        StatChannels stats = new StatChannels(new DiscordRest(config.botToken), community, () -> {
+        StatChannels stats = new StatChannels(discord, community, () -> {
             // A server setting them up gets real numbers in the new channels straight away.
             LiveStats.Snapshot known = latest.get();
             if (known == null) {
