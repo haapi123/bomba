@@ -216,7 +216,7 @@ expected: fill the config in and start it again.
 
 ## The server's own commands
 
-With a bot token the bot also runs three commands for the Discord server itself. They are registered
+With a bot token the bot also runs four commands for the Discord server itself. They are registered
 together with `/check` and, until an admin changes it under **Server Settings → Integrations**,
 only people with **Manage Server** (`/test`, `/suggestions`) or **Manage Roles** (`/verification`) see
 them. Every reply to whoever typed a command is visible to them alone.
@@ -268,11 +268,48 @@ One suggestion a minute per person.
 For a tidy suggestions channel, take **Send Messages** away from everyone there and leave **Send
 Messages in Threads**: the channel holds only suggestions, and the talking happens in their threads.
 
+### `/stats setup [category]` and `/stats remove`
+
+Live stat tiles at the top of the server: a category (**📊 Loka Live** unless named) of five voice
+channels nobody can join, whose names are Loka's numbers —
+
+```
+🟢 Online: 49
+⚔️ Fights now: 2 · 3 declared
+🗡️ Most kills (Nov): ccarb · 163
+💥 Most damage (Nov): Quinten7 · 41.4k
+🏆 #1 Potion: drakelover6000 · Diamond III
+```
+
+- **Online** — the Minecraft server list ping to `statsServerAddress` (`play.lokamc.com`), the same
+  question the game's server list asks; nothing logs in. If the server cannot be reached from the
+  bot's host, the public status service `api.mcsrvstat.us` is asked instead (`statsStatusFallback`).
+- **Fights now** — Loka's declared battles: those under way, and those still to come.
+- **Most kills / most damage** this month — added up from every conquest battle that ended this
+  month in Loka's battle archive: each record has every player's kills and `damageToPlayers`.
+  Rivina's battles are left out, as in the mod (`statsCountRivina` to count them). The first read
+  of a month goes back to its first day (about ten seconds); after that only new battles are read.
+  The month is counted in `statsTimeZone` (`Europe/Warsaw`). Battle records name nobody, so the
+  leader's name is one more request, made once.
+- **#1 Potion** — the top of Loka's current ranked potion ladder, with their rank.
+
+They are updated every **10 minutes** (`statsIntervalMinutes`, never less): Discord lets a channel be
+renamed only **twice in ten minutes**, so a faster loop would just be refused. A channel is renamed
+only when its text has changed, and one Discord holds back is tried again at the next update. A
+number that cannot be read keeps the last one shown. Loka is asked only while some server has the
+tiles. They are made with the numbers of the moment, so they are right from the start; drag the
+category wherever you like. A tile deleted by hand is forgotten; `/stats remove` deletes the rest
+and the category. Which channels are tiles is kept in `betterloka-community.json`.
+
+Only people with **Manage Channels** see `/stats`.
+
 ### Permissions
 
 The bot's role needs, besides what the alerts need: **Manage Roles** (verification), **Create Public
 Threads**, **Send Messages in Threads**, **Add Reactions** and **Read Message History** (in the
-suggestions channel). Re-opening the bot's invite link with these ticked updates an existing bot.
+suggestions channel), and **Manage Channels** (the stat tiles). Re-opening the bot's invite link with
+these ticked updates an existing bot — or tick the permission on the bot's role under **Server
+Settings → Roles**.
 
 ## What it does on the first run
 

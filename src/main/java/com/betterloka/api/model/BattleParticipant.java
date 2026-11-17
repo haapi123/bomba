@@ -21,14 +21,21 @@ public final class BattleParticipant {
     private final boolean attacker;
     private final boolean participated;
     private final String townId;
+    private final double damageDealt;
 
     public BattleParticipant(UUID uuid, int kills, int deaths, boolean attacker, boolean participated, String townId) {
+        this(uuid, kills, deaths, attacker, participated, townId, 0);
+    }
+
+    public BattleParticipant(UUID uuid, int kills, int deaths, boolean attacker, boolean participated, String townId,
+                             double damageDealt) {
         this.uuid = uuid;
         this.kills = kills;
         this.deaths = deaths;
         this.attacker = attacker;
         this.participated = participated;
         this.townId = townId;
+        this.damageDealt = damageDealt;
     }
 
     public static BattleParticipant fromJson(String uuidKey, JsonObject json, boolean attacker) {
@@ -46,7 +53,8 @@ public final class BattleParticipant {
                 Json.integer(json, "deaths", 0),
                 attacker,
                 STATE_PARTICIPATED.equals(Json.string(json, "participationState")),
-                townId == null ? null : townId.intern());
+                townId == null ? null : townId.intern(),
+                Json.doubleValue(json, "damageToPlayers", 0));
     }
 
     public UUID uuid() {
@@ -79,5 +87,10 @@ public final class BattleParticipant {
      */
     public String townId() {
         return townId;
+    }
+
+    /** Damage this player did to other players in the battle ({@code damageToPlayers}); 0 on old records. */
+    public double damageDealt() {
+        return damageDealt;
     }
 }

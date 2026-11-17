@@ -38,6 +38,17 @@ public interface DiscordActions {
 
     JsonObject member(String guildId, String userId) throws IOException, InterruptedException;
 
+    /** Creates a channel in a server and returns its id. */
+    String createChannel(String guildId, JsonObject channel, String reason) throws IOException, InterruptedException;
+
+    /**
+     * Renames a channel. Discord allows a channel two renames in ten minutes; when it says to wait,
+     * this does not: it throws {@link Refused} with status 429, and the caller tries again later.
+     */
+    void renameChannel(String channelId, String name) throws IOException, InterruptedException;
+
+    void deleteChannel(String channelId, String reason) throws IOException, InterruptedException;
+
     /** What Discord answered when it refused, so a reply can say which setting is wrong. */
     final class Refused extends IOException {
         private final int status;

@@ -349,16 +349,20 @@ public final class BetterLokaBot {
 
         java.util.concurrent.atomic.AtomicReference<DiscordGateway> connection =
                 new java.util.concurrent.atomic.AtomicReference<>();
-        ServerCommands server = new ServerCommands(new DiscordRest(config.botToken), status,
-                new CommunityStore(Path.of(config.stateFile).toAbsolutePath().resolveSibling(COMMUNITY_FILE)),
+        // One store for both: the suggestion count and the stat channels share its file.
+        CommunityStore community = new CommunityStore(
+                Path.of(config.stateFile).toAbsolutePath().resolveSibling(COMMUNITY_FILE));
+        java.util.concurrent.ExecutorService work = java.util.concurrent.Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "betterloka-server");
+            thread.setDaemon(true);
+            return thread;
+        });
+        ServerCommands server = new ServerCommands(new DiscordRest(config.botToken), status, community,
                 alerts(config, api, poster),
                 () -> connection.get() == null ? null : connection.get().userId(),
-                java.util.concurrent.Executors.newFixedThreadPool(2, runnable -> {
-                    Thread thread = new Thread(runnable, "betterloka-server");
-                    thread.setDaemon(true);
-                    return thread;
-                }),
+                work,
                 System::currentTimeMillis);
+        StatChannels stats = startStats(config, api, transport, community, work);
 
         // The application ID arrives with READY, so registration waits for the connection rather
         // than guessing it: it is not the same number as the bot token's prefix on every account.
@@ -366,7 +370,7 @@ public final class BetterLokaBot {
             if (extra != null && extra.test(interaction)) {
                 return;
             }
-            if (server.handle(interaction)) {
+            if (server.handle(interaction) || stats.handle(interaction)) {
                 return;
             }
             String applicationId = interactionApplicationId(interaction);
@@ -384,6 +388,51 @@ public final class BetterLokaBot {
             registrar.start();
         }
         return gateway;
+    }
+
+    /**
+     * The stat channels: their {@code /stats} command, and a thread that refreshes Loka's numbers and
+     * renames the channels every {@link BotConfig#statsIntervalMinutes()} — only while some server has
+     * them, and at once after one sets them up.
+     */
+    private static StatChannels startStats(BotConfig config, LokaApi api, HttpTransport transport,
+                                           CommunityStore community, java.util.concurrent.Executor work) {
+        LiveStats live = new LiveStats(config.statsServerAddress, config.statsStatusFallback, config.statsZone(),
+                config.statsCountRivina, api, new com.betterloka.api.ArenaApi(transport));
+        java.util.concurrent.atomic.AtomicReference<LiveStats.Snapshot> latest = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.BlockingQueue<Boolean> wake = new java.util.concurrent.LinkedBlockingQueue<>();
+        StatChannels stats = new StatChannels(new DiscordRest(config.botToken), community, () -> {
+            // A server setting them up gets real numbers in the new channels straight away.
+            LiveStats.Snapshot known = latest.get();
+            if (known == null) {
+                known = live.refresh(System.currentTimeMillis());
+                latest.set(known);
+            }
+            wake.offer(Boolean.TRUE);
+            return known;
+        }, config.statsIntervalMinutes(), work);
+        Thread loop = new Thread(() -> {
+            try {
+                while (true) {
+                    if (stats.anySetUp()) {
+                        try {
+                            LiveStats.Snapshot now = live.refresh(System.currentTimeMillis());
+                            latest.set(now);
+                            stats.update(now);
+                        } catch (RuntimeException e) {
+                            LOG.warn("Stat channels update failed", e);
+                        }
+                    }
+                    wake.poll(config.statsIntervalMinutes(), TimeUnit.MINUTES);
+                    wake.clear();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "betterloka-stats");
+        loop.setDaemon(true);
+        loop.start();
+        return stats;
     }
 
     /** Every interaction carries the application it was sent to, which is who has to answer it. */

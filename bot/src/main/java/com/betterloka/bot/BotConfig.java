@@ -133,6 +133,30 @@ public final class BotConfig {
      */
     public List<AlertTarget> alsoPostTo = new ArrayList<>();
 
+    /**
+     * The Minecraft server the stat channels' player count comes from, as {@code host} or
+     * {@code host:port}. Asked the way the game's server list asks; nothing logs in.
+     */
+    public String statsServerAddress = "play.lokamc.com";
+
+    /**
+     * How often the stat channels ({@code /stats setup}) are updated, in minutes. Discord lets a
+     * channel be renamed only twice in ten minutes, so anything under ten is taken as ten.
+     */
+    public int statsIntervalMinutes = 10;
+
+    /** The time zone "this month" is counted in, for the month's most kills and damage. */
+    public String statsTimeZone = "Europe/Warsaw";
+
+    /** Count Rivina's battles in the month's kills and damage too. Off: conquest only, as the mod. */
+    public boolean statsCountRivina = false;
+
+    /**
+     * When the server does not answer the bot directly (a firewall in front of the bot's host),
+     * ask the public status service {@code api.mcsrvstat.us} for the player count instead.
+     */
+    public boolean statsStatusFallback = true;
+
     /** One more place for the alerts. */
     public static final class AlertTarget {
         public String webhookUrl = "";
@@ -357,5 +381,21 @@ public final class BotConfig {
 
     public long fullSweepIntervalMillis() {
         return Math.max(1, fullSweepIntervalMinutes) * 60_000L;
+    }
+
+    /** Discord's limit is two renames per channel per ten minutes. */
+    static final int MINIMUM_STATS_MINUTES = 10;
+
+    public int statsIntervalMinutes() {
+        return Math.max(MINIMUM_STATS_MINUTES, statsIntervalMinutes);
+    }
+
+    /** {@link #statsTimeZone}, or the machine's own if it is not one Java knows. */
+    public java.time.ZoneId statsZone() {
+        try {
+            return java.time.ZoneId.of(statsTimeZone == null ? "" : statsTimeZone.trim());
+        } catch (RuntimeException e) {
+            return java.time.ZoneId.systemDefault();
+        }
     }
 }

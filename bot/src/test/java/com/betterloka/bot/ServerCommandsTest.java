@@ -102,6 +102,35 @@ class ServerCommandsTest {
         public JsonObject member(String guildId, String userId) {
             return botMember;
         }
+
+        /** Channels made, by id: what was asked for. */
+        final java.util.Map<String, JsonObject> createdChannels = new java.util.LinkedHashMap<>();
+        /** Renames, as {@code [channel, name]}, in order. */
+        final List<String[]> renamed = new ArrayList<>();
+        final List<String> deletedChannels = new ArrayList<>();
+        /** Channels whose rename Discord refuses, and with what status. */
+        final java.util.Map<String, Integer> refuseRename = new java.util.HashMap<>();
+
+        @Override
+        public String createChannel(String guildId, JsonObject channel, String reason) {
+            String id = "c" + (createdChannels.size() + 1);
+            createdChannels.put(id, channel);
+            return id;
+        }
+
+        @Override
+        public void renameChannel(String channelId, String name) throws Refused {
+            Integer status = refuseRename.get(channelId);
+            if (status != null) {
+                throw new Refused(status, "refused");
+            }
+            renamed.add(new String[]{channelId, name});
+        }
+
+        @Override
+        public void deleteChannel(String channelId, String reason) {
+            deletedChannels.add(channelId);
+        }
     }
 
     static final class FakeAlerts implements ServerCommands.Alerts {
@@ -254,7 +283,7 @@ class ServerCommandsTest {
         for (JsonElement element : SlashCommands.allCommands()) {
             names.add(element.getAsJsonObject().get("name").getAsString());
         }
-        assertEquals(List.of("check", "test", "verification", "suggestions"), names);
+        assertEquals(List.of("check", "test", "verification", "suggestions", "stats"), names);
     }
 
     @Test

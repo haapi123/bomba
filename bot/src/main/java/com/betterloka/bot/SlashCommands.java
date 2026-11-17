@@ -53,6 +53,7 @@ public final class SlashCommands {
         JsonArray commands = new JsonArray();
         commands.add(command);
         commands.addAll(ServerCommands.definitions());
+        commands.add(StatChannels.definition());
         return commands;
     }
 
@@ -67,7 +68,7 @@ public final class SlashCommands {
         String commands = allCommands().toString();
         if (guildIds == null || guildIds.isEmpty()) {
             put(API + "/applications/" + applicationId + "/commands", commands);
-            LOG.info("Registered /check, /test, /verification and /suggestions globally "
+            LOG.info("Registered /check, /test, /verification, /suggestions and /stats globally "
                     + "(it can take up to an hour to appear)");
             return;
         }
@@ -76,7 +77,7 @@ public final class SlashCommands {
             try {
                 put(API + "/applications/" + applicationId + "/guilds/" + guildId + "/commands", commands);
                 registered++;
-                LOG.info("Registered /check, /test, /verification and /suggestions in server {}", guildId);
+                LOG.info("Registered /check, /test, /verification, /suggestions and /stats in server {}", guildId);
             } catch (IOException e) {
                 // Usually a server the bot has not been invited to yet; the others still get theirs.
                 LOG.error("Could not register the commands in server {} (is the bot in it, invited with "

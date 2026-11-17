@@ -514,7 +514,9 @@ With a bot token the bot also serves the Discord server itself: **`/test`** (is 
 reach Loka, is the watch running — and a sample alert everywhere the real ones go),
 **`/verification`** (a message with a green button that gives a role) and **`/suggestions`** (a panel
 whose green button opens a form; a suggestion is posted by the bot in the suggestions channel, with a
-discussion thread). Alerts can go to several channels and servers (`alsoPostTo`), and the commands can
+discussion thread) and **`/stats`** (live stat tiles: locked voice channels named after Loka's numbers
+— players on, fights on, this month's most conquest kills and damage, #1 ranked potion — renamed
+every ten minutes). Alerts can go to several channels and servers (`alsoPostTo`), and the commands can
 be registered in several servers (`guildId: "id1, id2"`). See
 [the bot's README](bot/README.md#the-servers-own-commands).
 

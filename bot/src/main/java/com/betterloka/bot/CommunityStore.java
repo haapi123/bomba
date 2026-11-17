@@ -10,10 +10,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * The one number the server's own features have to remember across a restart: how many suggestions
- * there have been, so each gets a number of its own ("Suggestion #12") that is never handed out twice.
+ * What the server's own features have to remember across a restart: how many suggestions there have
+ * been, so each gets a number of its own ("Suggestion #12") that is never handed out twice; and, per
+ * Discord server, the stat channels {@code /stats setup} made, so they keep being updated.
  *
  * <p>Everything else they need — which role a verification button gives, which panel a form came
  * from — travels in the button itself, so a restart loses nothing.
@@ -23,6 +26,13 @@ public final class CommunityStore {
 
     private static final class Saved {
         int suggestions;
+        Map<String, StatChannelSet> stats = new LinkedHashMap<>();
+    }
+
+    /** One Discord server's stat channels: their category, and each tile's channel by tile name. */
+    public static final class StatChannelSet {
+        public String category = "";
+        public Map<String, String> channels = new LinkedHashMap<>();
     }
 
     private final Path file;
@@ -54,6 +64,32 @@ public final class CommunityStore {
         saved.suggestions++;
         save();
         return saved.suggestions;
+    }
+
+    /** Every server's stat channels, by server id; a copy. */
+    public synchronized Map<String, StatChannelSet> statChannels() {
+        Map<String, StatChannelSet> copy = new LinkedHashMap<>();
+        if (saved.stats != null) {
+            for (Map.Entry<String, StatChannelSet> entry : saved.stats.entrySet()) {
+                StatChannelSet set = new StatChannelSet();
+                set.category = entry.getValue().category;
+                set.channels = new LinkedHashMap<>(entry.getValue().channels);
+                copy.put(entry.getKey(), set);
+            }
+        }
+        return copy;
+    }
+
+    public synchronized void setStatChannels(String guildId, StatChannelSet set) {
+        if (saved.stats == null) {
+            saved.stats = new LinkedHashMap<>();
+        }
+        if (set == null || set.channels.isEmpty() && (set.category == null || set.category.isEmpty())) {
+            saved.stats.remove(guildId);
+        } else {
+            saved.stats.put(guildId, set);
+        }
+        save();
     }
 
     private void save() {

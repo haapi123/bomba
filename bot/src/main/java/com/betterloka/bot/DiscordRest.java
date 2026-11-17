@@ -107,8 +107,35 @@ public final class DiscordRest implements DiscordActions {
         return object(send("GET", "/guilds/" + guildId + "/members/" + userId, null, true, null));
     }
 
+    @Override
+    public String createChannel(String guildId, JsonObject channel, String reason) throws IOException, InterruptedException {
+        JsonObject created = object(send("POST", "/guilds/" + guildId + "/channels", channel, true, reason));
+        if (!created.has("id")) {
+            throw new IOException("Discord created no channel");
+        }
+        return created.get("id").getAsString();
+    }
+
+    @Override
+    public void renameChannel(String channelId, String name) throws IOException, InterruptedException {
+        JsonObject body = new JsonObject();
+        body.addProperty("name", name);
+        send("PATCH", "/channels/" + channelId, body, true, null, false);
+    }
+
+    @Override
+    public void deleteChannel(String channelId, String reason) throws IOException, InterruptedException {
+        send("DELETE", "/channels/" + channelId, null, true, reason);
+    }
+
     private JsonElement send(String method, String path, JsonObject body, boolean authorized, String reason)
             throws IOException, InterruptedException {
+        return send(method, path, body, authorized, reason, true);
+    }
+
+    /** @param waitOnLimit whether to wait out a 429 and try again, or give up on it at once */
+    private JsonElement send(String method, String path, JsonObject body, boolean authorized, String reason,
+                             boolean waitOnLimit) throws IOException, InterruptedException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + path))
                 .timeout(Duration.ofSeconds(20))
                 .header("User-Agent", "DiscordBot (https://github.com/haapi123/bomba, 1.0)");
@@ -132,7 +159,7 @@ public final class DiscordRest implements DiscordActions {
             if (status >= 200 && status < 300) {
                 return parse(response.body());
             }
-            if (status == 429 && attempt < ATTEMPTS) {
+            if (status == 429 && waitOnLimit && attempt < ATTEMPTS) {
                 Thread.sleep(retryAfterMillis(response.body()));
                 continue;
             }
