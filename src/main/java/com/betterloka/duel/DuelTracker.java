@@ -111,6 +111,8 @@ public final class DuelTracker {
     private final Map<UUID, PingTrace> pings = new HashMap<>();
     /** Whose record was last asked for ahead of the duel's screen. */
     private UUID prefetched;
+    /** Splash potions just thrown, waiting for their data: entity id → {thrower, when}. */
+    private final Map<Integer, long[]> thrown = new HashMap<>();
     /** Waiting at the arena for the fight, or {@code null}. */
     private Arena arena;
     /** The opponent, if Loka's "Match Ready!" line named them. */
@@ -319,6 +321,46 @@ public final class DuelTracker {
         }
     }
 
+    /**
+     * A thrown splash potion has appeared: the server names its thrower in the spawn itself. What it
+     * is arrives with its data a moment later ({@link #onEntityData}); it is held until then.
+     */
+    public static void onSplashPotion(int entityId, int throwerId) {
+        DuelTracker tracker = instance;
+        if (tracker == null || tracker.session.duel() == null || throwerId <= 0) {
+            return;
+        }
+        tracker.thrown.put(entityId, new long[]{throwerId, System.currentTimeMillis()});
+        onEntityData(entityId);
+    }
+
+    /** Something's data has arrived; for a potion just thrown, that says whether it is a heal. */
+    public static void onEntityData(int entityId) {
+        DuelTracker tracker = instance;
+        if (tracker == null || tracker.thrown.isEmpty()) {
+            return;
+        }
+        long[] held = tracker.thrown.get(entityId);
+        Minecraft client = Minecraft.getInstance();
+        if (held == null || client.level == null) {
+            return;
+        }
+        Entity entity = client.level.getEntity(entityId);
+        if (!(entity instanceof net.minecraft.world.entity.projectile.throwableitemprojectile.ThrownSplashPotion potion)) {
+            return;
+        }
+        ItemStack item = potion.getItem();
+        net.minecraft.world.item.alchemy.PotionContents contents = item.get(DataComponents.POTION_CONTENTS);
+        if (contents == null || (contents.potion().isEmpty() && contents.customEffects().isEmpty())) {
+            // Still the blank potion every thrown one starts as: what it is has not come yet.
+            return;
+        }
+        tracker.thrown.remove(entityId);
+        if (com.betterloka.helper.ShulkerScanner.isHealPot(item) && tracker.session.duel() != null) {
+            tracker.session.duel().pot((int) held[0]);
+        }
+    }
+
     public static void onEntityEvent(ClientboundEntityEventPacket packet, byte event) {
         DuelTracker tracker = instance;
         if (tracker == null || tracker.session.duel() == null || event != EntityEvent.DEATH) {
@@ -391,6 +433,11 @@ public final class DuelTracker {
     // ---- the clock ----
 
     private void tick(Minecraft client) {
+        if (!thrown.isEmpty()) {
+            // Whatever never said what it was in two seconds is let go.
+            long now = System.currentTimeMillis();
+            thrown.values().removeIf(held -> now - held[1] > 2000);
+        }
         if (joinIn >= 0 && joinIn-- == 0) {
             sendJoin(client);
         }
@@ -732,6 +779,7 @@ public final class DuelTracker {
         DuelStats.Summary summary = duel.summary();
         return "you " + summary.you().hits() + "/" + summary.you().swings() + " crits " + summary.you().crits()
                 + " sweeps " + summary.you().sweeps() + " | them " + summary.them().hits() + "/" + summary.them().swings()
+                + " pots " + summary.you().pots() + " | them pots " + summary.them().pots()
                 + " | opponent " + summary.opponentId() + " fought " + duel.fought();
     }
 

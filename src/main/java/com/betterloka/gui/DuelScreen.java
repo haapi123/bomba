@@ -13,8 +13,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.EntityModelSet;
 import net.minecraft.client.model.geom.ModelLayers;
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
@@ -33,9 +31,9 @@ import java.util.function.Supplier;
  * stand with their skin turning, and their numbers under them; the middle is the screen's own.
  *
  * <p>Everything is laid out on a fixed {@value #W}×{@value #H} canvas, shrunk to fit when the window
- * is smaller — at the usual GUI scales a 1080p window is only about 480×270 — so nothing has to be
- * left out or scrolled to. The skins are drawn by the game outside that transform, so their boxes are
- * worked out in screen coordinates by hand.
+ * is smaller — at the usual GUI scales a 1080p window is only about 480×270. Each panel's numbers
+ * scroll under its header with the mouse wheel or the bar beside them. The skins are drawn by the
+ * game outside the canvas transform, so their boxes are worked out in screen coordinates by hand.
  */
 public abstract class DuelScreen extends Screen {
     protected static final int W = 600;
@@ -51,6 +49,11 @@ public abstract class DuelScreen extends Screen {
     private static final int SKIN_W = 66;
     private static final int SKIN_H = 86;
     private static final float SPIN_DEGREES_PER_SECOND = 40f;
+    /** How far one notch of the mouse wheel scrolls a panel. */
+    private static final float WHEEL_STEP = 26f;
+    private static final int BAR_W = 3;
+    /** The kit's heal pots, drawn one pip each. */
+    private static final int POT_RED = 0xFFF8423F;
 
     /** One side of the screen. */
     protected static final class Corner {
@@ -58,14 +61,27 @@ public abstract class DuelScreen extends Screen {
         String name;
         UUID uuid;
         int color;
+        /** Above the name: "you" and "opponent", or who won and who lost. */
+        Component role;
         CompletableFuture<Duelists.Duelist> record;
         Supplier<PlayerSkin> skin;
+        /** The body's scroll: where it is, where the wheel sent it, and how much there is to see. */
+        float scroll;
+        float target;
+        int content;
+        int view;
+        int viewTop;
 
         Corner(boolean you, String name, UUID uuid, int color) {
             this.you = you;
             this.name = name;
             this.uuid = uuid;
             this.color = color;
+            this.role = Component.translatable(you ? "betterloka.duelscreen.you" : "betterloka.duelscreen.opponent");
+        }
+
+        int maxScroll() {
+            return Math.max(0, content - view);
         }
 
         boolean known() {
@@ -94,6 +110,12 @@ public abstract class DuelScreen extends Screen {
     protected int mouseX;
     protected int mouseY;
     private List<Component> tooltip;
+    /** While a panel's body is drawn: the part of it on screen, and how far it is scrolled. */
+    private int clipTop = Integer.MIN_VALUE;
+    private int clipBottom = Integer.MAX_VALUE;
+    private int shiftY;
+    /** The panel whose scroll bar is being dragged. */
+    private Corner dragging;
 
     protected DuelScreen(Component title, Corner you, Corner them) {
         super(title);
@@ -125,6 +147,13 @@ public abstract class DuelScreen extends Screen {
         float seconds = lastFrame == 0 ? 0 : Math.min(0.25f, (now - lastFrame) / 1000f);
         lastFrame = now;
         spin = (spin + seconds * SPIN_DEGREES_PER_SECOND) % 360f;
+        for (Corner corner : List.of(you, them)) {
+            corner.target = Math.max(0, Math.min(corner.maxScroll(), corner.target));
+            corner.scroll += (corner.target - corner.scroll) * Math.min(1f, seconds * 16f);
+            if (Math.abs(corner.target - corner.scroll) < 0.5f) {
+                corner.scroll = corner.target;
+            }
+        }
         mouseX = (int) Math.floor((realMouseX - originX) / scale);
         mouseY = (int) Math.floor((realMouseY - originY) / scale);
         tooltip = null;
@@ -154,8 +183,8 @@ public abstract class DuelScreen extends Screen {
     /** What sits between the two panels. */
     protected abstract void drawCenter(GuiGraphicsExtractor context, int width, int left);
 
-    /** The panel's numbers below its header. */
-    protected abstract void drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width);
+    /** The panel's numbers below its header. @return where they end */
+    protected abstract int drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width);
 
     // ---- a panel ----
 
@@ -163,7 +192,119 @@ public abstract class DuelScreen extends Screen {
         MapStyle.card(context, x, PANEL_TOP, PANEL_W, PANEL_H, 0xFF2C2C38);
         context.fill(x + 2, PANEL_TOP, x + PANEL_W - 2, PANEL_TOP + 2, corner.color);
         int bodyY = drawHeader(context, corner, x);
-        drawBody(context, corner, x + PAD, bodyY, PANEL_W - PAD * 2);
+
+        // The body scrolls under the header, inside the card.
+        int top = bodyY - 4;
+        int bottom = PANEL_TOP + PANEL_H - 3;
+        corner.viewTop = top;
+        corner.view = bottom - top;
+        int shift = Math.round(corner.scroll);
+        context.fill(x + 4, top, x + PANEL_W - 4, top + 1, 0x30FFFFFF);
+        context.enableScissor(x + 1, top + 1, x + PANEL_W - 1, bottom);
+        context.pose().pushMatrix();
+        context.pose().translate(0, -shift);
+        clipTop = top + 1;
+        clipBottom = bottom;
+        shiftY = shift;
+        int end = drawBody(context, corner, x + PAD, bodyY, PANEL_W - PAD * 2 - BAR_W - 2);
+        clipTop = Integer.MIN_VALUE;
+        clipBottom = Integer.MAX_VALUE;
+        shiftY = 0;
+        context.pose().popMatrix();
+        context.disableScissor();
+        corner.content = end + 4 - top;
+
+        if (corner.maxScroll() > 0) {
+            // Fades where there is more, and the bar.
+            if (shift > 0) {
+                context.fillGradient(x + 2, top + 1, x + PANEL_W - 2, top + 11, 0xE60D0D12, 0x000D0D12);
+            }
+            if (shift < corner.maxScroll()) {
+                context.fillGradient(x + 2, bottom - 14, x + PANEL_W - 2, bottom, 0x000D0D12, 0xF00D0D12);
+            }
+            int barX = x + PANEL_W - PAD - BAR_W + 3;
+            context.fill(barX, top + 3, barX + BAR_W, bottom - 3, 0x30FFFFFF);
+            int[] thumb = thumb(corner);
+            boolean hot = dragging == corner || over(barX - 3, top, BAR_W + 6, corner.view);
+            context.fill(barX, thumb[0], barX + BAR_W, thumb[1], hot ? 0xFFE8E8EC : (corner.color & 0xFFFFFF) | 0xC0000000);
+        }
+    }
+
+    /** The scroll bar's thumb: its top and bottom on the canvas. */
+    private static int[] thumb(Corner corner) {
+        int track = corner.view - 6;
+        int length = Math.max(14, Math.round(track * corner.view / (float) Math.max(corner.content, 1)));
+        int travel = track - length;
+        int at = corner.viewTop + 3 + (corner.maxScroll() == 0 ? 0 : Math.round(travel * corner.scroll / corner.maxScroll()));
+        return new int[]{at, at + length};
+    }
+
+    /** The panel under a point on the canvas, or {@code null}. */
+    private Corner panelAt(double x, double y) {
+        if (y < PANEL_TOP || y >= PANEL_TOP + PANEL_H) {
+            return null;
+        }
+        if (x >= LEFT_X && x < LEFT_X + PANEL_W) {
+            return you;
+        }
+        return x >= RIGHT_X && x < RIGHT_X + PANEL_W ? them : null;
+    }
+
+    private static int panelX(Corner corner) {
+        return corner.you ? LEFT_X : RIGHT_X;
+    }
+
+    @Override
+    public boolean mouseScrolled(double realX, double realY, double scrollX, double scrollY) {
+        Corner corner = panelAt((realX - originX) / scale, (realY - originY) / scale);
+        if (corner != null && corner.maxScroll() > 0 && scrollY != 0) {
+            corner.target = Math.max(0, Math.min(corner.maxScroll(), corner.target - (float) scrollY * WHEEL_STEP));
+            return true;
+        }
+        return super.mouseScrolled(realX, realY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        int[] at = canvas(click);
+        Corner corner = panelAt(at[0], at[1]);
+        if (click.button() == 0 && corner != null && corner.maxScroll() > 0) {
+            int barX = panelX(corner) + PANEL_W - PAD - BAR_W + 3;
+            if (at[0] >= barX - 3 && at[0] < barX + BAR_W + 3 && at[1] >= corner.viewTop && at[1] < corner.viewTop + corner.view) {
+                dragging = corner;
+                dragTo(corner, at[1]);
+                return true;
+            }
+        }
+        return super.mouseClicked(click, doubled);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent drag, double dx, double dy) {
+        if (dragging != null) {
+            dragTo(dragging, canvas(drag)[1]);
+            return true;
+        }
+        return super.mouseDragged(drag, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent release) {
+        if (dragging != null) {
+            dragging = null;
+            return true;
+        }
+        return super.mouseReleased(release);
+    }
+
+    /** Puts the middle of the bar's thumb where the pointer is. */
+    private static void dragTo(Corner corner, int y) {
+        int[] thumb = thumb(corner);
+        int length = thumb[1] - thumb[0];
+        int travel = corner.view - 6 - length;
+        float share = travel <= 0 ? 0 : (y - corner.viewTop - 3 - length / 2f) / travel;
+        corner.target = Math.max(0, Math.min(1, share)) * corner.maxScroll();
+        corner.scroll = corner.target;
     }
 
     /**
@@ -221,10 +362,12 @@ public abstract class DuelScreen extends Screen {
             context.pose().popMatrix();
         }
 
-        int y = PANEL_TOP + 10;
-        Component role = Component.translatable(corner.you ? "betterloka.duelscreen.you" : "betterloka.duelscreen.opponent");
-        context.text(this.font, role, infoX, y, GuiTheme.MUTED);
-        y += LINE + 1;
+        int y = PANEL_TOP + 9;
+        Component role = corner.role.copy().withStyle(ChatFormatting.BOLD);
+        int roleW = Math.min(infoW, this.font.width(role) + 10);
+        GuiTheme.chip(context, infoX, y, roleW, 13, corner.color);
+        context.text(this.font, role, infoX + 5, y + 3, corner.color);
+        y += 16;
         String name = corner.known() ? (corner.duelist() != null ? corner.duelist().name() : corner.name) : "???";
         context.text(this.font, Component.literal(this.font.plainSubstrByWidth(name, infoW)).withStyle(ChatFormatting.BOLD),
                 infoX, y, corner.color);
@@ -234,24 +377,24 @@ public abstract class DuelScreen extends Screen {
         return Math.max(skinY + SKIN_H + 10, y + 4);
     }
 
-    /** The player's ping: on this server now, and their usual one over the duels this mod has seen. */
+    /**
+     * The player's usual ping over the duels this mod has seen. Not their ping now: the server's
+     * player list only has it while they are on the same server, which before a duel they almost
+     * never are.
+     */
     protected int drawPing(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
         if (!corner.known()) {
             return y;
         }
-        int live = livePing(corner);
         int[] usual = usualPing(corner);
-        Component now = live >= 0
-                ? Component.translatable("betterloka.duelscreen.ping_now", Component.literal(live + " ms").withColor(PingColors.color(live)))
-                : Component.translatable("betterloka.duelscreen.ping_now", Component.literal("—").withStyle(ChatFormatting.DARK_GRAY));
-        context.text(this.font, now, x, y, GuiTheme.MUTED);
-        y += LINE;
         Component average = usual == null
                 ? Component.translatable("betterloka.duelscreen.ping_usual_none")
                 : Component.translatable("betterloka.duelscreen.ping_usual",
                 Component.literal(usual[0] + " ms").withColor(PingColors.color(usual[0])), usual[1]);
-        context.text(this.font, average, x, y, GuiTheme.MUTED);
-        hover(x, y - LINE, width, LINE * 2, Component.translatable("betterloka.duelscreen.ping_tip"));
+        String plain = average.getString();
+        context.text(this.font, this.font.width(plain) <= width ? average
+                : Component.literal(this.font.plainSubstrByWidth(plain, width)), x, y, GuiTheme.MUTED);
+        hover(x, y - 1, width, LINE, Component.translatable("betterloka.duelscreen.ping_tip"));
         return y + LINE;
     }
 
@@ -326,8 +469,19 @@ public abstract class DuelScreen extends Screen {
                 context.text(this.font, value, 0, 0, tile.color());
                 context.pose().popMatrix();
             }
-            context.centeredText(this.font, this.font.plainSubstrByWidth(tile.label().getString(), tileW - 4),
-                    tx + tileW / 2, y + 15, GuiTheme.MUTED);
+            String label = tile.label().getString();
+            int labelW = this.font.width(label);
+            if (labelW <= tileW - 4) {
+                context.centeredText(this.font, label, tx + tileW / 2, y + 15, GuiTheme.MUTED);
+            } else {
+                float shrink = Math.max(0.7f, (tileW - 4) / (float) labelW);
+                String fitted = this.font.plainSubstrByWidth(label, (int) ((tileW - 4) / shrink));
+                context.pose().pushMatrix();
+                context.pose().translate(tx + tileW / 2f - this.font.width(fitted) * shrink / 2f, y + 15 + (1 - shrink) * 4);
+                context.pose().scale(shrink, shrink);
+                context.text(this.font, fitted, 0, 0, GuiTheme.MUTED);
+                context.pose().popMatrix();
+            }
             if (tile.tip() != null) {
                 hover(tx, y, tileW, TILE_H, tile.tip());
             }
@@ -335,52 +489,152 @@ public abstract class DuelScreen extends Screen {
         return y + TILE_H + 4;
     }
 
-    /** The best rank ever and last season's, per ladder, as a small table. @return the next y */
-    protected int rankTable(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
-        Duelists.Duelist record = corner.duelist();
-        int labelW = 64;
-        int colW = (width - labelW) / 2;
-        ArenaApi.Ladder[] ladders = ArenaApi.Ladder.values();
-        for (int i = 0; i < ladders.length; i++) {
-            context.text(this.font, ladders[i].shortName(), x + labelW + i * colW, y, GuiTheme.LIVE);
+    /** A small heading inside a section, e.g. "Season 24" over its tiles. @return the next y */
+    protected int subheading(GuiGraphicsExtractor context, int x, int y, int width, Component text) {
+        String shown = this.font.plainSubstrByWidth(text.getString().toUpperCase(Locale.ROOT), width);
+        context.text(this.font, shown, x, y, 0xFFB4B4C2);
+        int after = x + this.font.width(shown) + 4;
+        if (after < x + width) {
+            context.fill(after, y + 4, x + width, y + 5, 0x24FFFFFF);
         }
-        y += LINE;
+        return y + LINE + 1;
+    }
+
+    /**
+     * Games, wins, losses and the win ratio as four tiles: the wins green, the losses red, so the
+     * record reads at a glance rather than as one run of digits.
+     */
+    protected int recordTiles(GuiGraphicsExtractor context, int x, int y, int width, ArenaService.Totals totals, Component tip) {
+        Component duels = Component.translatable("betterloka.duelscreen.duels");
+        Component wins = Component.translatable("betterloka.duelscreen.wins");
+        Component losses = Component.translatable("betterloka.duelscreen.losses");
+        Component rate = Component.translatable("betterloka.duelscreen.winrate");
+        if (totals == null) {
+            return tiles(context, x, y, width, List.of(new Tile("…", duels, GuiTheme.MUTED), new Tile("…", wins, GuiTheme.MUTED),
+                    new Tile("…", losses, GuiTheme.MUTED), new Tile("…", rate, GuiTheme.MUTED)));
+        }
+        int games = totals.games();
+        return tiles(context, x, y, width, List.of(
+                new Tile(number(games), duels, GuiTheme.TEXT, tip),
+                new Tile(number(totals.wins()), wins, games == 0 ? GuiTheme.MUTED : GuiTheme.GOOD, tip),
+                new Tile(number(totals.losses()), losses, games == 0 ? GuiTheme.MUTED : GuiTheme.BAD, tip),
+                new Tile(percent(totals.wins(), games), rate, rateColor(totals.wins(), games), tip)));
+    }
+
+    /** This season and the career, each as a row of record tiles. @return the next y */
+    protected int ranked(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
+        Duelists.Duelist record = corner.duelist();
+        int seasonNumber = record == null ? -1 : record.seasonNumber();
+        y = subheading(context, x, y, width, seasonNumber > 0
+                ? Component.translatable("betterloka.duelscreen.this_season_n", seasonNumber)
+                : Component.translatable("betterloka.duelscreen.this_season"));
+        y = recordTiles(context, x, y, width, record == null ? null : record.season(),
+                Component.translatable("betterloka.duelscreen.season_tip"));
+        ArenaService.Totals career = record == null ? null : record.career();
+        y = subheading(context, x, y, width, career == null || career.seasons() <= 0
+                ? Component.translatable("betterloka.duelscreen.career")
+                : Component.translatable("betterloka.duelscreen.career_n", career.seasons()));
+        return recordTiles(context, x, y, width, career, career == null ? null
+                : Component.translatable("betterloka.duelscreen.career_tip", career.seasons()));
+    }
+
+    /**
+     * The best rank ever and last season's on each ladder, as tiles in the rank's colour: the rank big,
+     * the ladder and the season under it. @return the next y
+     */
+    protected int rankTiles(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
+        Duelists.Duelist record = corner.duelist();
         int last = record == null ? -1 : record.lastSeasonNumber();
-        Component[] labels = {
-                Component.translatable("betterloka.duelscreen.best_ever"),
-                last > 0 ? Component.translatable("betterloka.duelscreen.season_n", last)
-                        : Component.translatable("betterloka.duelscreen.last_season")
-        };
-        for (int row = 0; row < labels.length; row++) {
-            context.text(this.font, this.font.plainSubstrByWidth(labels[row].getString(), labelW - 4), x, y, GuiTheme.MUTED);
-            for (int i = 0; i < ladders.length; i++) {
-                ArenaService.Career career = record == null ? null : record.career(ladders[i]);
+        for (int row = 0; row < 2; row++) {
+            y = subheading(context, x, y, width, row == 0
+                    ? Component.translatable("betterloka.duelscreen.best_ever")
+                    : last > 0 ? Component.translatable("betterloka.duelscreen.last_season_n", last)
+                    : Component.translatable("betterloka.duelscreen.last_season"));
+            List<Tile> tiles = new ArrayList<>();
+            for (ArenaApi.Ladder ladder : ArenaApi.Ladder.values()) {
+                ArenaService.Career career = record == null ? null : record.career(ladder);
                 ArenaService.Best best = career == null ? null : row == 0 ? career.highest() : career.lastSeason();
-                int cx = x + labelW + i * colW;
                 if (best == null || best.entry().rank() == null) {
-                    context.text(this.font, record == null ? "…" : "—", cx, y, 0xFF55555F);
+                    tiles.add(new Tile(record == null ? "…" : "—", Component.literal(ladder.shortName()), GuiTheme.MUTED,
+                            record == null ? null : Component.translatable("betterloka.duelscreen.rank_none")));
                     continue;
                 }
                 ArenaRank rank = best.entry().rank();
-                String rankText = rank.toString();
-                context.text(this.font, this.font.plainSubstrByWidth(rankText, colW - 4), cx, y, rank.color());
-                if (row == 0) {
-                    String season = best.season() == ArenaService.THIS_SEASON
-                            ? Component.translatable("betterloka.duelscreen.now").getString() : "S" + best.season();
-                    int after = cx + this.font.width(rankText) + 3;
-                    if (after + this.font.width(season) <= cx + colW) {
-                        context.text(this.font, season, after, y, 0xFF6E6E7A);
-                    } else {
-                        hover(cx, y - 1, colW, LINE, Component.literal(rankText + " (" + season + ")"));
-                    }
-                } else {
-                    hover(cx, y - 1, colW, LINE, Component.translatable("betterloka.duelscreen.finished",
-                            best.entry().wins(), best.entry().losses()));
-                }
+                String when = row == 0
+                        ? (best.season() == ArenaService.THIS_SEASON
+                        ? Component.translatable("betterloka.duelscreen.now").getString() : "S" + best.season())
+                        : best.entry().wins() + "–" + best.entry().losses();
+                Component tip = row == 0
+                        ? Component.literal(ladder.shortName() + ": " + rank + " (" + when + ")")
+                        : Component.translatable("betterloka.duelscreen.finished", best.entry().wins(), best.entry().losses());
+                tiles.add(new Tile(rank.toString(), Component.literal(ladder.shortName() + " · " + when), rank.color(), tip));
             }
-            y += LINE;
+            y = tiles(context, x, y, width, tiles);
         }
-        return y + 2;
+        return y;
+    }
+
+    /**
+     * The splash Instant Health II a side has left of the kit's {@value DuelStats#KIT_POTS}: how many
+     * are left and how many were thrown, and a pip for each pot of the kit. @return the next y
+     */
+    protected int pots(GuiGraphicsExtractor context, DuelLog.Side side, int x, int y, int width) {
+        int left = side.potsLeft();
+        Component leftLabel = Component.translatable("betterloka.duelscreen.pots_left");
+        Component thrownLabel = Component.translatable("betterloka.duelscreen.pots_thrown");
+        if (left < 0) {
+            Component tip = Component.translatable("betterloka.duelscreen.pots_unknown");
+            return tiles(context, x, y, width, List.of(new Tile("—", leftLabel, GuiTheme.MUTED, tip),
+                    new Tile("—", thrownLabel, GuiTheme.MUTED, tip)));
+        }
+        int kit = DuelStats.KIT_POTS;
+        int color = left >= kit / 2 ? GuiTheme.GOOD : left >= kit / 4 ? GuiTheme.LIVE : GuiTheme.BAD;
+        Component tip = Component.translatable("betterloka.duelscreen.pots_tip", side.pots(), left, kit);
+        y = tiles(context, x, y, width, List.of(new Tile(left + "/" + kit, leftLabel, color, tip),
+                new Tile(String.valueOf(side.pots()), thrownLabel, GuiTheme.TEXT, tip)));
+        int gap = 1;
+        int pip = Math.max(2, (width - gap * (kit - 1)) / kit);
+        int barW = pip * kit + gap * (kit - 1);
+        int px = x + (width - barW) / 2;
+        for (int i = 0; i < kit; i++) {
+            int fill = i < left ? POT_RED : 0xFF33333D;
+            context.fill(px, y, px + pip, y + 6, fill);
+            if (i < left) {
+                context.fill(px, y, px + pip, y + 1, 0x60FFFFFF);
+            }
+            px += pip + gap;
+        }
+        hover(x, y, width, 6, tip);
+        return y + 10;
+    }
+
+    /** Names the account went by before, as chips that wrap. @return the next y */
+    protected int previousNames(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
+        Duelists.Duelist record = corner.duelist();
+        if (record == null) {
+            context.text(this.font, corner.known() ? "…" : "—", x, y, GuiTheme.MUTED);
+            return y + LINE;
+        }
+        List<String> names = record.previousNames() == null ? List.of() : record.previousNames();
+        if (names.isEmpty()) {
+            for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.names_none"), width)) {
+                context.text(this.font, line, x, y, 0xFF6E6E7A);
+                y += LINE;
+            }
+            return y;
+        }
+        int cx = x;
+        for (String name : names) {
+            int chipW = Math.min(width, this.font.width(name) + 10);
+            if (cx > x && cx + chipW > x + width) {
+                cx = x;
+                y += 15;
+            }
+            GuiTheme.chip(context, cx, y, chipW, 13, 0xFF6E6E82);
+            context.text(this.font, this.font.plainSubstrByWidth(name, chipW - 8), cx + 5, y + 3, GuiTheme.TEXT);
+            cx += chipW + 3;
+        }
+        return y + 15;
     }
 
     /** Matches from the duel log: result, opponent, when. @return the next y */
@@ -417,27 +671,23 @@ public abstract class DuelScreen extends Screen {
 
     /** Shows {@code text} as the tooltip while the pointer is over the box (canvas coordinates). */
     protected void hover(int x, int y, int width, int height, Component text) {
-        if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {
+        if (text != null && over(x, y, width, height)) {
             tooltip = List.of(text);
         }
     }
 
+    /** Whether the pointer is over the box; inside a panel's body, only over the part on screen. */
     protected boolean over(int x, int y, int width, int height) {
-        return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        if (mouseY < clipTop || mouseY >= clipBottom) {
+            return false;
+        }
+        int my = mouseY + shiftY;
+        return mouseX >= x && mouseX < x + width && my >= y && my < y + height;
     }
 
     /** The click on the canvas, or {@code null} off it. */
     protected int[] canvas(MouseButtonEvent click) {
         return new int[]{(int) Math.floor((click.x() - originX) / scale), (int) Math.floor((click.y() - originY) / scale)};
-    }
-
-    protected int livePing(Corner corner) {
-        ClientPacketListener connection = this.minecraft == null ? null : this.minecraft.getConnection();
-        if (connection == null || !corner.known()) {
-            return -1;
-        }
-        PlayerInfo info = corner.uuid != null ? connection.getPlayerInfo(corner.uuid) : connection.getPlayerInfo(corner.name);
-        return info == null || info.getLatency() <= 0 ? -1 : info.getLatency();
     }
 
     protected int[] usualPing(Corner corner) {

@@ -22,10 +22,19 @@ public final class DuelLog {
     /** How many duels are kept; the oldest go first. */
     static final int KEEP = 300;
 
-    /** One side of a duel, as counted. */
-    public record Side(int swings, int hits, int crits, int sweeps, int combo) {
+    /**
+     * One side of a duel, as counted.
+     *
+     * @param pots splash Instant Health II thrown; {@code null} for duels counted before 0.57
+     */
+    public record Side(int swings, int hits, int crits, int sweeps, int combo, Integer pots) {
         static Side of(DuelStats.Side side) {
-            return new Side(side.swings(), side.hits(), side.crits(), side.sweeps(), side.bestCombo());
+            return new Side(side.swings(), side.hits(), side.crits(), side.sweeps(), side.bestCombo(), side.pots());
+        }
+
+        /** Pots left of the kit's {@value DuelStats#KIT_POTS}, or -1 when the throws were not counted. */
+        public int potsLeft() {
+            return pots == null ? -1 : Math.max(0, DuelStats.KIT_POTS - pots);
         }
 
         /** Hits of swings, 0–100, or -1 when fewer swings were seen than hits (see {@link DuelStats.Side}). */

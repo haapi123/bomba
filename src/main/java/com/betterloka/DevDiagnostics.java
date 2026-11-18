@@ -1468,6 +1468,8 @@ public final class DevDiagnostics {
             server("scoreboard players display name line2 duel \"Map: Nether\"");
         });
         step(20, () -> {
+            com.betterloka.duel.Duelists.DEV_PREVIOUS_NAMES.put("knucior", java.util.List.of(
+                    "KnuciorPL", "xKnucior", "Knuc_", "PotGod2021", "Knucior_Old", "NotKnucior", "K_n_u_c"));
             com.betterloka.duel.DuelTracker.get().onMessage(matchReady(null));
             BetterLoka.LOGGER.info("DIAG duel after Match Ready, screen: {}", client().gui.screen());
         });
@@ -1476,7 +1478,14 @@ public final class DevDiagnostics {
         shot(40, "duel-arena-opened");
         step(2, () -> BetterLoka.LOGGER.info("DIAG duel at the arena, screen: {}", client().gui.screen()));
         shot(400, "duel-versus");
-        step(2, () -> server("title @a title \"3\""));
+        // Both panels scrolled to their ends: previous names at the bottom.
+        step(2, () -> scrollPanels(-30));
+        shot(20, "duel-versus-scrolled");
+        step(2, () -> scrollPanels(30));
+        // A long countdown line, as some arenas title it, then the plain numbers.
+        step(10, () -> server("title @a title \"Fight starts in 5 seconds\""));
+        shot(15, "duel-versus-countdown-long");
+        step(10, () -> server("title @a title \"3\""));
         step(20, () -> server("title @a title \"2\""));
         step(20, () -> server("title @a title \"1\""));
         shot(5, "duel-versus-countdown");
@@ -1514,7 +1523,34 @@ public final class DevDiagnostics {
         step(14, () -> client().player.setYRot(180));
         step(2, DevDiagnostics::attack);
         step(14, () -> client().player.setYRot(0));
-        step(20, () -> BetterLoka.LOGGER.info("DIAG duel before the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        // Pots: three thrown by the player (as a player throws them), two by the opponent.
+        step(2, () -> client().player.setXRot(-60));
+        for (int i = 0; i < 3; i++) {
+            // One at a time: splash potions do not stack.
+            step(4, () -> server("item replace entity @a weapon.mainhand with splash_potion[potion_contents={potion:\"minecraft:strong_healing\"}]"));
+            step(6, () -> client().gameMode.useItem(client().player, net.minecraft.world.InteractionHand.MAIN_HAND));
+        }
+        step(4, () -> {
+            client().player.setXRot(0);
+            server("item replace entity @a weapon.mainhand with diamond_sword");
+            int[] owner = net.minecraft.core.UUIDUtil.uuidToIntArray(duelZombie());
+            for (int i = 0; i < 2; i++) {
+                server("execute as @e[type=zombie,limit=1] at @s run summon splash_potion ~ ~3 ~ "
+                        + "{Item:{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":"
+                        + "{potion:\"minecraft:strong_healing\"}}},Owner:[I;" + owner[0] + "," + owner[1] + "," + owner[2] + ","
+                        + owner[3] + "]}");
+            }
+            // And one that is not a heal, which does not count.
+            server("execute as @e[type=zombie,limit=1] at @s run summon splash_potion ~ ~3 ~ "
+                    + "{Item:{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":"
+                    + "{potion:\"minecraft:swiftness\"}}},Owner:[I;" + owner[0] + "," + owner[1] + "," + owner[2] + ","
+                    + owner[3] + "]}");
+        });
+        step(20, DevDiagnostics::attack);
+        step(20, () -> BetterLoka.LOGGER.info("DIAG duel before the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
+        // The opponent falls: a won duel, for the winner and loser labels.
+        step(2, () -> server("kill @e[type=zombie]"));
+        step(10, () -> BetterLoka.LOGGER.info("DIAG duel before the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
         // Sent on after the duel, as Loka sends its players to another server.
         step(2, () -> server("execute in minecraft:overworld run tp @a 0 -60 0 0 0"));
         step(10, () -> BetterLoka.LOGGER.info("DIAG duel just after the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
@@ -1538,6 +1574,8 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG duel clicked duel #{}: {}", last.id(), client().gui.screen());
         });
         shot(200, "duel-result");
+        step(2, () -> scrollPanels(-30));
+        shot(20, "duel-result-scrolled");
         // The ranked lines, if they had to follow the summary rather than come with it.
         step(400, DevDiagnostics::logDuelChat);
         shot(10, "duel-chat-later");
@@ -1545,6 +1583,17 @@ public final class DevDiagnostics {
             BetterLoka.LOGGER.info("DIAG duel checks done");
             client().stop();
         });
+    }
+
+    /** The mouse wheel over both of a duel screen's panels: negative scrolls down. */
+    private static void scrollPanels(double notches) {
+        var screen = client().gui.screen();
+        if (screen == null) {
+            BetterLoka.LOGGER.warn("DIAG duel: no screen to scroll");
+            return;
+        }
+        screen.mouseScrolled(screen.width * 0.2, screen.height * 0.75, 0, notches);
+        screen.mouseScrolled(screen.width * 0.8, screen.height * 0.75, 0, notches);
     }
 
     /** Loka's "Match Ready!" line, with a tooltip on its button if {@code tooltip} is given. */

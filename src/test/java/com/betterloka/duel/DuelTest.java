@@ -158,6 +158,37 @@ class DuelTest {
     }
 
     @Test
+    void healPotsAreCountedForEachSideUntilTheEnd() {
+        DuelStats duel = new DuelStats(ME, 0);
+        duel.pot(ME);
+        duel.pot(THEM);
+        duel.pot(THEM);
+        duel.hit(ME, THEM, 100);
+        duel.pot(ME);
+        duel.pot(BYSTANDER);
+        assertEquals(2, duel.summary().you().pots());
+        assertEquals(2, duel.summary().them().pots(), "a bystander's pots are their own");
+        duel.died(THEM, 200);
+        duel.pot(ME);
+        assertEquals(2, duel.summary().you().pots(), "nothing counts after the end");
+
+        DuelLog.Side side = DuelLog.Side.of(duel.summary().you());
+        assertEquals(DuelStats.KIT_POTS - 2, side.potsLeft());
+        assertEquals(-1, new DuelLog.Side(1, 1, 0, 0, 1, null).potsLeft(), "a duel from before pots were counted");
+        assertEquals(0, new DuelLog.Side(1, 1, 0, 0, 1, 30).potsLeft(), "never below none");
+    }
+
+    @Test
+    void potsBeforeTheFightOnAnotherServerAreForgotten() {
+        DuelStats duel = new DuelStats(ME, 0);
+        duel.pot(ME);
+        duel.rebind(7);
+        duel.pot(7);
+        duel.hit(7, THEM, 100);
+        assertEquals(1, duel.summary().you().pots());
+    }
+
+    @Test
     void fewerSwingsSeenThanHitsIsNoShareAtAll() {
         DuelStats duel = new DuelStats(ME, 0);
         duel.hit(ME, THEM, 100);

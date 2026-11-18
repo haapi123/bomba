@@ -663,11 +663,17 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
     the command is `/join` whatever the line's button says, once per three seconds at most.
   - **VS screen** (on): at the arena, while you wait for the fight, a screen with you on the left
     and your opponent on the right, each on a stand with their skin turning. Under each player: their
-    ping now and their usual ping over the duels the mod has counted; their rank now on each ladder;
-    **this season** and their **career** — duels, wins–losses, win rate; their **best rank ever** and
-    how they finished **the last season**; and the latest matches — yours, or the ones between you
-    and them. It **closes by itself when the fight starts**, and **Esc** closes it sooner. It opens
-    only when no other screen is, or over chat, and once per arrival.
+    usual ping over the duels the mod has counted (not their ping now: the player list has it only
+    while they are on your server, which before a duel they almost never are); their rank now on each
+    ladder; **this season** and their **career** as tiles — duels, **wins** in green, **losses** in
+    red, win ratio; their **best rank ever** and how they finished **the last season**, as tiles in
+    the rank's colour with the ladder and season under them; the latest matches — yours, or the ones
+    between you and them; and at the bottom their **previous names**. Each side's numbers **scroll**
+    with the mouse wheel or the bar beside them. The arena's **countdown** shows in a box of its own
+    at the top of the middle, fitted to it, and the game's own title and action bar are not drawn
+    while the screen is open, so nothing lands on the numbers. It **closes by itself when the fight
+    starts**, and **Esc** closes it sooner. It opens only when no other screen is, or over chat, and
+    once per arrival.
 
     It opens on arriving on another server or world after `Match Ready!` — Loka fights its duels on a
     server of its own — as soon as the opponent can be told, which `Match Ready!` itself does not
@@ -677,20 +683,29 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
     or action bar saying go (`FIGHT!`, `GO!`), a countdown reaching one (a second later), a chat line
     saying the match has started, a swing near you, a hit, health lost, a teleport onto the start, a
     new game mode, or the opponent coming four blocks closer. The arena's titles are shown on the
-    screen too (the game draws them under it), and written to the game log with what the scoreboard
-    said, to check against Loka's own wording.
+    screen's countdown box, and written to the game log with what the scoreboard said, to check
+    against Loka's own wording.
   - **Stats** (on): when the duel ends, one line in chat — `Duel vs Knucior · 0:42 · Won` and
-    *▸ Click to see the duel's stats*. The click opens the duel's screen: both sides' accuracy (hits
-    landed of swings), hits, best combo, crits and sweeps (as a share of the hits landed), and ping
-    in that duel — average, highest, spikes — then their season, career and ranks, and the record
-    between you two with its latest matches in the middle. Accuracy shows as **—** when fewer swings
-    were seen than hits landed: then not all of them were visible, and a percentage would be made up.
+    *▸ Click to see the duel's stats*. The click opens the duel's screen, with **WINNER** in green
+    over whoever won and **LOSER** in red over whoever lost (*you* and *opponent* when the mod could
+    not tell): both sides' accuracy (hits landed of swings), hits, best combo, crits and sweeps (as a
+    share of the hits landed), and ping in that duel — average, highest, spikes; **Pots left** — the
+    splash Instant Health II each side threw and how many of the kit's 24 they had left, e.g.
+    `21/24`, with a pip for each pot; then their season, career and ranks as on the VS screen, and
+    their previous names at the bottom. In the middle, the record between you two with its latest
+    matches. Accuracy shows as **—** when fewer swings were seen than hits landed: then not all of
+    them were visible, and a percentage would be made up.
+
+    Pots are counted from what the server shows every player near a fight: a thrown splash potion
+    arrives naming who threw it, then what it is; only Instant Health II or stronger counts, from
+    either side, until the duel is decided. Duels counted before 0.57 show **—** there.
 
   ![VS screen](docs/duel-versus.png)
 
   ![Duel summary](docs/duel-result.png)
 
-  Where the numbers come from:
+  Where the numbers come from (and **previous names**: the names an account had in Loka's season
+  tables, and the ones Loka Elo lists for it):
   - **This season**: the player's own Loka profile (`rankedStats`), which has every game of theirs.
   - **Career, best rank, last season**: Loka's published season tables. Loka publishes a season's
     table week by week while it is played, so the latest season in them is usually the one going on

@@ -121,7 +121,8 @@ public class BetterLokaClient implements ClientModInitializer {
         // v4: the index also keeps the last two seasons and every player's summed record.
         arenaStats = new ArenaService(arena, configDir().resolve("arena-history-v4.json"));
         duelLog = new com.betterloka.duel.DuelLog(configDir().resolve("duel-log.json"));
-        duelists = new com.betterloka.duel.Duelists(BetterLokaClient::lokaApi, BetterLokaClient::arenaStats);
+        duelists = new com.betterloka.duel.Duelists(BetterLokaClient::lokaApi, BetterLokaClient::arenaStats,
+                BetterLokaClient::elo);
         // Loka's battle archive is the only place a career splits by format. Built on demand rather
         // than at startup — it is 77 MB the first time — and kept once built.
         battleIndex = new BattleIndex(loka, configDir().resolve("battle-index.json"));

@@ -4,10 +4,10 @@ import com.betterloka.BetterLokaClient;
 import com.betterloka.duel.DuelLog;
 import com.betterloka.duel.DuelStats;
 import com.betterloka.duel.Duelists;
-import com.betterloka.stats.ArenaService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 
 import java.util.List;
 
@@ -24,6 +24,13 @@ public final class DuelResultScreen extends DuelScreen {
                 new Corner(true, duel.selfName(), duel.selfUuid(), GuiTheme.ACCENT),
                 new Corner(false, duel.opponentName() == null ? "?" : duel.opponentName(), duel.opponentUuid(), GuiTheme.BAD));
         this.duel = duel;
+        // Who won and who lost, in green and red; as before when the mod could not tell.
+        DuelStats.Result result = duel.outcome();
+        if (result != DuelStats.Result.UNKNOWN) {
+            boolean youWon = result == DuelStats.Result.WON;
+            mark(you, youWon);
+            mark(them, !youWon);
+        }
         Duelists duelists = BetterLokaClient.duelists();
         if (duelists != null) {
             you.record = duelists.load(you.name, you.uuid);
@@ -87,8 +94,13 @@ public final class DuelResultScreen extends DuelScreen {
         context.centeredText(this.font, Component.translatable("betterloka.duelscreen.esc_only"), centre, H - 22, GuiTheme.MUTED);
     }
 
+    private static void mark(Corner corner, boolean winner) {
+        corner.color = winner ? GuiTheme.GOOD : GuiTheme.BAD;
+        corner.role = Component.translatable(winner ? "betterloka.duelscreen.winner" : "betterloka.duelscreen.loser");
+    }
+
     @Override
-    protected void drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
+    protected int drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
         DuelLog.Side side = corner.you ? duel.you() : duel.them();
         DuelLog.Ping ping = corner.you ? duel.yourPing() : duel.theirPing();
 
@@ -118,40 +130,25 @@ public final class DuelResultScreen extends DuelScreen {
                     : Component.translatable(ping.every() > 0 ? "betterloka.duelscreen.spikes_every" : "betterloka.duelscreen.spikes",
                     ping.spikes(), ping.up(), ping.down(), (ping.biggest() > 0 ? "+" : "") + ping.biggest(),
                     Math.round(ping.every()));
-            context.text(this.font, this.font.plainSubstrByWidth(spikes.getString(), width), x, y, GuiTheme.MUTED);
-            hover(x, y - 1, width, LINE, Component.translatable("betterloka.duelscreen.spikes_tip"));
-            y += LINE + 3;
+            List<FormattedCharSequence> lines = this.font.split(spikes, width);
+            hover(x, y - 1, width, LINE * lines.size(), Component.translatable("betterloka.duelscreen.spikes_tip"));
+            for (FormattedCharSequence line : lines) {
+                context.text(this.font, line, x, y, GuiTheme.MUTED);
+                y += LINE;
+            }
+            y += 2;
         }
 
-        Duelists.Duelist record = corner.duelist();
-        y = section(context, x, y, width, Component.translatable("betterloka.duelscreen.ranked"), corner.color);
-        ArenaService.Totals season = record == null ? null : record.season();
-        ArenaService.Totals career = record == null ? null : record.career();
-        y = totalsRow(context, x, y, width, record != null && record.seasonNumber() > 0
-                ? Component.translatable("betterloka.duelscreen.this_season_n", record.seasonNumber())
-                : Component.translatable("betterloka.duelscreen.this_season"), season);
-        y = totalsRow(context, x, y, width, Component.translatable("betterloka.duelscreen.career"), career);
-        if (career != null) {
-            hover(x, y - LINE - 1, width, LINE, Component.translatable("betterloka.duelscreen.career_tip", career.seasons()));
-        }
-        y += 3;
-        rankTable(context, corner, x, y, width);
-    }
+        y = section(context, x, y + 2, width, Component.translatable("betterloka.duelscreen.pots"), corner.color);
+        y = pots(context, side, x, y, width);
 
-    /** "Season 24   131 · 87–44 · 66%" in one row. */
-    private int totalsRow(GuiGraphicsExtractor context, int x, int y, int width, Component label, ArenaService.Totals totals) {
-        context.text(this.font, label, x, y, GuiTheme.MUTED);
-        Component value;
-        if (totals == null) {
-            value = Component.literal("…").withStyle(ChatFormatting.GRAY);
-        } else {
-            value = Component.literal(number(totals.games()) + " · ").withStyle(ChatFormatting.WHITE)
-                    .append(Component.literal(number(totals.wins()) + "–" + number(totals.losses())).withColor(GuiTheme.ACCENT & 0xFFFFFF))
-                    .append(Component.literal(" · ").withStyle(ChatFormatting.WHITE))
-                    .append(Component.literal(percent(totals.wins(), totals.games()))
-                            .withColor(rateColor(totals.wins(), totals.games()) & 0xFFFFFF));
-        }
-        context.text(this.font, value, x + width - this.font.width(value), y, GuiTheme.TEXT);
-        return y + LINE + 1;
+        y = section(context, x, y + 4, width, Component.translatable("betterloka.duelscreen.ranked"), corner.color);
+        y = ranked(context, corner, x, y, width);
+
+        y = section(context, x, y + 2, width, Component.translatable("betterloka.duelscreen.ranks"), corner.color);
+        y = rankTiles(context, corner, x, y, width);
+
+        y = section(context, x, y + 4, width, Component.translatable("betterloka.duelscreen.names"), corner.color);
+        return previousNames(context, corner, x, y, width);
     }
 }

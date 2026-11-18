@@ -30,6 +30,8 @@ public final class DuelStats {
     public static final long ARMED_TIMEOUT_MILLIS = 5 * 60_000;
     /** How soon after its hit a crit or a sweep arrives: the same server tick, give or take a little. */
     static final long LINK_MILLIS = 300;
+    /** The splash Instant Health II a duel kit starts with. */
+    public static final int KIT_POTS = 24;
 
     /** One counted hit, and whether it has been called a crit or a sweep yet. */
     private static final class Blow {
@@ -52,6 +54,12 @@ public final class DuelStats {
         private int sweeps;
         private int combo;
         private int bestCombo;
+        private int pots;
+
+        /** Splash Instant Health II thrown. */
+        public int pots() {
+            return pots;
+        }
 
         public int swings() {
             return swings;
@@ -137,6 +145,7 @@ public final class DuelStats {
         }
         self = newSelf;
         you.swings = 0;
+        you.pots = 0;
         others.clear();
     }
 
@@ -151,6 +160,13 @@ public final class DuelStats {
     public void swing(int entityId) {
         if (died == null) {
             side(entityId).swings++;
+        }
+    }
+
+    /** A splash Instant Health II thrown by {@code thrower}, this player or anybody else. */
+    public void pot(int thrower) {
+        if (died == null) {
+            side(thrower).pots++;
         }
     }
 

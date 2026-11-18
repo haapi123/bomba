@@ -76,8 +76,13 @@ public final class ShulkerScanner {
         return heals;
     }
 
+    /** Whether this is a splash Instant Health II (or stronger): a heal pot. */
+    public static boolean isHealPot(ItemStack item) {
+        return item != null && item.is(Items.SPLASH_POTION) && instantHealthLevel(item) >= 2;
+    }
+
     /** The potion's Instant Health level (II is 2), or 0 without it. */
-    private static int instantHealthLevel(ItemStack item) {
+    public static int instantHealthLevel(ItemStack item) {
         PotionContents potion = item.get(DataComponents.POTION_CONTENTS);
         if (potion == null) {
             return 0;

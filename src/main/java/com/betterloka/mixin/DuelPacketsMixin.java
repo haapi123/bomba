@@ -58,6 +58,22 @@ abstract class DuelPacketsMixin {
         DuelTracker.onEntityEvent(packet, packet.getEventId());
     }
 
+    /** A thrown splash potion: the spawn names its thrower, which is how the pots each side throws are counted. */
+    @Inject(method = "handleAddEntity", at = @At("RETURN"))
+    private void betterloka$addEntity(net.minecraft.network.protocol.game.ClientboundAddEntityPacket packet, CallbackInfo ci) {
+        if (packet.getType() == net.minecraft.world.entity.EntityTypes.SPLASH_POTION
+                && net.minecraft.client.Minecraft.getInstance().isSameThread()) {
+            DuelTracker.onSplashPotion(packet.getId(), packet.getData());
+        }
+    }
+
+    @Inject(method = "handleSetEntityData", at = @At("RETURN"))
+    private void betterloka$entityData(net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket packet, CallbackInfo ci) {
+        if (net.minecraft.client.Minecraft.getInstance().isSameThread()) {
+            DuelTracker.onEntityData(packet.id());
+        }
+    }
+
     // Titles, subtitles and the action bar: where an arena counts down to the fight.
 
     @Inject(method = "setTitleText", at = @At(value = "INVOKE", target = ON_GAME_THREAD, shift = At.Shift.AFTER))

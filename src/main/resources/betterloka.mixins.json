@@ -9,7 +9,8 @@
     "DuelPacketsMixin",
     "DuelSwingMixin",
     "DuelChatClickMixin",
-    "ShulkerSlotMixin"
+    "ShulkerSlotMixin",
+    "DuelHudTitleMixin"
   ],
   "injectors": {
     "defaultRequire": 1

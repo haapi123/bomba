@@ -34,7 +34,12 @@ public final class Duelists {
      * @param profile their Loka profile, or {@code null} if it could not be read
      * @param careers per ladder; empty if the ladders could not be read
      */
-    public record Duelist(String name, UUID uuid, LokaPlayer profile, List<ArenaService.Career> careers) {
+    /**
+     * @param previousNames names the account went by before, from Loka's season tables and Loka Elo;
+     *                      empty when none are known
+     */
+    public record Duelist(String name, UUID uuid, LokaPlayer profile, List<ArenaService.Career> careers,
+                          List<String> previousNames) {
         public ArenaService.Career career(ArenaApi.Ladder ladder) {
             for (ArenaService.Career career : careers) {
                 if (career.ladder() == ladder) {
@@ -106,13 +111,18 @@ public final class Duelists {
     private record Held(CompletableFuture<Duelist> lookup, long at) {
     }
 
+    /** Development only: names to add as somebody's previous ones, by their current name in lower case. */
+    public static final Map<String, List<String>> DEV_PREVIOUS_NAMES = new ConcurrentHashMap<>();
+
     private final Supplier<LokaApi> loka;
     private final Supplier<ArenaService> arena;
+    private final Supplier<com.betterloka.stats.EloService> elo;
     private final Map<String, Held> held = new ConcurrentHashMap<>();
 
-    public Duelists(Supplier<LokaApi> loka, Supplier<ArenaService> arena) {
+    public Duelists(Supplier<LokaApi> loka, Supplier<ArenaService> arena, Supplier<com.betterloka.stats.EloService> elo) {
         this.loka = loka;
         this.arena = arena;
+        this.elo = elo;
     }
 
     /** The duelist's record, asked for once per two minutes. Never fails: what is missing is empty. */
@@ -126,6 +136,30 @@ public final class Duelists {
         CompletableFuture<Duelist> lookup = fetch(name, uuid);
         held.put(key, new Held(lookup, now));
         return lookup;
+    }
+
+    /** The season tables' names, then Loka Elo's, without the current one or repeats. */
+    private List<String> previousNames(String current, UUID uuid, List<String> fromLadders) {
+        java.util.LinkedHashMap<String, String> names = new java.util.LinkedHashMap<>();
+        List<String> dev = current == null ? null : DEV_PREVIOUS_NAMES.get(current.toLowerCase(Locale.ROOT));
+        if (dev != null) {
+            fromLadders = new java.util.ArrayList<>(fromLadders);
+            fromLadders.addAll(dev);
+        }
+        for (String name : fromLadders) {
+            names.putIfAbsent(name.toLowerCase(Locale.ROOT), name);
+        }
+        com.betterloka.stats.EloService elo = this.elo == null ? null : this.elo.get();
+        com.betterloka.stats.EloService.Entry rated = elo == null ? null : elo.byUuid(uuid);
+        if (rated != null && rated.aliases() != null) {
+            for (String name : rated.aliases()) {
+                names.putIfAbsent(name.toLowerCase(Locale.ROOT), name);
+            }
+        }
+        if (current != null) {
+            names.remove(current.toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(names.values());
     }
 
     private CompletableFuture<Duelist> fetch(String name, UUID uuid) {
@@ -159,7 +193,13 @@ public final class Duelists {
                         BetterLoka.LOGGER.debug("No ranked history for duelist {}", knownName, failure);
                         return List.of();
                     });
-            return careers.thenApply(list -> new Duelist(knownName, knownUuid, found, list));
+            CompletableFuture<List<String>> names = service == null || knownUuid == null
+                    ? CompletableFuture.completedFuture(List.of())
+                    : service.previousNames(knownName, knownUuid)
+                    .orTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .exceptionally(failure -> List.of());
+            return careers.thenCombine(names, (list, fromLadders) ->
+                    new Duelist(knownName, knownUuid, found, list, previousNames(knownName, knownUuid, fromLadders)));
         });
     }
 }
