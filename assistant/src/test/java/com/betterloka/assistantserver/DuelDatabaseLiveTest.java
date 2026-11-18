@@ -14,7 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The duel statistics against a real MySQL or MariaDB, through the driver the server ships with.
  * Run with BETTERLOKA_DB_HOST (host:port), BETTERLOKA_DB_NAME, BETTERLOKA_DB_USER and
- * BETTERLOKA_DB_PASSWORD set; it removes the rows it wrote.
+ * BETTERLOKA_DB_PASSWORD set, or with BETTERLOKA_DB_HOST and BETTERLOKA_DB_JDBC (the panel's
+ * connection string, user and password in it); it removes the rows it wrote.
  */
 @EnabledIfEnvironmentVariable(named = "BETTERLOKA_DB_HOST", matches = ".+")
 class DuelDatabaseLiveTest {
@@ -25,6 +26,11 @@ class DuelDatabaseLiveTest {
         settings.name = System.getenv("BETTERLOKA_DB_NAME");
         settings.user = System.getenv("BETTERLOKA_DB_USER");
         settings.password = System.getenv().getOrDefault("BETTERLOKA_DB_PASSWORD", "");
+        String jdbc = System.getenv("BETTERLOKA_DB_JDBC");
+        if (jdbc != null && !jdbc.isBlank()) {
+            settings = new DuelDatabase.Settings();
+            settings.jdbcUrl = jdbc;
+        }
         DuelStore.Connections connections = DuelDatabase.connections(settings);
         DuelStore store = new DuelStore(connections);
         store.createTables();

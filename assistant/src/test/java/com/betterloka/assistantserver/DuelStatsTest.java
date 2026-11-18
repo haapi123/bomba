@@ -163,6 +163,48 @@ class DuelStatsTest {
         assertFalse(settings.url().contains("u1_abc"), "the user is not in the address");
     }
 
+    @Test
+    void thePanelsConnectionStringWorksAndItsPasswordIsNeverShown() throws Exception {
+        DuelDatabase.Settings settings = new DuelDatabase.Settings();
+        // The shape the panel gives: the password may hold @, :, =, ^ and the like.
+        String password = "=Ab1:c@d^e=f";
+        settings.jdbcUrl = "jdbc:mysql://u1_abcdef:" + password + "@db.example.net:5891/s1_betterloka";
+        assertTrue(settings.configured());
+        DuelDatabase.Settings at = settings.resolved();
+        assertEquals("u1_abcdef", at.user);
+        assertEquals(password, at.password);
+        assertEquals("s1_betterloka", at.name);
+        assertEquals("jdbc:mariadb://db.example.net:5891/s1_betterloka?connectTimeout=5000&socketTimeout=15000", settings.url());
+
+        DuelDatabase.Settings pastedIntoHost = new DuelDatabase.Settings();
+        pastedIntoHost.host = "jdbc:mysql://u1_abcdef:" + password + "@db.example.net:5891/s1_betterloka";
+        assertEquals(settings.url(), pastedIntoHost.url(), "the string pasted where the endpoint goes");
+
+        DuelDatabase.Settings fields = new DuelDatabase.Settings();
+        fields.host = "db.example.net:5891";
+        fields.name = "s1_betterloka";
+        fields.user = "u1_abcdef";
+        fields.password = password;
+        assertEquals(settings.url(), fields.url());
+
+        String leaked = "No suitable driver found for jdbc:mysql://u1_abcdef:" + password + "@db.example.net:5891/s1";
+        String shown = DuelDatabase.redact(leaked, password);
+        assertFalse(shown.contains(password), shown);
+        assertFalse(shown.contains("c@d^e"), shown);
+        assertTrue(shown.contains("db.example.net"), shown);
+        assertEquals("x password=*** y", DuelDatabase.redact("x password=hunter2 y", null));
+
+        DuelStore.Connections connections = DuelDatabase.connections(settings);
+        assertFalse(connections.toString().contains(password));
+        // Nothing listens there: the error that comes back must not carry the password either.
+        DuelDatabase.Settings nowhere = new DuelDatabase.Settings();
+        nowhere.jdbcUrl = "jdbc:mysql://u1_abcdef:" + password + "@127.0.0.1:1/s1_betterloka";
+        java.sql.SQLException refused = assertThrows(java.sql.SQLException.class, () -> DuelDatabase.connections(nowhere).open());
+        assertFalse(String.valueOf(refused.getMessage()).contains(password), refused.getMessage());
+        assertEquals(null, refused.getCause());
+        assertEquals(null, DuelDatabase.parse("db.example.net:3306"), "a bare endpoint is no string");
+    }
+
     private static JsonObject call(HttpClient http, String base, String method, String path, String token, JsonObject body) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path));
         if ("POST".equals(method)) {

@@ -97,6 +97,13 @@ nie trafia do jara moda ani do graczy.
    }
    ```
    Hasła nie wysyłaj nikomu i nie wklejaj na czat. Plik `database.json` zostaje tylko na serwerze.
+
+   Zamiast czterech pól można wkleić „JDBC Connection String” z panelu (okienko pod ikonką oka),
+   tak jak go pokazuje — `jdbc:mysql://użytkownik:hasło@host:port/nazwa`:
+   ```json
+   { "jdbcUrl": "jdbc:mysql://u1234_abcdef:hasło@ent-8.icehost.pl:5891/s1234_betterloka" }
+   ```
+   Serwer rozbiera go na części i łączy się sterownikiem MariaDB; hasła nigdy nie wypisuje w konsoli.
 3. Uruchom serwer ponownie. W konsoli: `Duel statistics: kept in jdbc:mariadb://…` — tabela
    `duel_sides` tworzy się sama. Bez `database.json`: `Duel statistics: off`, a reszta działa jak
    dotąd.
@@ -242,8 +249,11 @@ Limits: 40 reports an hour and 300 a day per account; a report must look like a 
 the last three days, no more crits than hits, a real Minecraft name, and so on) or it is refused.
 
 `database.json` takes `host` (the panel's endpoint, with or without `:port`), `port`, `name`, `user`
-and `password`, or a whole `jdbcUrl` instead. The server connects with the MariaDB driver it ships
-with, which also talks to MySQL. A database that does not answer at start only turns the statistics
+and `password`, or instead the panel's JDBC connection string in `jdbcUrl`
+(`jdbc:mysql://user:password@host:port/name`, also accepted pasted into `host`), which is taken
+apart; separate fields win over it. The server connects with the MariaDB driver it ships with, which
+also talks to MySQL. The password never reaches the console: the driver's errors are logged with it,
+and any `user:password@`, blanked out. A database that does not answer at start only turns the statistics
 off; the assistant and the bot carry on.
 
 ## Who is asking
