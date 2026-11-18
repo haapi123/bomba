@@ -108,7 +108,8 @@ public final class DuelVersusScreen extends DuelScreen {
 
     @Override
     protected int drawBody(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
-        y = section(context, x, y, width, Component.translatable("betterloka.duelscreen.ranked"), corner.color);
+        y = sharedStats(context, corner, x, y, width);
+        y = section(context, x, y + 2, width, Component.translatable("betterloka.duelscreen.ranked"), corner.color);
         y = ranked(context, corner, x, y, width);
 
         y = section(context, x, y + 2, width, Component.translatable("betterloka.duelscreen.ranks"), corner.color);

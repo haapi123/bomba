@@ -39,11 +39,12 @@ public final class AssistantClient {
 
     /**
      * Where to connect: always {@link #SERVER}. The one exception is the developer's own test run
-     * ({@code BETTERLOKA_DIAG=v43}), which points it at a local demo server named in
+     * ({@code BETTERLOKA_DIAG=v43} or {@code duel}), which points it at a local demo server named in
      * {@code BETTERLOKA_ASSISTANT}, so the screens can be checked without the real server.
      */
     public static String server(java.util.Map<String, String> environment) {
-        if ("v43".equals(environment.get("BETTERLOKA_DIAG"))) {
+        String diag = environment.get("BETTERLOKA_DIAG");
+        if ("v43".equals(diag) || "duel".equals(diag)) {
             String local = environment.get("BETTERLOKA_ASSISTANT");
             if (local != null && !local.isBlank()) {
                 return normalize(local);
@@ -206,6 +207,32 @@ public final class AssistantClient {
                         text(item, "botAnswer"), integer(item, "count", 1)));
             }
             return list;
+        });
+    }
+
+    /**
+     * What BetterLoka players' mods have seen of one player in duels: averages over their latest
+     * reported duels. Shares are 0–100, or -1 with nothing to go on.
+     */
+    public record SharedStats(int observations, int reporters, int ping, int accuracy, int critShare, int sweepShare,
+                              double combo, double pots, int potDuels) {
+    }
+
+    /** Sends one finished duel to the server's duel statistics. */
+    public CompletableFuture<Boolean> reportDuel(JsonObject report) {
+        return call(() -> bool(authed("POST", "/v1/duels/report", report, 20), "kept"));
+    }
+
+    /** The duel statistics kept about {@code player}. */
+    public CompletableFuture<SharedStats> duelStats(java.util.UUID player) {
+        return call(() -> {
+            JsonObject request = new JsonObject();
+            request.addProperty("uuid", player.toString());
+            JsonObject body = authed("POST", "/v1/duels/player", request, 15);
+            return new SharedStats(integer(body, "observations", 0), integer(body, "reporters", 0),
+                    integer(body, "ping", -1), integer(body, "accuracy", -1), integer(body, "critShare", -1),
+                    integer(body, "sweepShare", -1), body.has("combo") ? body.get("combo").getAsDouble() : 0,
+                    body.has("pots") ? body.get("pots").getAsDouble() : 0, integer(body, "potDuels", 0));
         });
     }
 

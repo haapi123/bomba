@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
@@ -96,6 +97,35 @@ public final class DuelTracker {
         }
     }
 
+    /**
+     * After a duel is said with no result: its result, read off the player's own ranked record on
+     * Loka — the record from "Match Ready!" against the record now, a few times over eight minutes —
+     * and meanwhile from whatever the server says.
+     */
+    private static final class ResultCheck {
+        /** When to look at the record, after the summary: often at first, then less, for eight minutes. */
+        static final long[] AFTER_MILLIS = {3_000, 8_000, 15_000, 30_000, 60_000, 120_000, 240_000, 480_000};
+        /** How long the duel's screen says the result is being checked. */
+        static final long SHOWN_MILLIS = 120_000;
+        /** How long after the summary the server's word on the result is still read. */
+        static final long TEXT_MILLIS = 25_000;
+
+        final int entryId;
+        final String opponent;
+        final CompletableFuture<Map<String, int[]>> before;
+        final long saidAt;
+        int attempt;
+        boolean inFlight;
+        boolean done;
+
+        ResultCheck(int entryId, String opponent, CompletableFuture<Map<String, int[]>> before, long saidAt) {
+            this.entryId = entryId;
+            this.opponent = opponent;
+            this.before = before;
+            this.saidAt = saidAt;
+        }
+    }
+
     /** Development only: count fights against any creature, so a dummy can stand in for a player. */
     public static boolean devAnyTarget;
 
@@ -104,7 +134,15 @@ public final class DuelTracker {
     private final BetterLokaConfig config;
     private final Supplier<Duelists> duelists;
     private final Supplier<DuelLog> log;
+    private final Supplier<com.betterloka.api.LokaApi> loka;
     private final DuelSession session = new DuelSession();
+    /** The player's ranked record as "Match Ready!" came, per ladder {wins, losses}; {@code null} if never asked. */
+    private CompletableFuture<Map<String, int[]>> recordBefore;
+    /** The latest duel said, while its result is still being found out. */
+    private ResultCheck check;
+    /** Told about each duel once its result is as known as it will be. */
+    private java.util.function.Consumer<DuelLog.Entry> settled = entry -> {
+    };
     private final Map<Integer, String> names = new HashMap<>();
     private final Map<Integer, UUID> uuids = new HashMap<>();
     /** Everybody's ping in the player list while a duel is on, by UUID: ids change between servers. */
@@ -129,10 +167,18 @@ public final class DuelTracker {
      * @param duelists the duelists' ranked records, for the duel screens; may give {@code null}
      * @param log      where finished duels are kept; may give {@code null}
      */
-    public DuelTracker(BetterLokaConfig config, Supplier<Duelists> duelists, Supplier<DuelLog> log) {
+    public DuelTracker(BetterLokaConfig config, Supplier<Duelists> duelists, Supplier<DuelLog> log,
+                       Supplier<com.betterloka.api.LokaApi> loka) {
         this.config = config;
         this.duelists = duelists;
         this.log = log;
+        this.loka = loka;
+    }
+
+    /** Called with each duel once its result is as known as it will be: right away, or up to two minutes on. */
+    public void onSettled(java.util.function.Consumer<DuelLog.Entry> listener) {
+        this.settled = listener == null ? entry -> {
+        } : listener;
     }
 
     public void register() {
@@ -150,6 +196,7 @@ public final class DuelTracker {
     /** Reads one line of chat: Loka's "Match Ready!", and at the arena, word that the fight is on. */
     public void onMessage(Component message) {
         String line = message.getString();
+        readOutcome(line, true);
         Arena waiting = arena;
         if (waiting != null) {
             waiting.start.chat(line, System.currentTimeMillis());
@@ -165,6 +212,8 @@ public final class DuelTracker {
         if (config.duelStats()) {
             // A new match: whatever came before it is said now, before its names are forgotten.
             say(client, session.arm(client.player.getId(), now));
+            // The record before it, to tell the result by afterwards.
+            recordBefore = ownRecord(client.player.getUUID());
             names.clear();
             uuids.clear();
             pings.clear();
@@ -188,6 +237,9 @@ public final class DuelTracker {
     /** A title, subtitle or action bar: at the arena, maybe the countdown to the fight. */
     public static void onTitle(Component text) {
         DuelTracker tracker = instance;
+        if (tracker != null && text != null) {
+            tracker.readOutcome(text.getString(), false);
+        }
         Arena waiting = tracker == null ? null : tracker.arena;
         if (waiting == null || text == null) {
             return;
@@ -469,9 +521,15 @@ public final class DuelTracker {
             int opponent = duel.opponent();
             if (opponent != -1) {
                 prefetch(uuids.get(opponent), names.get(opponent));
+                // A server that lets the loser die shows their health reach nothing.
+                if (client.level != null && client.level.getEntity(opponent) instanceof LivingEntity other
+                        && other.getHealth() <= 0f) {
+                    duel.died(opponent, now);
+                }
             }
         }
         say(client, session.tick(player.getId(), player.isDeadOrDying(), now));
+        checkResult(client, now);
     }
 
     /** @param newWorld another server or world, rather than a long teleport within one */
@@ -710,8 +768,137 @@ public final class DuelTracker {
         DuelLog.Entry entry = duelLog == null ? null : duelLog.add(System.currentTimeMillis(),
                 client.player.getName().getString(), client.player.getUUID(), opponent, uuid, summary, own, ping);
         chat(client, summaryLine(summary, opponent, entry == null ? -1 : entry.id()));
-        BetterLoka.LOGGER.info("[betterloka] duel vs {} said in chat (duel #{}, ping {})", opponent,
-                entry == null ? "-" : entry.id(), ping == null ? "none" : ping.readings() + " readings");
+        BetterLoka.LOGGER.info("[betterloka] duel vs {} said in chat (duel #{}, result {}, ping {})", opponent,
+                entry == null ? "-" : entry.id(), summary.result(), ping == null ? "none" : ping.readings() + " readings");
+        if (entry != null) {
+            settle(check);
+            check = new ResultCheck(entry.id(), opponent, recordBefore, System.currentTimeMillis());
+            recordBefore = null;
+            if (summary.result() != DuelStats.Result.UNKNOWN) {
+                // Known already: nothing to wait for.
+                settle(check);
+            }
+        }
+    }
+
+    // ---- the result, when nobody was seen to die ----
+
+    /**
+     * A title, the action bar or a line of chat while a duel is on or just over: maybe the server
+     * saying how it went. Chat that starts with a player's name is a player talking, and is not read.
+     */
+    private void readOutcome(String text, boolean chat) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || !config.duelStats()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        DuelStats duel = session.duel();
+        boolean fighting = duel != null && duel.fought();
+        DuelStats.Summary pending = session.pending();
+        boolean lately = check != null && now - check.saidAt < ResultCheck.TEXT_MILLIS;
+        if (!fighting && pending == null && !lately) {
+            return;
+        }
+        ClientPacketListener connection = client.getConnection();
+        if (chat && DuelOutcome.looksLikePlayerChat(text, name -> connection != null && connection.getPlayerInfo(name) != null)) {
+            return;
+        }
+        String opponent = fighting ? names.get(duel.opponent())
+                : pending != null ? names.get(pending.opponentId()) : check.opponent;
+        DuelStats.Result result = DuelOutcome.fromText(text, client.player.getName().getString(), opponent);
+        if (result == null) {
+            return;
+        }
+        BetterLoka.LOGGER.info("[betterloka] duel result {} read from \"{}\"", result, text);
+        if (!session.decide(result, now) && lately && !check.done) {
+            resolve(check.entryId, result, null, "text");
+            settle(check);
+        }
+    }
+
+    /** Asks for the player's ranked record now, per ladder {wins, losses}. */
+    private CompletableFuture<Map<String, int[]>> ownRecord(UUID self) {
+        com.betterloka.api.LokaApi api = loka == null ? null : loka.get();
+        if (api == null || self == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("no Loka API"));
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                com.betterloka.api.model.LokaPlayer player = api.findPlayerByUuid(self);
+                Map<String, int[]> record = new HashMap<>();
+                if (player != null) {
+                    player.ranked().forEach((ladder, ranked) ->
+                            record.put(ladder.profileKey(), new int[]{ranked.wins(), ranked.losses()}));
+                }
+                return record;
+            } catch (com.betterloka.api.ApiException e) {
+                throw new java.util.concurrent.CompletionException(e);
+            }
+        }, api.executor());
+    }
+
+    /** Once a tick: the latest duel's record, when the next look at it is due. */
+    private void checkResult(Minecraft client, long now) {
+        ResultCheck current = check;
+        if (current == null || current.done || current.inFlight || client.player == null) {
+            return;
+        }
+        if (current.before == null || current.before.isCompletedExceptionally()) {
+            settle(current);
+            return;
+        }
+        if (!current.before.isDone() || now - current.saidAt < ResultCheck.AFTER_MILLIS[current.attempt]) {
+            return;
+        }
+        current.inFlight = true;
+        ownRecord(client.player.getUUID()).whenComplete((after, failure) -> client.execute(() -> {
+            current.inFlight = false;
+            if (current.done) {
+                return;
+            }
+            DuelOutcome.Recorded recorded = failure == null ? DuelOutcome.fromRecords(current.before.join(), after) : null;
+            if (recorded != null) {
+                BetterLoka.LOGGER.info("[betterloka] duel #{} result {} on {} from the ranked record", current.entryId,
+                        recorded.result(), recorded.ladder());
+                resolve(current.entryId, recorded.result(), recorded.ladder(), "profile");
+                settle(current);
+            } else if (++current.attempt >= ResultCheck.AFTER_MILLIS.length) {
+                settle(current);
+            }
+        }));
+    }
+
+    private void resolve(int entryId, DuelStats.Result result, String ladder, String by) {
+        DuelLog duelLog = log == null ? null : log.get();
+        if (duelLog != null) {
+            duelLog.resolve(entryId, result, ladder, by);
+        }
+    }
+
+    /** The check is over: the duel is as known as it will be. */
+    private void settle(ResultCheck finished) {
+        if (finished == null || finished.done) {
+            return;
+        }
+        finished.done = true;
+        DuelLog duelLog = log == null ? null : log.get();
+        DuelLog.Entry entry = duelLog == null ? null : duelLog.byId(finished.entryId);
+        if (entry != null) {
+            try {
+                settled.accept(entry);
+            } catch (RuntimeException e) {
+                BetterLoka.LOGGER.warn("[betterloka] after duel #{}", finished.entryId, e);
+            }
+        }
+    }
+
+    /** Whether duel {@code id}'s result is still being found out. */
+    public static boolean checking(int id) {
+        DuelTracker tracker = instance;
+        ResultCheck current = tracker == null ? null : tracker.check;
+        return current != null && current.entryId == id && !current.done
+                && System.currentTimeMillis() - current.saidAt < ResultCheck.SHOWN_MILLIS;
     }
 
     /** The click that opens duel {@code id}'s screen; handled in the game, never sent anywhere. */

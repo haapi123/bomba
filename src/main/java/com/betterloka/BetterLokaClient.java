@@ -249,7 +249,12 @@ public class BetterLokaClient implements ClientModInitializer {
                 new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
         // Duels: /join when one is found (off until switched on), and the hit statistics afterwards.
-        new com.betterloka.duel.DuelTracker(config, BetterLokaClient::duelists, BetterLokaClient::duelLog).register();
+        com.betterloka.duel.DuelTracker duels = new com.betterloka.duel.DuelTracker(config, BetterLokaClient::duelists,
+                BetterLokaClient::duelLog, BetterLokaClient::lokaApi);
+        duels.register();
+        // Each duel, once its result is known, to the BetterLoka server's duel statistics (Loka Helper
+        // has the switch).
+        duels.onSettled(BetterLokaClient::shareDuel);
         new com.betterloka.helper.ImportantWaypointsHud(config).register();
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -343,6 +348,30 @@ public class BetterLokaClient implements ClientModInitializer {
      * The Loka Assistant client. It logs in by telling Mojang the player is "joining" the assistant
      * server's one-time id, as joining any server does; the token goes only to Mojang.
      */
+    /** Sends a finished duel to the duel statistics, if the player shares them and it was played on this account. */
+    private static void shareDuel(com.betterloka.duel.DuelLog.Entry entry) {
+        Minecraft client = Minecraft.getInstance();
+        if (!config.duelShare() || client.player == null
+                || !com.betterloka.duel.DuelReport.playedBy(entry, client.player.getUUID())) {
+            return;
+        }
+        com.google.gson.JsonObject report = com.betterloka.duel.DuelReport.of(entry, BetterLoka.VERSION);
+        if (report == null) {
+            return;
+        }
+        assistant().reportDuel(report).whenComplete((kept, failure) -> {
+            if (failure != null) {
+                BetterLoka.LOGGER.info("[betterloka] duel #{} not shared: {}", entry.id(), failure.getMessage());
+            } else {
+                BetterLoka.LOGGER.info("[betterloka] duel #{} shared ({})", entry.id(), kept ? "kept" : "already there");
+                client.execute(() -> {
+                    com.betterloka.gui.DuelScreen.forgetShared(entry.opponentUuid());
+                    com.betterloka.gui.DuelScreen.forgetShared(entry.selfUuid());
+                });
+            }
+        });
+    }
+
     public static synchronized AssistantClient assistant() {
         if (assistant == null) {
             assistant = new AssistantClient(

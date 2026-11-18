@@ -27,6 +27,7 @@ final class HttpApi {
     static final int MAX_BODY = 32 * 1024;
 
     private final AssistantService service;
+    private final DuelService duels;
     private final boolean trustForwardedFor;
     private final Map<String, Deque<Long>> requestsByIp = new ConcurrentHashMap<>();
     private final Map<String, Deque<Long>> loginsByIp = new ConcurrentHashMap<>();
@@ -34,7 +35,12 @@ final class HttpApi {
     private ExecutorService executor;
 
     HttpApi(AssistantService service, boolean trustForwardedFor) {
+        this(service, new DuelService(null, java.time.Clock.systemUTC()), trustForwardedFor);
+    }
+
+    HttpApi(AssistantService service, DuelService duels, boolean trustForwardedFor) {
         this.service = service;
+        this.duels = duels;
         this.trustForwardedFor = trustForwardedFor;
     }
 
@@ -71,7 +77,9 @@ final class HttpApi {
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI().getPath();
             if ("GET".equals(method) && ("/".equals(path) || "/v1/status".equals(path))) {
-                send(exchange, service.status());
+                AssistantService.Response status = service.status();
+                status.body().addProperty("duels", duels.enabled());
+                send(exchange, status);
                 return;
             }
             if (!"POST".equals(method) && !"GET".equals(method)) {
@@ -114,6 +122,8 @@ final class HttpApi {
                 case "/v1/admin/pending" -> service.pending(player);
                 case "/v1/admin/review" -> service.review(player, body);
                 case "/v1/admin/dismiss" -> service.dismiss(player, body);
+                case "/v1/duels/report" -> duels.report(player, body);
+                case "/v1/duels/player" -> duels.player(body);
                 default -> AssistantService.error(404, "not_found", "No such page.");
             };
             send(exchange, response);

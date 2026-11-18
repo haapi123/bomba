@@ -73,10 +73,15 @@ public final class DuelLog {
      *
      * @param id      its number in this log, for the chat line that opens it
      * @param self    the account that played it: an alt keeps its own record
-     * @param result  {@code WON}, {@code LOST} or {@code UNKNOWN}
+     * @param result   {@code WON}, {@code LOST} or {@code UNKNOWN}
+     * @param ladder   the ranked ladder it was on ({@code pot}, {@code barebones}) once known, else {@code null}
+     * @param resultBy where the result came from: {@code fight} (a death or the server's word during
+     *                 it), {@code text} (the server's word after it), {@code profile} (the player's
+     *                 ranked record on Loka); {@code null} while it is not known
      */
     public record Entry(int id, long at, String selfName, String self, String opponentName, String opponent,
-                        String result, long millis, Side you, Side them, Ping yourPing, Ping theirPing) {
+                        String result, long millis, Side you, Side them, Ping yourPing, Ping theirPing,
+                        String ladder, String resultBy) {
         public DuelStats.Result outcome() {
             try {
                 return DuelStats.Result.valueOf(result);
@@ -143,7 +148,8 @@ public final class DuelLog {
         load();
         Entry entry = new Entry(next++, at, selfName, self == null ? null : self.toString(), opponentName,
                 opponent == null ? null : opponent.toString(), summary.result().name(), summary.millis(),
-                Side.of(summary.you()), Side.of(summary.them()), Ping.of(yourPing), Ping.of(theirPing));
+                Side.of(summary.you()), Side.of(summary.them()), Ping.of(yourPing), Ping.of(theirPing), null,
+                summary.result() == DuelStats.Result.UNKNOWN ? null : "fight");
         entries.add(entry);
         while (entries.size() > KEEP) {
             entries.remove(0);
@@ -152,6 +158,35 @@ public final class DuelLog {
             disk.write(new Saved(next, List.copyOf(entries)));
         }
         return entry;
+    }
+
+    /**
+     * What was learnt about a duel after it was kept: its result, its ladder. A result already known
+     * is only replaced by the ranked record's, which is Loka's own.
+     *
+     * @return the duel as kept now, or {@code null} if it is not in the log
+     */
+    public synchronized Entry resolve(int id, DuelStats.Result result, String ladder, String by) {
+        load();
+        for (int i = 0; i < entries.size(); i++) {
+            Entry old = entries.get(i);
+            if (old.id() != id) {
+                continue;
+            }
+            boolean take = result != null && result != DuelStats.Result.UNKNOWN
+                    && (old.outcome() == DuelStats.Result.UNKNOWN || "profile".equals(by));
+            Entry updated = new Entry(old.id(), old.at(), old.selfName(), old.self(), old.opponentName(), old.opponent(),
+                    take ? result.name() : old.result(), old.millis(), old.you(), old.them(), old.yourPing(), old.theirPing(),
+                    ladder != null ? ladder : old.ladder(), take ? by : old.resultBy());
+            if (!updated.equals(old)) {
+                entries.set(i, updated);
+                if (disk != null) {
+                    disk.write(new Saved(next, List.copyOf(entries)));
+                }
+            }
+            return updated;
+        }
+        return null;
     }
 
     public synchronized Entry byId(int id) {

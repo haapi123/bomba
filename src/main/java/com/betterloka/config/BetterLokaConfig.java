@@ -105,6 +105,11 @@ public final class BetterLokaConfig {
     private boolean duelStats = true;
     /** Whether "Match Ready!" opens the screen with both duelists and the Join button. On. */
     private boolean duelScreen = true;
+    /**
+     * Whether each duel's numbers go to the BetterLoka server's duel statistics, which the duel
+     * screens show averages from. On; the switch is in Loka Helper.
+     */
+    private boolean duelShare = true;
     /** Whether shulker boxes' slots are tinted by the splash Instant Health II inside. Off until turned on. */
     private boolean shulkerScanner = false;
     /**
@@ -329,6 +334,15 @@ public final class BetterLokaConfig {
 
     public void setDuelStats(boolean duelStats) {
         this.duelStats = duelStats;
+        save();
+    }
+
+    public boolean duelShare() {
+        return duelShare;
+    }
+
+    public void setDuelShare(boolean duelShare) {
+        this.duelShare = duelShare;
         save();
     }
 

@@ -56,6 +56,7 @@ public class LokaHelperScreen extends Screen {
     private Button duelAcceptButton;
     private Button duelStatsButton;
     private Button duelScreenButton;
+    private Button duelShareButton;
     private Button shulkerButton;
     /** One switch per continent, right under the heading: no list to open and scroll for one click. */
     private final java.util.Map<ImportantPlaces.Region, Button> regionButtons =
@@ -217,21 +218,29 @@ public class LokaHelperScreen extends Screen {
         duelsLabelY = y;
         y += ROW_HEIGHT;
         int third = (width - 8) / 3;
+        // Four switches in two rows: joining and the VS screen, then the statistics and sharing them.
+
         duelAcceptButton = place(Button.builder(duelAcceptLabel(), button -> {
                     config().setDuelAutoAccept(!config().duelAutoAccept());
                     refreshLabels();
                 })
-                .bounds(left, y, third, BUTTON_HEIGHT).build());
+                .bounds(left, y, half, BUTTON_HEIGHT).build());
         duelScreenButton = place(Button.builder(duelScreenLabel(), button -> {
                     config().setDuelScreen(!config().duelScreen());
                     refreshLabels();
                 })
-                .bounds(left + third + 4, y, third, BUTTON_HEIGHT).build());
+                .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build());
+        y += BUTTON_HEIGHT + 4;
         duelStatsButton = place(Button.builder(duelStatsLabel(), button -> {
                     config().setDuelStats(!config().duelStats());
                     refreshLabels();
                 })
-                .bounds(left + (third + 4) * 2, y, width - (third + 4) * 2, BUTTON_HEIGHT).build());
+                .bounds(left, y, half, BUTTON_HEIGHT).build());
+        duelShareButton = place(Button.builder(duelShareLabel(), button -> {
+                    config().setDuelShare(!config().duelShare());
+                    refreshLabels();
+                })
+                .bounds(left + half + 4, y, width - half - 4, BUTTON_HEIGHT).build());
         y += BUTTON_HEIGHT + gap;
 
         // Shulker Scanner: the switch, and what its colours mean beside it.
@@ -304,6 +313,8 @@ public class LokaHelperScreen extends Screen {
         duelStatsButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_stats_tip")));
         shulkerButton.setMessage(shulkerLabel());
         shulkerButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.shulker_tip")));
+        duelShareButton.setMessage(duelShareLabel());
+        duelShareButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_share_tip")));
         duelScreenButton.setMessage(duelScreenLabel());
         duelScreenButton.setTooltip(Tooltip.create(Component.translatable("betterloka.helper.duel_screen_tip")));
         for (var entry : regionButtons.entrySet()) {
@@ -371,6 +382,10 @@ public class LokaHelperScreen extends Screen {
 
     private Component duelScreenLabel() {
         return Component.translatable("betterloka.helper.duel_screen", onOff(config().duelScreen()));
+    }
+
+    private Component duelShareLabel() {
+        return Component.translatable("betterloka.helper.duel_share", onOff(config().duelShare()));
     }
 
     private Component duelStatsLabel() {

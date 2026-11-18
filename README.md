@@ -656,7 +656,7 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
   crosshair. The same places are pinned on **Loka Map**.
 
-- **Duels** — three switches.
+- **Duels** — four switches.
   - **Auto-join** (off until you turn it on): when Loka says `Match Ready! [Click to join]`, `/join`
     is sent for you, a quarter of a second later, with a line in chat saying so. Only Loka's own line
     counts — the same words typed by a player arrive as `Name: Match Ready!…` and do nothing — and
@@ -685,6 +685,16 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
     new game mode, or the opponent coming four blocks closer. The arena's titles are shown on the
     screen's countdown box, and written to the game log with what the scoreboard said, to check
     against Loka's own wording.
+  - **Who won**: Loka ends a duel on the lethal blow without letting anybody die, so the death the
+    result would be read from never reaches the game. The mod reads it instead from what the server
+    says as the duel ends — a title, subtitle, the action bar or a chat line such as *Victory*,
+    *Defeat*, *Knucior won the duel*, *+15 ELO* (chat that starts with a player's name is a player
+    talking, and is not read) — and, if that says nothing, from **your own ranked record on Loka**:
+    the record when `Match Ready!` came against the record after the duel, a few times over eight
+    minutes. One win more on a ladder is a win there, one loss more a loss. The duel's screen shows
+    *Checking the result…* meanwhile, and the winner and loser as soon as it is known, even while it
+    is open. A death the game does see (the opponent's health reaching nothing, your own death) still
+    counts first.
   - **Stats** (on): when the duel ends, one line in chat — `Duel vs Knucior · 0:42 · Won` and
     *▸ Click to see the duel's stats*. The click opens the duel's screen, with **WINNER** in green
     over whoever won and **LOSER** in red over whoever lost (*you* and *opponent* when the mod could
@@ -696,9 +706,21 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
     matches. Accuracy shows as **—** when fewer swings were seen than hits landed: then not all of
     them were visible, and a percentage would be made up.
 
+    Both screens also have **BetterLoka database**: what BetterLoka players' mods have seen of the
+    player in duels — their average **ping**, **accuracy**, and the share of their hits that were
+    **crits** and **normal** hits — over their latest 200 reported duels, with how many duels and
+    players that is from.
+
     Pots are counted from what the server shows every player near a fight: a thrown splash potion
     arrives naming who threw it, then what it is; only Instant Health II or stronger counts, from
     either side, until the duel is decided. Duels counted before 0.57 show **—** there.
+
+  - **Database** (on): after each duel, once its result is known, the mod sends the BetterLoka server
+    what it counted of both sides: your opponent's name and account, swings, hits, crits, sweeps, best
+    combo, pots and ping in that duel, the result and the ladder. Who you are the server knows from
+    the same Minecraft login Loka Assistant uses; nothing else from the game goes with it. Turn it off
+    and nothing is sent. The server keeps it in its own database (see the assistant server's README,
+    *Duel statistics*); the mod never connects to a database itself.
 
   ![VS screen](docs/duel-versus.png)
 

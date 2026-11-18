@@ -54,6 +54,32 @@ class DuelLogTest {
     }
 
     @Test
+    void aResultThatComesLaterIsKept(@TempDir Path dir) {
+        Path file = dir.resolve("duels.json");
+        DuelLog log = new DuelLog(file);
+        DuelStats unknown = new DuelStats(10, 0);
+        unknown.hit(10, 20, 1000);
+        DuelLog.Entry entry = log.add(1, "Me", ME, "Rival", RIVAL, unknown.summary(), null, null);
+        assertEquals(DuelStats.Result.UNKNOWN, entry.outcome());
+        assertNull(entry.resultBy());
+
+        DuelLog.Entry told = log.resolve(entry.id(), DuelStats.Result.WON, null, "text");
+        assertEquals(DuelStats.Result.WON, told.outcome());
+        assertEquals("text", told.resultBy());
+        assertEquals(DuelStats.Result.WON, log.resolve(entry.id(), DuelStats.Result.LOST, null, "text").outcome(),
+                "a second word from the server does not undo the first");
+        DuelLog.Entry recorded = log.resolve(entry.id(), DuelStats.Result.LOST, "pot", "profile");
+        assertEquals(DuelStats.Result.LOST, recorded.outcome(), "Loka's own record wins");
+        assertEquals("pot", recorded.ladder());
+
+        DuelLog again = new DuelLog(file);
+        assertEquals(DuelStats.Result.LOST, again.byId(entry.id()).outcome());
+        assertEquals("profile", again.byId(entry.id()).resultBy());
+        assertNull(again.resolve(99, DuelStats.Result.WON, null, "text"));
+        assertEquals("fight", log.add(2, "Me", ME, "Rival", RIVAL, duel(true), null, null).resultBy());
+    }
+
+    @Test
     void theRecordBetweenTwoPlayersAndTheLatestMatches() {
         DuelLog log = new DuelLog(null);
         log.add(1, "Me", ME, "Rival", RIVAL, duel(true), null, ping(80));

@@ -73,6 +73,34 @@ Pterodactyl wystarczy **jeden serwer**. Bot i asystent używają jednego połąc
 5. Uruchom ponownie. W konsoli zobaczysz `Unanswered questions go to Discord channel ...` i
    `Watching Loka every 30s`.
 
+### Baza danych statystyk duela (po polsku)
+
+Mod po każdym duelu wysyła na ten serwer to, co policzył (ping, zamachy, trafienia, kryty, sweepy,
+combo, potki, wynik — obu stron), a ekrany duela pokazują z tego średnie. Serwer trzyma to w bazie
+MySQL/MariaDB. Mod **nigdy** nie łączy się z bazą sam: zna ją tylko ten serwer, więc hasło do bazy
+nie trafia do jara moda ani do graczy.
+
+1. W panelu (icehost / Pterodactyl): serwer → **Bazy danych** → **Utwórz nową bazę danych**:
+   - **Nazwa bazy danych**: `betterloka` (same litery, cyfry, `_`, `-`, `.` — **bez `%`**; panel sam
+     dopisze przedrostek, np. `s1234_betterloka`),
+   - **Połączenia od**: `%` (serwer w kontenerze panelu nie ma stałego adresu; hasło jest długie i
+     losowe).
+2. Po utworzeniu panel pokaże **Endpoint** (host:port), **Nazwę** (z przedrostkiem), **Użytkownika**
+   i **Hasło** (ikonka oka). Wpisz je do **`database.json`** w folderze serwera (plik tworzy się sam,
+   pusty, przy pierwszym starcie 0.58):
+   ```json
+   {
+     "host": "Endpoint z panelu, np. 123.45.67.89:3306",
+     "name": "s1234_betterloka",
+     "user": "u1234_abcdef",
+     "password": "hasło z panelu"
+   }
+   ```
+   Hasła nie wysyłaj nikomu i nie wklejaj na czat. Plik `database.json` zostaje tylko na serwerze.
+3. Uruchom serwer ponownie. W konsoli: `Duel statistics: kept in jdbc:mariadb://…` — tabela
+   `duel_sides` tworzy się sama. Bez `database.json`: `Duel statistics: off`, a reszta działa jak
+   dotąd.
+
 ## Commands
 
 | Command | What it does |
@@ -192,6 +220,32 @@ estimate and asks before spending.
 The server never spends past `monthlyBudgetUsd`. Loading prepaid credits with automatic reload off in
 the Claude Console is a second ceiling the server cannot get around.
 
+## Duel statistics — `database.json`
+
+`POST /v1/duels/report` keeps one duel as the reporting player's mod counted it; `POST
+/v1/duels/player` with `{"uuid": …}` returns what has been seen of a player. Both need the login, so
+every report comes from a verified Minecraft account. The rows live in a MySQL or MariaDB database
+(the panel's **Databases** tab makes one), in one table, made on the first start:
+
+`duel_sides` — one row per side of a reported duel: `reporter`, `duel_at`, `player`/`player_name`,
+`opponent`/`opponent_name`, `self_report` (the reporter's own side or their opponent's), `result`
+(`W`/`L`/`U` from that player's side), `ladder`, `duration_ms`, `swings`, `hits`, `crits`, `sweeps`,
+`best_combo`, `pots`, `ping_avg`, `ping_max`, `ping_spikes`, `ping_readings`, `mod_version`,
+`received_at`. Unique on (`reporter`, `duel_at`, `player`), so a report sent twice is kept once.
+
+A player's numbers are worked out from their latest 200 rows: average ping, hits of swings (only
+duels where at least as many swings as hits were seen), the share of hits that were crits, average
+best combo and pots. If both duelists run the mod, a duel is in twice, once from each side; the
+counts say "duels" and "players" for that.
+
+Limits: 40 reports an hour and 300 a day per account; a report must look like a duel (a time within
+the last three days, no more crits than hits, a real Minecraft name, and so on) or it is refused.
+
+`database.json` takes `host` (the panel's endpoint, with or without `:port`), `port`, `name`, `user`
+and `password`, or a whole `jdbcUrl` instead. The server connects with the MariaDB driver it ships
+with, which also talks to MySQL. A database that does not answer at start only turns the statistics
+off; the assistant and the bot carry on.
+
 ## Who is asking
 
 A player proves who they are the way they do joining any Minecraft server: the mod asks this server
@@ -216,6 +270,7 @@ limits hang on the verified UUID, and admins are recognised by it.
 | `data/discord-questions.json` | Which Discord message shows which question and proposal. |
 | `betterloka-bot.json` | The fallen-town bot's settings, and the bot token the Discord questions use. A secret. |
 | `betterloka-bot-state.json` | Fallen towns already announced. |
+| `database.json` | Where the duel statistics are kept: the database's host, name, user and password. A secret. |
 
 ## Where the knowledge comes from
 

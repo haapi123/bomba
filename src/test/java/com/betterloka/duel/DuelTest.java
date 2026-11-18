@@ -158,6 +158,32 @@ class DuelTest {
     }
 
     @Test
+    void theServersWordDecidesItWhenNobodyDies() {
+        DuelStats notYet = new DuelStats(ME, 0);
+        notYet.decide(DuelStats.Result.WON, 50);
+        assertFalse(notYet.decided(), "before the fight it means nothing");
+
+        DuelStats duel = new DuelStats(ME, 0);
+        duel.hit(ME, THEM, 100);
+        duel.decide(DuelStats.Result.LOST, 200);
+        assertTrue(duel.over(200));
+        assertEquals(DuelStats.Result.LOST, duel.summary().result());
+        duel.hit(ME, THEM, 300);
+        assertEquals(1, duel.summary().you().hits(), "nothing counts after the end");
+        duel.decide(DuelStats.Result.WON, 400);
+        assertEquals(DuelStats.Result.LOST, duel.summary().result(), "decided once");
+
+        DuelSession session = new DuelSession();
+        session.arm(ME, 0);
+        session.duel().hit(ME, THEM, 100);
+        session.moved(null, 1000);
+        assertTrue(session.waiting());
+        assertTrue(session.decide(DuelStats.Result.WON, 1100), "the word after the move, before the summary");
+        assertEquals(DuelStats.Result.WON, session.pending().result());
+        assertFalse(session.decide(DuelStats.Result.LOST, 1200), "already known");
+    }
+
+    @Test
     void healPotsAreCountedForEachSideUntilTheEnd() {
         DuelStats duel = new DuelStats(ME, 0);
         duel.pot(ME);

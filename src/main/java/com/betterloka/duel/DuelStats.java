@@ -113,6 +113,10 @@ public final class DuelStats {
         public long millis() {
             return Math.max(0, endedAt - startedAt);
         }
+
+        Summary withResult(Result decided) {
+            return new Summary(you, them, opponentId, startedAt, endedAt, decided);
+        }
     }
 
     /** This player's entity id — a different number on every server, so it can change before the fight. */
@@ -127,7 +131,8 @@ public final class DuelStats {
     private final Map<Integer, Blow> lastBlowBy = new HashMap<>();
     private long firstHitAt;
     private long lastCombatAt;
-    private Integer died;
+    /** How it ended, once it has. */
+    private Result decided;
 
     public DuelStats(int self, long now) {
         this.self = self;
@@ -158,21 +163,21 @@ public final class DuelStats {
     }
 
     public void swing(int entityId) {
-        if (died == null) {
+        if (decided == null) {
             side(entityId).swings++;
         }
     }
 
     /** A splash Instant Health II thrown by {@code thrower}, this player or anybody else. */
     public void pot(int thrower) {
-        if (died == null) {
+        if (decided == null) {
             side(thrower).pots++;
         }
     }
 
     /** A melee hit that did damage; only hits between this player and somebody else count. */
     public void hit(int attacker, int victim, long now) {
-        if (died != null || attacker == victim || (attacker != self && victim != self)) {
+        if (decided != null || attacker == victim || (attacker != self && victim != self)) {
             return;
         }
         Side hitter = side(attacker);
@@ -195,7 +200,7 @@ public final class DuelStats {
     /** The crit animation on {@code victim}: the hit they just took was a crit. */
     public void crit(int victim, long now) {
         Blow blow = lastBlowOn.get(victim);
-        if (died == null && blow != null && !blow.crit && now - blow.at <= LINK_MILLIS) {
+        if (decided == null && blow != null && !blow.crit && now - blow.at <= LINK_MILLIS) {
             blow.crit = true;
             side(blow.attacker).crits++;
         }
@@ -204,7 +209,7 @@ public final class DuelStats {
     /** The sweep sound where {@code attacker} stands: the hit they just made was a sweep. */
     public void sweep(int attacker, long now) {
         Blow blow = lastBlowBy.get(attacker);
-        if (died == null && blow != null && !blow.sweep && now - blow.at <= LINK_MILLIS) {
+        if (decided == null && blow != null && !blow.sweep && now - blow.at <= LINK_MILLIS) {
             blow.sweep = true;
             side(attacker).sweeps++;
         }
@@ -212,8 +217,19 @@ public final class DuelStats {
 
     /** Somebody died: the duel is decided if it was this player or the opponent. */
     public void died(int entityId, long now) {
-        if (died == null && fought() && (entityId == self || entityId == opponent())) {
-            died = entityId;
+        if (decided == null && fought() && (entityId == self || entityId == opponent())) {
+            decided = entityId == self ? Result.LOST : Result.WON;
+            lastCombatAt = now;
+        }
+    }
+
+    /**
+     * The server said how it went — Loka ends a duel on the lethal blow without letting anybody die,
+     * so this is usually how a duel is decided (see {@link DuelOutcome}).
+     */
+    public void decide(Result result, long now) {
+        if (decided == null && fought() && result != null && result != Result.UNKNOWN) {
+            decided = result;
             lastCombatAt = now;
         }
     }
@@ -232,7 +248,7 @@ public final class DuelStats {
     }
 
     public boolean decided() {
-        return died != null;
+        return decided != null;
     }
 
     /** Over by itself: decided, or nobody has struck for a while. */
@@ -248,7 +264,7 @@ public final class DuelStats {
     public Summary summary() {
         int opponent = opponent();
         Side them = opponent == -1 ? new Side() : others.getOrDefault(opponent, new Side());
-        Result result = died == null ? Result.UNKNOWN : died == self ? Result.LOST : Result.WON;
+        Result result = decided == null ? Result.UNKNOWN : decided;
         return fought()
                 ? new Summary(you, them, opponent, firstHitAt, Math.max(firstHitAt, lastCombatAt), result)
                 : new Summary(you, them, opponent, armedAt, armedAt, result);

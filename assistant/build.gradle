@@ -18,10 +18,14 @@ dependencies {
     // Reads Loka's web pages into plain text for the knowledge base.
     implementation 'org.jsoup:jsoup:1.18.3'
     implementation 'org.slf4j:slf4j-api:2.0.16'
+    // The duel statistics' database: MySQL or MariaDB, as game panels make them.
+    implementation 'org.mariadb.jdbc:mariadb-java-client:3.5.11'
     runtimeOnly 'org.slf4j:slf4j-simple:2.0.16'
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    // A database in memory, in MySQL mode, for the duel statistics' tests.
+    testImplementation 'com.h2database:h2:2.3.232'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

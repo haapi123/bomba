@@ -128,7 +128,7 @@ public final class AssistantServer {
                     + (config.discordQuestions.answerRoleIds.isEmpty() && config.discordQuestions.approveRoleIds.isEmpty()
                     ? " (no roles set yet: only server administrators can answer)" : ""));
         }
-        HttpApi api = new HttpApi(service, config.trustForwardedFor);
+        HttpApi api = new HttpApi(service, duelService(dir, clock), config.trustForwardedFor);
         int port = config.effectivePort();
         api.start(config.bind, port);
         KnowledgeBase.Snapshot kb = knowledge.current();
@@ -242,6 +242,28 @@ public final class AssistantServer {
         System.out.printf(Locale.ROOT, "$%.0f a month is about %d to %d questions.%n", config.monthlyBudgetUsd,
                 (long) (config.monthlyBudgetUsd / Pricing.cost(config.model, cold, config.prices)),
                 (long) (config.monthlyBudgetUsd / Pricing.cost(config.model, warm, config.prices)));
+    }
+
+    /**
+     * The duel statistics, if {@code database.json} says where they are kept. The table is made on
+     * the first start; a database that does not answer leaves the rest of the server running.
+     */
+    private static DuelService duelService(Path dir, Clock clock) {
+        DuelDatabase.Settings settings = DuelDatabase.load(dir);
+        if (!settings.configured()) {
+            Log.info("Duel statistics: off (fill in " + dir.resolve(DuelDatabase.FILE).toAbsolutePath() + " to keep them).");
+            return new DuelService(null, clock);
+        }
+        DuelStore.Connections connections = DuelDatabase.connections(settings);
+        DuelStore store = new DuelStore(connections);
+        try {
+            store.createTables();
+            Log.info("Duel statistics: kept in " + connections);
+        } catch (java.sql.SQLException e) {
+            Log.warn("Duel statistics: the database at " + connections + " did not answer (" + e.getMessage()
+                    + "). Check database.json; duels reported meanwhile are refused.");
+        }
+        return new DuelService(store, clock);
     }
 
     /** {@code ANTHROPIC_API_KEY}, else the first line of {@code api-key.txt}; never printed. */

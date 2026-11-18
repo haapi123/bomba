@@ -17,20 +17,15 @@ import java.util.List;
  * between the two in the middle.
  */
 public final class DuelResultScreen extends DuelScreen {
-    private final DuelLog.Entry duel;
+    /** The duel as kept; its result can come in while the screen is open (see {@link #refresh()}). */
+    private DuelLog.Entry duel;
 
     public DuelResultScreen(DuelLog.Entry duel) {
         super(Component.translatable("betterloka.duelscreen.summary"),
                 new Corner(true, duel.selfName(), duel.selfUuid(), GuiTheme.ACCENT),
                 new Corner(false, duel.opponentName() == null ? "?" : duel.opponentName(), duel.opponentUuid(), GuiTheme.BAD));
         this.duel = duel;
-        // Who won and who lost, in green and red; as before when the mod could not tell.
-        DuelStats.Result result = duel.outcome();
-        if (result != DuelStats.Result.UNKNOWN) {
-            boolean youWon = result == DuelStats.Result.WON;
-            mark(you, youWon);
-            mark(them, !youWon);
-        }
+        markSides();
         Duelists duelists = BetterLokaClient.duelists();
         if (duelists != null) {
             you.record = duelists.load(you.name, you.uuid);
@@ -60,6 +55,12 @@ public final class DuelResultScreen extends DuelScreen {
         context.centeredText(this.font, java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")
                         .format(java.time.Instant.ofEpochMilli(duel.at()).atZone(java.time.ZoneId.systemDefault())),
                 centre, 105, 0xFF6E6E7A);
+        if (result == DuelStats.Result.UNKNOWN && com.betterloka.duel.DuelTracker.checking(duel.id())) {
+            // Loka's ranked record says it a few seconds on.
+            int dots = (int) (System.currentTimeMillis() / 400 % 4);
+            context.centeredText(this.font, Component.translatable("betterloka.duelscreen.checking").append(".".repeat(dots)),
+                    centre, 59, GuiTheme.LIVE);
+        }
 
         bigText(context, Component.literal("VS").withStyle(ChatFormatting.BOLD, ChatFormatting.ITALIC), centre, 126, 3f, GuiTheme.LIVE);
 
@@ -92,6 +93,30 @@ public final class DuelResultScreen extends DuelScreen {
             }
         }
         context.centeredText(this.font, Component.translatable("betterloka.duelscreen.esc_only"), centre, H - 22, GuiTheme.MUTED);
+    }
+
+    /**
+     * The result, when it came in after the duel was said — Loka's ranked record has it a few seconds
+     * on — so the screen shows it without being opened again.
+     */
+    @Override
+    protected void refresh() {
+        DuelLog log = BetterLokaClient.duelLog();
+        DuelLog.Entry kept = log == null ? null : log.byId(duel.id());
+        if (kept != null && !kept.equals(duel)) {
+            duel = kept;
+            markSides();
+        }
+    }
+
+    /** Who won and who lost, in green and red; "you" and "opponent" while the mod cannot tell. */
+    private void markSides() {
+        DuelStats.Result result = duel.outcome();
+        if (result != DuelStats.Result.UNKNOWN) {
+            boolean youWon = result == DuelStats.Result.WON;
+            mark(you, youWon);
+            mark(them, !youWon);
+        }
     }
 
     private static void mark(Corner corner, boolean winner) {
@@ -147,6 +172,8 @@ public final class DuelResultScreen extends DuelScreen {
 
         y = section(context, x, y + 2, width, Component.translatable("betterloka.duelscreen.ranks"), corner.color);
         y = rankTiles(context, corner, x, y, width);
+
+        y = sharedStats(context, corner, x, y + 4, width);
 
         y = section(context, x, y + 4, width, Component.translatable("betterloka.duelscreen.names"), corner.color);
         return previousNames(context, corner, x, y, width);

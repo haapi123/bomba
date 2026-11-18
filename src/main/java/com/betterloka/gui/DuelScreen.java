@@ -71,6 +71,9 @@ public abstract class DuelScreen extends Screen {
         int content;
         int view;
         int viewTop;
+        /** What BetterLoka players' mods have seen of them, and for which account it was asked. */
+        CompletableFuture<com.betterloka.assistant.AssistantClient.SharedStats> shared;
+        UUID sharedFor;
 
         Corner(boolean you, String name, UUID uuid, int color) {
             this.you = you;
@@ -143,6 +146,7 @@ public abstract class DuelScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int realMouseX, int realMouseY, float delta) {
         super.extractRenderState(context, realMouseX, realMouseY, delta);
+        refresh();
         long now = System.currentTimeMillis();
         float seconds = lastFrame == 0 ? 0 : Math.min(0.25f, (now - lastFrame) / 1000f);
         lastFrame = now;
@@ -174,6 +178,84 @@ public abstract class DuelScreen extends Screen {
             }
             context.setTooltipForNextFrame(lines, realMouseX, realMouseY);
         }
+    }
+
+    /** Before each frame: whatever the screen shows that can change while it is open. */
+    protected void refresh() {
+    }
+
+    /** The duel statistics asked for lately, by account: a rematch or a screen opened again asks nothing. */
+    private static final java.util.Map<UUID, CompletableFuture<com.betterloka.assistant.AssistantClient.SharedStats>> SHARED =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<UUID, Long> SHARED_AT = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long SHARED_KEEP_MILLIS = 2 * 60_000L;
+
+    /** Forgets what was asked about {@code player}: a duel with them was just reported. */
+    public static void forgetShared(UUID player) {
+        if (player != null) {
+            SHARED.remove(player);
+            SHARED_AT.remove(player);
+        }
+    }
+
+    /** Asks for a side's duel statistics once their account is known. */
+    private static void loadShared(Corner corner) {
+        if (corner.uuid == null || corner.uuid.equals(corner.sharedFor)) {
+            return;
+        }
+        corner.sharedFor = corner.uuid;
+        long now = System.currentTimeMillis();
+        Long at = SHARED_AT.get(corner.uuid);
+        CompletableFuture<com.betterloka.assistant.AssistantClient.SharedStats> known = SHARED.get(corner.uuid);
+        if (known == null || at == null || now - at > SHARED_KEEP_MILLIS || known.isCompletedExceptionally()) {
+            known = com.betterloka.BetterLokaClient.assistant().duelStats(corner.uuid);
+            SHARED.put(corner.uuid, known);
+            SHARED_AT.put(corner.uuid, now);
+        }
+        corner.shared = known;
+    }
+
+    /**
+     * What BetterLoka players' mods have seen of this player in duels — their ping, accuracy, crits
+     * and normal hits — from the BetterLoka server's duel statistics. @return the next y
+     */
+    protected int sharedStats(GuiGraphicsExtractor context, Corner corner, int x, int y, int width) {
+        loadShared(corner);
+        y = section(context, x, y, width, Component.translatable("betterloka.duelscreen.shared"), corner.color);
+        Component tip = Component.translatable("betterloka.duelscreen.shared_tip");
+        var future = corner.shared;
+        if (future == null || !future.isDone()) {
+            context.text(this.font, corner.known() && corner.uuid == null ? "—" : "…", x, y, GuiTheme.MUTED);
+            return y + LINE + 2;
+        }
+        if (future.isCompletedExceptionally()) {
+            for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.shared_off"), width)) {
+                context.text(this.font, line, x, y, 0xFF6E6E7A);
+                y += LINE;
+            }
+            return y + 2;
+        }
+        var stats = future.join();
+        if (stats.observations() == 0) {
+            for (FormattedCharSequence line : this.font.split(Component.translatable("betterloka.duelscreen.shared_none"), width)) {
+                context.text(this.font, line, x, y, 0xFF6E6E7A);
+                y += LINE;
+            }
+            return y + 2;
+        }
+        y = subheading(context, x, y, width, Component.translatable("betterloka.duelscreen.shared_from",
+                stats.observations(), stats.reporters()));
+        int crit = stats.critShare();
+        y = tiles(context, x, y, width, List.of(
+                new Tile(stats.ping() < 0 ? "—" : stats.ping() + " ms", Component.translatable("betterloka.duelscreen.ping"),
+                        stats.ping() < 0 ? GuiTheme.MUTED : PingColors.color(stats.ping()) | 0xFF000000, tip),
+                new Tile(stats.accuracy() < 0 ? "—" : stats.accuracy() + "%", Component.translatable("betterloka.duelscreen.accuracy"),
+                        stats.accuracy() < 0 ? GuiTheme.MUTED : stats.accuracy() >= 60 ? GuiTheme.GOOD
+                                : stats.accuracy() >= 40 ? GuiTheme.LIVE : GuiTheme.BAD, tip),
+                new Tile(crit < 0 ? "—" : crit + "%", Component.translatable("betterloka.duelscreen.crits"), GuiTheme.LIVE, tip),
+                new Tile(crit < 0 ? "—" : (100 - crit) + "%", Component.translatable("betterloka.duelscreen.normal"),
+                        GuiTheme.TEXT, tip)));
+        return y;
     }
 
     protected int titleColor() {

@@ -1548,8 +1548,8 @@ public final class DevDiagnostics {
         });
         step(20, DevDiagnostics::attack);
         step(20, () -> BetterLoka.LOGGER.info("DIAG duel before the end: {}", com.betterloka.duel.DuelTracker.get().devState()));
-        // The opponent falls: a won duel, for the winner and loser labels.
-        step(2, () -> server("kill @e[type=zombie]"));
+        // Loka lets nobody die: the server's word is what says who won.
+        step(2, () -> server("title @a title \"§6§lVICTORY!\""));
         step(10, () -> BetterLoka.LOGGER.info("DIAG duel before the move: {}", com.betterloka.duel.DuelTracker.get().devState()));
         // Sent on after the duel, as Loka sends its players to another server.
         step(2, () -> server("execute in minecraft:overworld run tp @a 0 -60 0 0 0"));
@@ -1576,6 +1576,14 @@ public final class DevDiagnostics {
         shot(200, "duel-result");
         step(2, () -> scrollPanels(-30));
         shot(20, "duel-result-scrolled");
+        // Opened again once the duel has gone to the duel statistics: the database's numbers.
+        step(100, () -> {
+            com.betterloka.duel.DuelLog.Entry last = BetterLokaClient.duelLog().recent(client().player.getUUID(), 1).get(0);
+            BetterLoka.LOGGER.info("DIAG duel kept as {} by {} on {}", last.result(), last.resultBy(), last.ladder());
+            client().gui.setScreen(new com.betterloka.gui.DuelResultScreen(last));
+        });
+        step(60, () -> scrollPanels(-30));
+        shot(20, "duel-result-shared");
         // The ranked lines, if they had to follow the summary rather than come with it.
         step(400, DevDiagnostics::logDuelChat);
         shot(10, "duel-chat-later");

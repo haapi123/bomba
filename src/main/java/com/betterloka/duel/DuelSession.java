@@ -35,6 +35,28 @@ public final class DuelSession {
         return duel;
     }
 
+    /** The finished duel waiting to be said, or {@code null}. */
+    public DuelStats.Summary pending() {
+        return pending;
+    }
+
+    /**
+     * The server said how it went: for the duel being fought, or the one just over and not said yet.
+     *
+     * @return whether it was taken
+     */
+    public boolean decide(DuelStats.Result result, long now) {
+        if (duel != null && duel.fought()) {
+            duel.decide(result, now);
+            return true;
+        }
+        if (pending != null && pending.result() == DuelStats.Result.UNKNOWN && result != DuelStats.Result.UNKNOWN) {
+            pending = pending.withResult(result);
+            return true;
+        }
+        return false;
+    }
+
     /** Whether a finished duel's summary is waiting to be said. */
     public boolean waiting() {
         return pending != null;
