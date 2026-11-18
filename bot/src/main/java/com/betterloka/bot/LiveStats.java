@@ -70,16 +70,36 @@ final class LiveStats {
 
     private boolean caughtUp;
     private YearMonth sweptMonth;
+    /** Where the month's tally is kept between restarts, or {@code null}. */
+    private final java.nio.file.Path tallyFile;
+    /** The last reason the potion ladder could not be read, said once rather than every refresh. */
+    private String potionFailure;
     private Players players;
     private Fights fights;
     private Ranked potion;
 
     LiveStats(String serverAddress, boolean statusFallback, ZoneId zone, boolean countRivina, LokaApi loka, ArenaApi arena) {
+        this(serverAddress, statusFallback, zone, countRivina, loka, arena, null);
+    }
+
+    /** @param tallyFile where the month's tally is kept between restarts; {@code null} to keep it only in memory */
+    LiveStats(String serverAddress, boolean statusFallback, ZoneId zone, boolean countRivina, LokaApi loka, ArenaApi arena,
+              java.nio.file.Path tallyFile) {
         this.serverAddress = serverAddress;
         this.statusFallback = statusFallback;
         this.loka = loka;
         this.arena = arena;
         this.tally = new MonthTally(zone, countRivina);
+        this.tallyFile = tallyFile;
+        long now = System.currentTimeMillis();
+        if (tallyFile != null) {
+            // Carry on from the last run: read only what is newer than what it had counted.
+            caughtUp = tally.load(tallyFile, now);
+            sweptMonth = tally.month(now);
+            if (tally.battles() > 0) {
+                LOG.info("Stat channels: {} battle(s) of {} already counted", tally.battles(), sweptMonth);
+            }
+        }
     }
 
     /** Asks every source again; whatever fails keeps what it had. */
@@ -188,6 +208,9 @@ final class LiveStats {
             LOG.info("Stat channels: {} new battle(s) counted for {} ({} this month)", counted, tally.month(now),
                     tally.battles());
         }
+        if (counted > 0 || caughtUp) {
+            tally.save(tallyFile, caughtUp);
+        }
     }
 
     private void readPotion() {
@@ -197,8 +220,19 @@ final class LiveStats {
                 ArenaEntry top = ladder.get(0);
                 potion = new Ranked(top.name(), top.rank() == null ? "" : top.rank().toString());
             }
+            if (potionFailure != null) {
+                LOG.info("The potion ladder can be read again");
+                potionFailure = null;
+            }
         } catch (ApiException | RuntimeException e) {
-            LOG.warn("Could not read the potion ladder: {}", e.getMessage());
+            // Said once: Loka's ladder site refusing the bot (HTTP 403) does not change every ten minutes.
+            String reason = String.valueOf(e.getMessage());
+            if (!reason.equals(potionFailure)) {
+                LOG.warn("Could not read the potion ladder: {} (said once; the tile keeps its last value)", reason);
+                potionFailure = reason;
+            } else {
+                LOG.debug("Could not read the potion ladder: {}", reason);
+            }
         }
     }
 

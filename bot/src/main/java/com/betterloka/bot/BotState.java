@@ -10,8 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -28,6 +31,14 @@ public final class BotState {
     private static final class Saved {
         Set<String> announced = new LinkedHashSet<>();
         boolean seeded;
+        /**
+         * Loka's deleted-town listing as last read, how many it held, and when — so a restart asks
+         * only for the count (one small request) instead of reading the forty-odd pages again.
+         */
+        List<com.betterloka.api.model.LokaTown.Saved> deletedTowns;
+        int deletedCount = -1;
+        long deletedLoadedAt;
+        long lastFullSweepAt;
     }
 
     private final Path file;
@@ -74,6 +85,45 @@ public final class BotState {
             anyNew |= saved.announced.add(key);
         }
         return anyNew;
+    }
+
+    /** The deleted-town count at the last full sweep, or -1 before one. */
+    public int deletedCount() {
+        return saved.deletedCount;
+    }
+
+    public long lastFullSweepAt() {
+        return saved.lastFullSweepAt;
+    }
+
+    public long deletedLoadedAt() {
+        return saved.deletedLoadedAt;
+    }
+
+    /** The deleted towns as last read, by id; empty before the first read. */
+    public Map<String, com.betterloka.api.model.LokaTown> deletedTowns() {
+        Map<String, com.betterloka.api.model.LokaTown> towns = new HashMap<>();
+        if (saved.deletedTowns != null) {
+            for (com.betterloka.api.model.LokaTown.Saved town : saved.deletedTowns) {
+                if (town != null && town.id() != null) {
+                    towns.put(town.id(), com.betterloka.api.model.LokaTown.fromSaved(town));
+                }
+            }
+        }
+        return Map.copyOf(towns);
+    }
+
+    /** Remembers a full sweep: the count it saw, when, and the deleted-town listing it used. */
+    public void rememberSweep(int deletedCount, long sweptAt, Map<String, com.betterloka.api.model.LokaTown> deleted,
+                              long loadedAt) {
+        saved.deletedCount = deletedCount;
+        saved.lastFullSweepAt = sweptAt;
+        List<com.betterloka.api.model.LokaTown.Saved> towns = new ArrayList<>();
+        for (com.betterloka.api.model.LokaTown town : deleted.values()) {
+            towns.add(town.toSaved());
+        }
+        saved.deletedTowns = towns;
+        saved.deletedLoadedAt = loadedAt;
     }
 
     public int announcedCount() {

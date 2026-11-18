@@ -321,6 +321,15 @@ everything after that is news. Set `announceBacklogOnFirstRun` to `true` if you 
 What has been announced is kept in `betterloka-bot-state.json`, so a restart does not repeat itself.
 A town that later loses *more* ground is announced again for the new territory.
 
+The same file keeps Loka's deleted-town listing as last read, its count and when the last full sweep
+was, so a **restart is not a burst**: it asks for the count, and reads the listing's forty-odd pages
+(Loka serves twenty towns a page, whatever size is asked for) only when the count has moved or the
+hourly backstop is due — and even then the listing itself only when it is incomplete or twelve hours
+old. Before 0.58.2 every start read all of it, which with the stat channels' month of battles on top
+is what made Loka answer 429 for a minute after each restart. The stat channels keep their tally of
+the month's battles in `betterloka-bot-month.json` for the same reason, and say a refused potion
+ladder (HTTP 403) once rather than every refresh.
+
 ## How it watches every 30 seconds without downloading a megabyte
 
 A town falling **changes nothing in the territory list** — its claims keep pointing at the same id.

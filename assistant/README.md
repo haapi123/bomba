@@ -279,7 +279,8 @@ limits hang on the verified UUID, and admins are recognised by it.
 | `data/distill/` | `distill`'s notes, so a rerun only pays for what changed. |
 | `data/discord-questions.json` | Which Discord message shows which question and proposal. |
 | `betterloka-bot.json` | The fallen-town bot's settings, and the bot token the Discord questions use. A secret. |
-| `betterloka-bot-state.json` | Fallen towns already announced. |
+| `betterloka-bot-state.json` | Fallen towns already announced, and Loka's deleted-town listing as last read, so a restart asks Loka only for its count (one small request) instead of reading its forty-odd pages again. |
+| `betterloka-bot-month.json` | The stat channels' tally of this month's battles, so a restart reads only the battles newer than it. |
 | `database.json` | Where the duel statistics are kept: the database's host, name, user and password. A secret. |
 
 ## Where the knowledge comes from

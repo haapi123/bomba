@@ -25,8 +25,11 @@ import java.util.Map;
  * sweep behind it is closer to a megabyte and only runs when the count has actually moved.
  */
 public final class FallenTownWatcher {
-    /** How long the deleted-town listing is good for. It only grows when a town dies. */
-    private static final long DELETED_TTL_MILLIS = 30 * 60 * 1000L;
+    /**
+     * How long the deleted-town listing is good for. It only changes when a town dies, which the
+     * count already says, so this is only a backstop: forty-odd requests are not worth more often.
+     */
+    private static final long DELETED_TTL_MILLIS = 12 * 60 * 60 * 1000L;
 
     private final LokaApi api;
     private final BotState state;
@@ -41,6 +44,11 @@ public final class FallenTownWatcher {
     public FallenTownWatcher(LokaApi api, BotState state) {
         this.api = api;
         this.state = state;
+        // Where the last run left off: with the count unchanged, a restart reads nothing more.
+        this.lastDeletedCount = state.deletedCount();
+        this.lastFullSweepAt = state.lastFullSweepAt();
+        this.deletedTowns = state.deletedTowns();
+        this.deletedLoadedAt = state.deletedLoadedAt();
     }
 
     /** What a cheap check decided to do, so the caller can log it honestly. */
@@ -91,6 +99,7 @@ public final class FallenTownWatcher {
             }
         }
         state.clearFirstRun();
+        state.rememberSweep(lastDeletedCount, lastFullSweepAt, deletedTowns, deletedLoadedAt);
         state.save();
         return fresh;
     }

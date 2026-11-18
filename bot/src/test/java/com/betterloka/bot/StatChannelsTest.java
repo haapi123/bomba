@@ -240,6 +240,28 @@ class StatChannelsTest {
                 new Object[]{BRUISER, 40, 90000.0}), now), "unless Rivina is asked for");
     }
 
+    @Test
+    void theMonthIsKeptAcrossARestartButNotIntoTheNext(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        java.nio.file.Path file = dir.resolve("month.json");
+        long now = at(2026, 11, 17);
+        MonthTally first = new MonthTally(WARSAW, false);
+        first.add(battle("a", "west-19", at(2026, 11, 14), false, new Object[]{ACE, 5, 900.0}), now);
+        first.add(battle("b", "south-2", at(2026, 11, 15), false, new Object[]{BRUISER, 2, 4000.0}), now);
+        first.save(file, true);
+
+        MonthTally again = new MonthTally(WARSAW, false);
+        assertTrue(again.load(file, now), "read back to the 1st before the restart");
+        assertEquals(2, again.battles());
+        assertTrue(again.has(battle("a", "west-19", at(2026, 11, 14), false)), "a sweep stops at it");
+        assertEquals(ACE, again.topKills().uuid());
+        assertEquals(4000.0, again.topDamage().value());
+
+        MonthTally december = new MonthTally(WARSAW, false);
+        assertFalse(december.load(file, at(2026, 12, 2)), "last month's tally is not this month's");
+        assertEquals(0, december.battles());
+        assertFalse(new MonthTally(WARSAW, false).load(dir.resolve("none.json"), now));
+    }
+
     // ---- the server list ping ----
 
     @Test

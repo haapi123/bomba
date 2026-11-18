@@ -48,6 +48,26 @@ class BotStateTest {
     }
 
     @Test
+    void remembersTheDeletedTownsSoARestartReadsOnlyTheCount(@TempDir Path dir) {
+        Path file = dir.resolve("state.json");
+        BotState first = new BotState(file);
+        assertEquals(-1, first.deletedCount(), "no sweep yet");
+        assertTrue(first.deletedTowns().isEmpty());
+        com.betterloka.api.model.LokaTown valador = com.betterloka.api.model.LokaTown.fromSaved(
+                new com.betterloka.api.model.LokaTown.Saved("6090042ae4929b7aa6acbfe8", "Valador", "north", "",
+                        3, 120, false, 4, 18, "2", "owner", List.of(), 0));
+        first.rememberSweep(847, 1000L, java.util.Map.of(valador.id(), valador), 900L);
+        first.save();
+
+        BotState again = new BotState(file);
+        again.load();
+        assertEquals(847, again.deletedCount());
+        assertEquals(1000L, again.lastFullSweepAt());
+        assertEquals(900L, again.deletedLoadedAt());
+        assertEquals("Valador", again.deletedTowns().get("6090042ae4929b7aa6acbfe8").name());
+    }
+
+    @Test
     void startsOutKnowingItHasNoBaseline(@TempDir Path dir) {
         BotState state = new BotState(dir.resolve("absent.json"));
         state.load();

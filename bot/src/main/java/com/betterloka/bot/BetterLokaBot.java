@@ -32,6 +32,8 @@ public final class BetterLokaBot {
     private static final Logger LOG = LoggerFactory.getLogger("BetterLokaBot");
 
     private static final Path CONFIG_FILE = Path.of("betterloka-bot.json");
+    /** The stat channels' tally of this month's battles, kept beside the bot's state. */
+    static final String MONTH_FILE = "betterloka-bot-month.json";
 
     /** Red, for a town that is gone. */
     private static final int EMBED_COLOR = 0xE0605C;
@@ -401,7 +403,8 @@ public final class BetterLokaBot {
                                            CommunityStore community, java.util.concurrent.Executor work,
                                            DiscordActions discord) {
         LiveStats live = new LiveStats(config.statsServerAddress, config.statsStatusFallback, config.statsZone(),
-                config.statsCountRivina, api, new com.betterloka.api.ArenaApi(transport));
+                config.statsCountRivina, api, new com.betterloka.api.ArenaApi(transport),
+                Path.of(config.stateFile).toAbsolutePath().resolveSibling(MONTH_FILE));
         java.util.concurrent.atomic.AtomicReference<LiveStats.Snapshot> latest = new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.BlockingQueue<Boolean> wake = new java.util.concurrent.LinkedBlockingQueue<>();
         StatChannels stats = new StatChannels(discord, community, () -> {

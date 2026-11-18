@@ -114,4 +114,75 @@ final class MonthTally {
     int battles() {
         return counted.size();
     }
+
+    /** The tally as kept on disk: plain fields, so Gson reads it without adapters. */
+    private static final class Saved {
+        String month;
+        boolean complete;
+        java.util.List<String> counted;
+        Map<String, Integer> kills;
+        Map<String, Double> damage;
+    }
+
+    private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
+
+    /**
+     * Keeps the tally on disk, so a restart carries on from it instead of reading the whole month's
+     * battles from Loka again.
+     *
+     * @param complete whether the month has been read back to its first day
+     */
+    void save(java.nio.file.Path file, boolean complete) {
+        if (file == null || month == null) {
+            return;
+        }
+        Saved saved = new Saved();
+        saved.month = month.toString();
+        saved.complete = complete;
+        saved.counted = new java.util.ArrayList<>(counted);
+        saved.kills = new HashMap<>();
+        kills.forEach((uuid, value) -> saved.kills.put(uuid.toString(), value));
+        saved.damage = new HashMap<>();
+        damage.forEach((uuid, value) -> saved.damage.put(uuid.toString(), value));
+        java.nio.file.Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+        try {
+            java.nio.file.Files.writeString(temp, GSON.toJson(saved));
+            java.nio.file.Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.io.IOException e) {
+            // Only a restart's convenience: the tally in memory is the one that counts.
+        }
+    }
+
+    /**
+     * Takes up the tally kept on disk, if it is of this month.
+     *
+     * @return whether that month had been read back to its first day; {@code false} with nothing to take up
+     */
+    boolean load(java.nio.file.Path file, long now) {
+        if (file == null || !java.nio.file.Files.isRegularFile(file)) {
+            return false;
+        }
+        try {
+            Saved saved = GSON.fromJson(java.nio.file.Files.readString(file), Saved.class);
+            YearMonth current = month(now);
+            if (saved == null || saved.month == null || !current.toString().equals(saved.month)) {
+                return false;
+            }
+            if (saved.counted != null) {
+                counted.addAll(saved.counted);
+            }
+            if (saved.kills != null) {
+                saved.kills.forEach((uuid, value) -> kills.put(UUID.fromString(uuid), value));
+            }
+            if (saved.damage != null) {
+                saved.damage.forEach((uuid, value) -> damage.put(UUID.fromString(uuid), value));
+            }
+            return saved.complete;
+        } catch (java.io.IOException | RuntimeException e) {
+            counted.clear();
+            kills.clear();
+            damage.clear();
+            return false;
+        }
+    }
 }
