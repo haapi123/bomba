@@ -75,6 +75,8 @@
   "betterloka.translator.copy": "Copy",
   "betterloka.translator.copied": "Copied — paste it into chat.",
   "betterloka.translator.failed": "Translation failed.",
+  "betterloka.translator.by_ai": "AI",
+  "betterloka.translator.by_google": "Google",
   "betterloka.translator.channel.town": "[Town]",
   "betterloka.translator.channel.alliance": "[Alliance]",
   "betterloka.translator.no_chat": "No chat captured yet. Messages appear here as they arrive.",

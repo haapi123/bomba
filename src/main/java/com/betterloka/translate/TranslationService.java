@@ -7,24 +7,38 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 
+import com.betterloka.assistant.AssistantClient;
+
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 /**
  * Machine translation for the Translator module.
  *
- * <p>Uses Google's public {@code translate_a} endpoint, which needs no API key — important for a mod
- * anyone can download, since a keyed service would mean either shipping a shared secret or asking
- * every player to register for one. It answers a chat line in a fraction of a second, which is what
- * a conversation needs; a language model would read slang a little better but takes seconds a line
- * and costs whoever holds the key.
+ * <p>Lines go to the BetterLoka server, which translates them with Claude — its cheapest model,
+ * thinking off, a few lines a request — and keeps what it translated, so a line every player with
+ * the Translator open asks for is paid for once. The key stays on the server: the mod only logs in
+ * the way Loka Assistant does. Lines asked for within a moment of each other travel together.
  *
- * <p>The answer says which language it detected as well as the translation, which is how a message
- * is labelled with the language it was written in, and how a message already in the reader's
- * language is recognised and left alone.
+ * <p>When the server cannot translate — down, out of budget, the player's allowance spent, no
+ * Minecraft login — the line goes to Google's public {@code translate_a} endpoint instead, which
+ * needs no key, and the server is left alone for a while. A translation is never missing because
+ * the AI is.
+ *
+ * <p>Either way the answer says which language it detected as well as the translation, which is how
+ * a message is labelled with the language it was written in, and how a message already in the
+ * reader's language is recognised and left alone.
  */
 public final class TranslationService {
     private static final String ENDPOINT = "https://translate.googleapis.com/translate_a/single";
@@ -38,7 +52,18 @@ public final class TranslationService {
      * What came back: the translation, and the language the original was detected as, or
      * {@code null} when the service did not say.
      */
-    public record Translation(String text, String source) {
+    public record Translation(String text, String source, String engine) {
+        public static final String AI = "ai";
+        public static final String GOOGLE = "google";
+
+        public Translation(String text, String source) {
+            this(text, source, GOOGLE);
+        }
+
+        public boolean byAi() {
+            return AI.equals(engine);
+        }
+
         /** Whether the original was already in the language it was translated into. */
         public boolean sameLanguage(String target) {
             return source != null && baseCode(source).equals(baseCode(target));
@@ -103,7 +128,37 @@ public final class TranslationService {
         return (dash < 0 ? code : code.substring(0, dash)).toLowerCase(java.util.Locale.ROOT);
     }
 
+    /** Sends lines to the server's AI; the tests give a stand-in. */
+    public interface AiTranslator {
+        CompletableFuture<List<AssistantClient.Translated>> translate(List<String> texts, List<String> sources, String target);
+    }
+
+    /** The translation that needs no server: Google's. The tests give a stand-in. */
+    interface Machine {
+        Translation translate(String text, String source, String target) throws ApiException;
+    }
+
+    /** Lines sent to the server in one request, and how long a line waits for others to join it. */
+    static final int BATCH = 20;
+    static final long GATHER_MILLIS = 120;
+
+    private record Pending(String key, String text, String source, String target, CompletableFuture<Translation> future) {
+    }
+
     private final HttpTransport transport;
+    private final Supplier<AiTranslator> ai;
+    private final BooleanSupplier useAi;
+    private final Machine machine;
+    private final List<Pending> queue = new ArrayList<>();
+    private final Map<String, CompletableFuture<Translation>> inFlight = new HashMap<>();
+    private final ScheduledExecutorService gather = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "BetterLoka translator batches");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private boolean flushScheduled;
+    /** Until when the server is left alone after it could not translate. */
+    private volatile long aiPausedUntil;
 
     /** Chat repeats itself a lot — the same call to arms goes out several times a night. */
     private final Map<String, Translation> cache = new LinkedHashMap<>(16, 0.75f, true) {
@@ -114,7 +169,22 @@ public final class TranslationService {
     };
 
     public TranslationService(HttpTransport transport) {
+        this(transport, null, () -> false);
+    }
+
+    /**
+     * @param ai    the server's AI, asked for when a batch goes out
+     * @param useAi whether to use it (the player's choice); without, every line goes to Google
+     */
+    public TranslationService(HttpTransport transport, Supplier<AiTranslator> ai, BooleanSupplier useAi) {
+        this(transport, ai, useAi, null);
+    }
+
+    TranslationService(HttpTransport transport, Supplier<AiTranslator> ai, BooleanSupplier useAi, Machine machine) {
         this.transport = transport;
+        this.ai = ai;
+        this.useAi = useAi;
+        this.machine = machine != null ? machine : this::request;
     }
 
     /**
@@ -142,9 +212,118 @@ public final class TranslationService {
         }
 
         String payload = trimmed;
+        if (ai == null || !useAi.getAsBoolean() || System.currentTimeMillis() < aiPausedUntil) {
+            return google(key, payload, source, target);
+        }
+        synchronized (queue) {
+            // The same line asked for twice before it is back: one request, one answer.
+            CompletableFuture<Translation> waiting = inFlight.get(key);
+            if (waiting != null) {
+                return waiting;
+            }
+            CompletableFuture<Translation> future = new CompletableFuture<>();
+            inFlight.put(key, future);
+            queue.add(new Pending(key, payload, source, target, future));
+            if (queue.size() >= BATCH) {
+                gather.execute(this::flush);
+            } else if (!flushScheduled) {
+                flushScheduled = true;
+                gather.schedule(this::flush, GATHER_MILLIS, TimeUnit.MILLISECONDS);
+            }
+            return future;
+        }
+    }
+
+    /** Sends the lines waiting, up to a batch with one target language, to the server. */
+    private void flush() {
+        List<Pending> batch = new ArrayList<>();
+        synchronized (queue) {
+            flushScheduled = false;
+            if (queue.isEmpty()) {
+                return;
+            }
+            String target = queue.get(0).target();
+            for (java.util.Iterator<Pending> it = queue.iterator(); it.hasNext() && batch.size() < BATCH; ) {
+                Pending pending = it.next();
+                if (pending.target().equals(target)) {
+                    batch.add(pending);
+                    it.remove();
+                }
+            }
+            if (!queue.isEmpty()) {
+                flushScheduled = true;
+                gather.execute(this::flush);
+            }
+        }
+        List<String> texts = new ArrayList<>();
+        List<String> sources = new ArrayList<>();
+        for (Pending pending : batch) {
+            texts.add(pending.text());
+            sources.add(pending.source());
+        }
+        CompletableFuture<List<AssistantClient.Translated>> asked;
+        try {
+            AiTranslator translator = ai.get();
+            asked = translator == null ? CompletableFuture.failedFuture(new IllegalStateException("no server"))
+                    : translator.translate(texts, sources, batch.get(0).target());
+        } catch (RuntimeException e) {
+            asked = CompletableFuture.failedFuture(e);
+        }
+        asked.whenComplete((results, error) -> {
+            if (error != null) {
+                pause(error);
+            }
+            for (int i = 0; i < batch.size(); i++) {
+                Pending pending = batch.get(i);
+                AssistantClient.Translated result = error == null && results != null && i < results.size() ? results.get(i) : null;
+                if (result != null) {
+                    Translation translation = new Translation(result.text(), result.source(), Translation.AI);
+                    synchronized (cache) {
+                        cache.put(pending.key(), translation);
+                    }
+                    finish(pending, translation, null);
+                } else {
+                    // The server could not: Google, for this line.
+                    google(pending.key(), pending.text(), pending.source(), pending.target())
+                            .whenComplete((translation, failure) -> finish(pending, translation, failure));
+                }
+            }
+        });
+    }
+
+    private void finish(Pending pending, Translation translation, Throwable failure) {
+        synchronized (queue) {
+            inFlight.remove(pending.key());
+        }
+        if (failure != null) {
+            pending.future().completeExceptionally(failure);
+        } else {
+            pending.future().complete(translation);
+        }
+    }
+
+    /**
+     * The server could not translate: leave it alone for a while — longer when it will not be able
+     * to for a while (out of budget, the allowance spent, no key) than when it merely did not answer.
+     */
+    private void pause(Throwable error) {
+        Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                ? error.getCause() : error;
+        String code = cause instanceof AssistantClient.Failure failure ? failure.code() : "offline";
+        long minutes = switch (code) {
+            case "player_limit", "budget_day", "budget_month", "no_key" -> 15;
+            case "login", "not_verified" -> 5;
+            default -> 1;
+        };
+        aiPausedUntil = System.currentTimeMillis() + minutes * 60_000L;
+        com.betterloka.BetterLoka.LOGGER.info("[betterloka] Translator: the server could not translate ({}); "
+                + "Google for the next {} min", code, minutes);
+    }
+
+    private CompletableFuture<Translation> google(String key, String text, String source, String target) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Translation result = request(payload, source, target);
+                Translation result = machine.translate(text, source, target);
                 synchronized (cache) {
                     cache.put(key, result);
                 }
@@ -152,7 +331,7 @@ public final class TranslationService {
             } catch (ApiException e) {
                 throw new java.util.concurrent.CompletionException(e);
             }
-        }, transport.executor());
+        }, transport == null ? java.util.concurrent.ForkJoinPool.commonPool() : transport.executor());
     }
 
     private Translation request(String text, String source, String target) throws ApiException {

@@ -39,12 +39,12 @@ public final class AssistantClient {
 
     /**
      * Where to connect: always {@link #SERVER}. The one exception is the developer's own test run
-     * ({@code BETTERLOKA_DIAG=v43} or {@code duel}), which points it at a local demo server named in
+     * ({@code BETTERLOKA_DIAG=v43}, {@code duel} or {@code translator}), which points it at a local demo server named in
      * {@code BETTERLOKA_ASSISTANT}, so the screens can be checked without the real server.
      */
     public static String server(java.util.Map<String, String> environment) {
         String diag = environment.get("BETTERLOKA_DIAG");
-        if ("v43".equals(diag) || "duel".equals(diag)) {
+        if ("v43".equals(diag) || "duel".equals(diag) || "translator".equals(diag)) {
             String local = environment.get("BETTERLOKA_ASSISTANT");
             if (local != null && !local.isBlank()) {
                 return normalize(local);
@@ -105,6 +105,12 @@ public final class AssistantClient {
             .build();
     private final ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "BetterLoka assistant");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** Translations on their own threads, so a line of chat never waits behind a question. */
+    private final ExecutorService translating = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "BetterLoka translator");
         thread.setDaemon(true);
         return thread;
     });
@@ -234,6 +240,49 @@ public final class AssistantClient {
                     integer(body, "sweepShare", -1), body.has("combo") ? body.get("combo").getAsDouble() : 0,
                     body.has("pots") ? body.get("pots").getAsDouble() : 0, integer(body, "potDuels", 0));
         });
+    }
+
+    /** One line as the server translated it: the text, and the language it was written in (or {@code null}). */
+    public record Translated(String text, String source) {
+    }
+
+    /**
+     * Translates a few lines of chat at once, with the server's AI.
+     *
+     * @param sources each line's language code, or {@code auto}
+     * @return one entry per line, in order; {@code null} for a line the server could not translate
+     */
+    public CompletableFuture<List<Translated>> translate(List<String> texts, List<String> sources, String target) {
+        CompletableFuture<List<Translated>> future = new CompletableFuture<>();
+        translating.execute(() -> {
+            try {
+                JsonObject request = new JsonObject();
+                request.addProperty("target", target);
+                JsonArray items = new JsonArray();
+                for (int i = 0; i < texts.size(); i++) {
+                    JsonObject item = new JsonObject();
+                    item.addProperty("text", texts.get(i));
+                    item.addProperty("source", sources.get(i));
+                    items.add(item);
+                }
+                request.add("items", items);
+                JsonObject body = authed("POST", "/v1/translate", request, 30);
+                List<Translated> out = new ArrayList<>();
+                JsonArray answered = array(body, "items");
+                for (int i = 0; i < texts.size(); i++) {
+                    JsonObject item = i < answered.size() && answered.get(i).isJsonObject()
+                            ? answered.get(i).getAsJsonObject() : null;
+                    String text = item == null ? null : text(item, "text");
+                    out.add(text == null || text.isBlank() ? null : new Translated(text, text(item, "source")));
+                }
+                future.complete(out);
+            } catch (Failure e) {
+                future.completeExceptionally(e);
+            } catch (RuntimeException e) {
+                future.completeExceptionally(new Failure("server", String.valueOf(e.getMessage())));
+            }
+        });
+        return future;
     }
 
     /** Proposes an answer, to an open question ({@code openId}) or to a question of the player's own. */

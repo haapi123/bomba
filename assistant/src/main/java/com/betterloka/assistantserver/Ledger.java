@@ -31,6 +31,7 @@ final class Ledger {
         String day = "";
         int questions;
         int proposals;
+        int translations;
     }
 
     private final Path file;
@@ -78,6 +79,33 @@ final class Ledger {
         state.dayUsd += usd;
         state.totalUsd += usd;
         save();
+    }
+
+    /** Whether {@code lines} more lines may be translated for the player now. */
+    synchronized Verdict canTranslate(String uuid, boolean admin, int lines) {
+        roll();
+        if (state.monthUsd >= config.monthlyBudgetUsd) {
+            return Verdict.BUDGET_MONTH;
+        }
+        if (state.dayUsd >= allowedToday()) {
+            return Verdict.BUDGET_DAY;
+        }
+        if (!admin && player(uuid).translations + lines > config.translationsPerDay) {
+            return Verdict.PLAYER_LIMIT;
+        }
+        return Verdict.OK;
+    }
+
+    /** Counts lines the model translated for the player, and what they cost. */
+    synchronized void recordTranslations(String uuid, int lines, double usd) {
+        roll();
+        player(uuid).translations += lines;
+        spend(usd);
+    }
+
+    synchronized int translationsLeft(String uuid, boolean admin) {
+        roll();
+        return admin ? Integer.MAX_VALUE : Math.max(0, config.translationsPerDay - player(uuid).translations);
     }
 
     synchronized boolean tryProposal(String uuid, boolean admin) {
@@ -133,6 +161,7 @@ final class Ledger {
             day.day = today;
             day.questions = 0;
             day.proposals = 0;
+            day.translations = 0;
         }
         return day;
     }

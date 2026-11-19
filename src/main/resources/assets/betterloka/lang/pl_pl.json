@@ -75,6 +75,8 @@
   "betterloka.translator.copy": "Kopiuj",
   "betterloka.translator.copied": "Skopiowano — wklej na czat.",
   "betterloka.translator.failed": "Nie udało się przetłumaczyć.",
+  "betterloka.translator.by_ai": "AI",
+  "betterloka.translator.by_google": "Google",
   "betterloka.translator.channel.town": "[Town]",
   "betterloka.translator.channel.alliance": "[Alliance]",
   "betterloka.translator.no_chat": "Brak wiadomości. Pojawią się tu, gdy ktoś napisze na czacie.",

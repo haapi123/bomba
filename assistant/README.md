@@ -232,6 +232,20 @@ estimate and asks before spending.
 The server never spends past `monthlyBudgetUsd`. Loading prepaid credits with automatic reload off in
 the Claude Console is a second ceiling the server cannot get around.
 
+## Translator
+
+`POST /v1/translate` with `{"target": "pl", "items": [{"text": "...", "source": "auto"}, ...]}`
+translates up to `maxTranslateBatch` (20) lines of chat in one request to `translateModel`
+(`claude-haiku-5-5`), with thinking off and effort `translateEffort` (`low`), and answers the lines in
+order, each with the language it was written in. Translations are kept in memory (the latest 5000), so
+a line any player has already had translated costs nothing; only new lines count against a player's
+`translationsPerDay` (2000) and spend from the same budget as the assistant. Lines longer than
+`maxTranslateChars` (900) are refused. The lines are not logged: they are other players' chat. Without
+a Claude API key the endpoint says `no_key`, and the mod uses Google instead.
+
+A batch of ten lines is roughly 600 tokens in and 300 out — about $0.0002 on Claude Haiku 5.5, so a
+thousand lines cost around two cents.
+
 ## Duel statistics — `database.json`
 
 `POST /v1/duels/report` keeps one duel as the reporting player's mod counted it; `POST

@@ -32,6 +32,21 @@ public final class ServerConfig {
     /** How far above an even share one busy day may go when there is no hard daily cap. */
     public double dailyBurst = 2.0;
 
+    /**
+     * The model the Translator's chat is translated with. The cheapest one is plenty for chat: a
+     * line costs a few hundredths of a cent.
+     */
+    public String translateModel = "claude-haiku-5-5";
+    /** How hard it thinks: low, with thinking off. A line of chat needs no deliberation. */
+    public String translateEffort = "low";
+    /** Lines a player may have translated in a day (lines already translated for anyone are free). */
+    public int translationsPerDay = 2000;
+    public int maxTranslateChars = 900;
+    /** Lines sent to the model in one request. */
+    public int maxTranslateBatch = 20;
+    /** Translation requests to Claude at once; the rest wait their turn. */
+    public int concurrentTranslations = 6;
+
     public int questionsPerDay = 30;
     public int proposalsPerDay = 10;
     public int maxQuestionChars = 300;

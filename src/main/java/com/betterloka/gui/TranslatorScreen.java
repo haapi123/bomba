@@ -76,6 +76,8 @@ public class TranslatorScreen extends Screen {
 
     private String translated = "";
     private String translatedFrom;
+    /** Whether the last translation came from the server's AI rather than Google. */
+    private boolean translatedByAi;
     private boolean translating;
     private Component status;
     private int translateGeneration;
@@ -199,6 +201,7 @@ public class TranslatorScreen extends Screen {
                         } else {
                             translated = result.text();
                             translatedFrom = result.source();
+                            translatedByAi = result.byAi();
                         }
                     });
                 });
@@ -470,7 +473,9 @@ public class TranslatorScreen extends Screen {
         Component under = status;
         if (under == null && !translated.isEmpty() && translatedFrom != null) {
             under = Component.literal(TranslationService.languageName(translatedFrom) + " → "
-                    + TranslationService.languageName(config().chatLanguage()));
+                    + TranslationService.languageName(config().chatLanguage()) + " · ")
+                    .append(Component.translatable(translatedByAi ? "betterloka.translator.by_ai"
+                            : "betterloka.translator.by_google"));
         }
         if (under != null) {
             context.text(this.font, under, left + 2, outputY() + OUTPUT_HEIGHT + 3, GuiTheme.MUTED);

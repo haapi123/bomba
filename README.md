@@ -224,8 +224,29 @@ message rather than its wording, and matches by hue so a hand-picked shade still
 is also parsed more loosely once identified, since it is often written `Name » message` rather than
 `Name: message`.
 
-Both languages are pickers, so this works for any pair the translation service supports, not just
-Polish and English. The mod never sends anything to the server itself; you always paste it yourself.
+Both languages are pickers, so this works for any pair, not just Polish and English. The mod never
+sends anything to the Minecraft server itself; you always paste it yourself.
+
+**Translated by AI.** Lines go to the BetterLoka server (the one behind Loka Assistant), which
+translates them with Claude — its cheapest model, Claude Haiku 5.5, with thinking off and effort low,
+since a line of chat needs no deliberation. It reads slang, abbreviations and mixed languages better
+than a plain machine translator, and keeps names, coordinates and commands as they are. To keep it
+cheap:
+
+- lines asked for within a moment of each other go **together**, up to twenty a request (opening the
+  Translator on sixty lines of chat is three or four requests, not sixty);
+- the server **keeps every translation**, so a line every player with the Translator open asks for is
+  paid for once, and the mod keeps its own too;
+- each player has a daily allowance of new lines (2000 by default), and translations spend from the
+  same monthly budget as Loka Assistant. Roughly, a thousand lines cost two cents.
+
+The API key stays on the server; the mod logs in to it the way Loka Assistant does. **When the server
+cannot translate** — it is down, out of budget, the allowance is spent, or the game has no Minecraft
+login — the line goes to Google's free translator instead, as before, and the server is left alone
+for a while (a minute, or a quarter of an hour when it is out of budget). Under your own translated
+text it says which did it: `English → Polski · AI` or `· Google`. The server does not write the lines
+down anywhere; they are other players' chat. `translatorAi` in `config/betterloka/config.json` turns
+the AI off, and every line goes to Google.
 
 ## Loka Market
 

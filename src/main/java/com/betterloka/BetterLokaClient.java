@@ -130,7 +130,8 @@ public class BetterLokaClient implements ClientModInitializer {
         deleteQuietly(configDir().resolve("nemesis.json"));
         deleteQuietly(configDir().resolve("name-history.json"));
         nameplateKd = new NameplateKdService(eldritch);
-        translations = new TranslationService(transport);
+        // The server's AI first (its cheapest model, the key on the server), Google whenever it cannot.
+        translations = new TranslationService(transport, () -> assistant()::translate, () -> config.translatorAi());
         chatLog = new ChatLog(translations, config);
         townLogger = new TownLogger(loka, towns, config,
                 new TownLogStore(configDir().resolve("town-log.json")));

@@ -28,6 +28,7 @@ final class HttpApi {
 
     private final AssistantService service;
     private final DuelService duels;
+    private final TranslationDesk translations;
     private final boolean trustForwardedFor;
     private final Map<String, Deque<Long>> requestsByIp = new ConcurrentHashMap<>();
     private final Map<String, Deque<Long>> loginsByIp = new ConcurrentHashMap<>();
@@ -39,8 +40,14 @@ final class HttpApi {
     }
 
     HttpApi(AssistantService service, DuelService duels, boolean trustForwardedFor) {
+        this(service, duels, null, trustForwardedFor);
+    }
+
+    /** @param translations the Translator's lines; {@code null} when the server does not translate */
+    HttpApi(AssistantService service, DuelService duels, TranslationDesk translations, boolean trustForwardedFor) {
         this.service = service;
         this.duels = duels;
+        this.translations = translations;
         this.trustForwardedFor = trustForwardedFor;
     }
 
@@ -79,6 +86,7 @@ final class HttpApi {
             if ("GET".equals(method) && ("/".equals(path) || "/v1/status".equals(path))) {
                 AssistantService.Response status = service.status();
                 status.body().addProperty("duels", duels.enabled());
+                status.body().addProperty("translate", translations != null && translations.enabled());
                 send(exchange, status);
                 return;
             }
@@ -124,6 +132,9 @@ final class HttpApi {
                 case "/v1/admin/dismiss" -> service.dismiss(player, body);
                 case "/v1/duels/report" -> duels.report(player, body);
                 case "/v1/duels/player" -> duels.player(body);
+                case "/v1/translate" -> translations == null
+                        ? AssistantService.error(503, "no_key", "The server cannot translate yet.")
+                        : translations.translate(player, body);
                 default -> AssistantService.error(404, "not_found", "No such page.");
             };
             send(exchange, response);

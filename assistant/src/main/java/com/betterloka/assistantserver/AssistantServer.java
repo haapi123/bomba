@@ -84,12 +84,15 @@ public final class AssistantServer {
         Clock clock = Clock.systemDefaultZone();
         Path data = dir.resolve("data");
         String key = apiKey(dir);
+        Translator translator = null;
         Answerer answerer;
         if (demo) {
             Log.warn("DEMO MODE: answers are canned lines from the knowledge base, not Claude.");
             answerer = new DemoAnswerer();
         } else if (key != null) {
             answerer = new ClaudeAnswerer(ClaudeAnswerer.client(config, key, Duration.ofSeconds(90)), config);
+            // A line of chat is waited on, so the translator gives up sooner than the assistant.
+            translator = new ClaudeTranslator(ClaudeAnswerer.client(config, key, Duration.ofSeconds(25)), config);
         } else {
             Log.warn("No Claude API key: put it in " + dir.resolve("api-key.txt").toAbsolutePath()
                     + " or in ANTHROPIC_API_KEY. The server runs, but cannot answer.");
@@ -128,7 +131,11 @@ public final class AssistantServer {
                     + (config.discordQuestions.answerRoleIds.isEmpty() && config.discordQuestions.approveRoleIds.isEmpty()
                     ? " (no roles set yet: only server administrators can answer)" : ""));
         }
-        HttpApi api = new HttpApi(service, duelService(dir, clock), config.trustForwardedFor);
+        HttpApi api = new HttpApi(service, duelService(dir, clock), new TranslationDesk(config, translator, ledger),
+                config.trustForwardedFor);
+        Log.info(translator == null ? "Translator: off (no Claude API key)"
+                : "Translator: chat is translated with " + config.translateModel + " (effort " + config.translateEffort
+                + ", thinking off), up to " + config.translationsPerDay + " new lines a player a day");
         int port = config.effectivePort();
         api.start(config.bind, port);
         KnowledgeBase.Snapshot kb = knowledge.current();

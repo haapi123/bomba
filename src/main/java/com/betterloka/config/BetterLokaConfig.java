@@ -31,6 +31,12 @@ public final class BetterLokaConfig {
     /** What the player's own text is translated into in the Translator. English unless changed. */
     private String chatLanguage = "en";
 
+    /**
+     * Whether the Translator uses the BetterLoka server's AI (Claude) before Google. On: it reads
+     * chat and slang better, and falls back to Google by itself whenever the server cannot.
+     */
+    private boolean translatorAi = true;
+
 
     /** Keep watching who holds every territory, so fallen towns are noticed. */
     private boolean townLogEnabled = true;
@@ -427,6 +433,15 @@ public final class BetterLokaConfig {
 
     public void setShowNameplateKd(boolean showNameplateKd) {
         this.showNameplateKd = showNameplateKd;
+        save();
+    }
+
+    public boolean translatorAi() {
+        return translatorAi;
+    }
+
+    public void setTranslatorAi(boolean translatorAi) {
+        this.translatorAi = translatorAi;
         save();
     }
 
