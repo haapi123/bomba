@@ -34,6 +34,9 @@ betterloka-community.json
 # Assistant server: its key, config and state live next to the jar, never in git
 api-key.txt
 assistant.json
+# The duel statistics' database login, and the bot's month tally
+database.json
+betterloka-bot-month.json
 assistant/api-key.txt
 assistant/assistant.json
 assistant/data/
