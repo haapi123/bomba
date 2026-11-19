@@ -40,9 +40,17 @@ public final class LokaApi {
     private static final String MOJANG_PROFILE_URL = "https://api.mojang.com/users/profiles/minecraft/";
 
     private final HttpTransport transport;
+    /** Where Loka's API is: {@link #BASE_URL}, or a stand-in for the tests. */
+    private final String base;
 
     public LokaApi(HttpTransport transport) {
+        this(transport, BASE_URL);
+    }
+
+    /** @param baseUrl another address for Loka's API, e.g. a stand-in server in a test */
+    public LokaApi(HttpTransport transport, String baseUrl) {
         this.transport = transport;
+        this.base = baseUrl == null || baseUrl.isBlank() ? BASE_URL : baseUrl.replaceAll("/+$", "");
     }
 
     public ExecutorService executor() {
@@ -460,6 +468,9 @@ public final class LokaApi {
     }
 
     private JsonObject getObject(String url, boolean background) throws ApiException {
+        if (!base.equals(BASE_URL) && url.startsWith(BASE_URL)) {
+            url = base + url.substring(BASE_URL.length());
+        }
         String body = transport.get(url, background);
         try {
             JsonElement parsed = JsonParser.parseString(body);

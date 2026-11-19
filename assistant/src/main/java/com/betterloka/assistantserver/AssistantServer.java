@@ -139,7 +139,7 @@ public final class AssistantServer {
         if (kb.files() == 0) {
             Log.warn("The knowledge base is empty: run build-kb, or put .md files in " + knowledge.dir().toAbsolutePath());
         }
-        Log.info("Type \"status\" for spending, \"stop\" to stop.");
+        Log.info("Type \"status\" for spending, \"simulate\" for a test fallen-town alert, \"stop\" to stop.");
 
         CountDownLatch stopped = new CountDownLatch(1);
         Runtime.getRuntime().addShutdownHook(new Thread(api::stop));
@@ -156,9 +156,11 @@ public final class AssistantServer {
                                 "Spent $%.4f today (may spend $%.2f), $%.2f this month of $%.2f; %d questions so far; knowledge base %d tokens",
                                 ledger.dayUsd(), ledger.allowedToday(), ledger.monthUsd(), config.monthlyBudgetUsd,
                                 ledger.totalQuestions(), knowledge.current().estimatedTokens()));
+                        case "simulate", "symulacja" -> bot.simulate(false);
+                        case "simulate ping", "symulacja ping" -> bot.simulate(true);
                         case "" -> {
                         }
-                        default -> Log.info("Commands: status, stop");
+                        default -> Log.info("Commands: status, simulate (a test fallen-town alert), simulate ping (with the role), stop");
                     }
                 }
             } catch (IOException ignored) {

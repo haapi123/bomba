@@ -42,6 +42,7 @@ public final class BetterLokaBot {
         boolean once = List.of(args).contains("--once");
         boolean list = List.of(args).contains("--list");
         boolean test = List.of(args).contains("--test");
+        boolean simulate = List.of(args).contains("--simulate") || List.of(args).contains("--simulate-ping");
         String check = valueAfter(args, "--check");
 
         // Runs the /check report on the console. No Discord involved, which makes it the way to
@@ -114,6 +115,10 @@ public final class BetterLokaBot {
                 postTestMessage(poster, config);
                 return;
             }
+            if (simulate) {
+                simulate(watcher, state, poster, config, List.of(args).contains("--simulate-ping"));
+                return;
+            }
             if (config.testOnStart) {
                 // Set in the config rather than on the command line, for panels where the startup
                 // command is awkward to edit. It does not stop the watch.
@@ -142,12 +147,39 @@ public final class BetterLokaBot {
         private final HttpTransport transport;
         private final DiscordGateway gateway;
         private final Thread watch;
+        private final FallenTownWatcher watcher;
+        private final BotState state;
+        private final DiscordPoster poster;
 
         private Embedded(BotConfig config, HttpTransport transport, DiscordGateway gateway, Thread watch) {
+            this(config, transport, gateway, watch, null, null, null);
+        }
+
+        private Embedded(BotConfig config, HttpTransport transport, DiscordGateway gateway, Thread watch,
+                         FallenTownWatcher watcher, BotState state, DiscordPoster poster) {
             this.config = config;
             this.transport = transport;
             this.gateway = gateway;
             this.watch = watch;
+            this.watcher = watcher;
+            this.state = state;
+            this.poster = poster;
+        }
+
+        /**
+         * The console's {@code simulate}: what stands fallen on Loka now and whether each was
+         * announced, then one test alert, built as a real one, to every place.
+         */
+        public void simulate(boolean ping) {
+            if (watcher == null) {
+                LOG.info("Fallen-town alerts are off, so there is nothing to simulate: fill in {}", CONFIG_NAME);
+                return;
+            }
+            try {
+                BetterLokaBot.simulate(watcher, state, poster, config, ping);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         public BotConfig config() {
@@ -237,10 +269,10 @@ public final class BetterLokaBot {
             }, "betterloka-watch");
             watchThread.setDaemon(true);
             watchThread.start();
-        } else {
-            LOG.info("Fallen-town alerts are off: {} (in {})", problem, CONFIG_NAME);
+            return new Embedded(config, transport, gateway, watchThread, watcher, state, poster);
         }
-        return new Embedded(config, transport, gateway, watchThread);
+        LOG.info("Fallen-town alerts are off: {} (in {})", problem, CONFIG_NAME);
+        return new Embedded(config, transport, gateway, null);
     }
 
     /** Checks Loka for fallen towns until interrupted, or once. */
@@ -255,26 +287,196 @@ public final class BetterLokaBot {
                     + "and only new ones announced from here.");
         }
         while (true) {
-            try {
-                FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
-                        config.fullSweepIntervalMillis());
-                status.checked(result.sweptFully(), result.deletedCount());
-                if (result.sweptFully()) {
-                    LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
-                            result.deletedCount(), result.announce().size());
-                }
-                announce(result.announce(), poster, config, status);
-            } catch (ApiException e) {
-                status.checkFailed(e.getMessage());
-                LOG.warn("Could not check Loka: {}", e.getMessage());
-            } catch (RuntimeException e) {
-                status.checkFailed(describe(e));
-                LOG.warn("Check failed", e);
-            }
+            cycle(watcher, state, poster, config, status);
             if (once) {
                 return;
             }
             TimeUnit.SECONDS.sleep(config.intervalSeconds());
+        }
+    }
+
+    /**
+     * One turn of the watch: look at Loka, queue for every place whatever has fallen since, and send
+     * whatever is queued. An alert leaves the queue only once Discord has taken it, so a Discord
+     * outage, a missing permission put right later, or a restart in between costs no alert.
+     */
+    static void cycle(FallenTownWatcher watcher, BotState state, DiscordPoster poster, BotConfig config,
+                      BotStatus status) throws InterruptedException {
+        try {
+            FallenTownWatcher.Result result = watcher.check(config.announceBacklogOnFirstRun,
+                    config.fullSweepIntervalMillis());
+            status.checked(result.sweptFully(), result.deletedCount());
+            if (result.sweptFully()) {
+                LOG.info("Swept: {} town(s) deleted on Loka, {} to announce",
+                        result.deletedCount(), result.announce().size());
+                queue(result.announce(), state, config);
+                // What was seen and what is to be sent, saved together.
+                state.save();
+            }
+        } catch (ApiException e) {
+            status.checkFailed(e.getMessage());
+            LOG.warn("Could not check Loka (it is tried again in {}s): {}", config.intervalSeconds(), e.getMessage());
+        } catch (RuntimeException e) {
+            status.checkFailed(describe(e));
+            LOG.warn("Check failed", e);
+        }
+        deliver(state, poster, config, status, System.currentTimeMillis());
+    }
+
+    /** Queues one message per batch for every place, split when there are more towns than Discord allows embeds. */
+    private static void queue(List<FallenTowns.Fallen> fallen, BotState state, BotConfig config) {
+        if (fallen.isEmpty()) {
+            return;
+        }
+        LOG.info("Announcing {} fallen town(s)", fallen.size());
+        long now = System.currentTimeMillis();
+        for (int from = 0; from < fallen.size(); from += DiscordPoster.MAX_EMBEDS) {
+            List<FallenTowns.Fallen> batch =
+                    fallen.subList(from, Math.min(fallen.size(), from + DiscordPoster.MAX_EMBEDS));
+            JsonArray embeds = new JsonArray();
+            List<String> names = new ArrayList<>();
+            for (FallenTowns.Fallen town : batch) {
+                embeds.add(embedFor(town));
+                names.add(town.town().name());
+            }
+            for (BotConfig.Target target : config.targets()) {
+                state.enqueue(target.key(), headline(batch, target.roleId()), embeds.toString(),
+                        String.join(", ", names), now);
+            }
+        }
+    }
+
+    /** Sends what is queued and due, each place on its own: one channel the bot cannot reach must not cost the others. */
+    static void deliver(BotState state, DiscordPoster poster, BotConfig config, BotStatus status, long now)
+            throws InterruptedException {
+        List<BotState.Pending> waiting = state.pending();
+        if (waiting.isEmpty()) {
+            return;
+        }
+        java.util.Map<String, BotConfig.Target> places = new java.util.HashMap<>();
+        for (BotConfig.Target target : config.targets()) {
+            places.put(target.key(), target);
+        }
+        boolean changed = false;
+        for (BotState.Pending alert : waiting) {
+            if (alert.nextAt() > now) {
+                continue;
+            }
+            BotConfig.Target target = places.get(alert.target());
+            if (target == null) {
+                LOG.warn("Not posting the alert about {}: that place is no longer in {}", alert.what(), CONFIG_NAME);
+                state.remove(alert);
+                changed = true;
+                continue;
+            }
+            String where = target.usesWebhook() ? "webhook" : "channel " + target.channelId();
+            if (now - alert.since() > BotState.GIVE_UP_MILLIS) {
+                LOG.error("Gave up posting the alert about {} to {} after {} tries over a day", alert.what(), where,
+                        alert.attempts());
+                state.remove(alert);
+                changed = true;
+                continue;
+            }
+            try {
+                List<JsonObject> embeds = new ArrayList<>();
+                for (com.google.gson.JsonElement embed : com.google.gson.JsonParser.parseString(alert.embeds()).getAsJsonArray()) {
+                    embeds.add(embed.getAsJsonObject());
+                }
+                poster.post(target, alert.content(), embeds);
+                state.remove(alert);
+                changed = true;
+                status.announced(alert.what());
+                LOG.info("Posted the alert about {} to {}{}", alert.what(), where,
+                        alert.attempts() == 0 ? "" : " (after " + alert.attempts() + " failed tries)");
+            } catch (InterruptedException e) {
+                state.save();
+                throw e;
+            } catch (Exception e) {
+                state.retryLater(alert, now);
+                changed = true;
+                status.postFailed(where + ": " + describe(e));
+                if (alert.attempts() == 1 || alert.attempts() % 10 == 0) {
+                    // The message alone is often null on a connection failure, and "could not post: null"
+                    // tells somebody debugging their webhook nothing at all.
+                    LOG.error("Could not post the alert about {} to Discord ({}), will try again: {}", alert.what(), where,
+                            describe(e));
+                }
+            }
+        }
+        if (changed) {
+            state.save();
+        }
+    }
+
+    /**
+     * The whole way an alert goes, tried on demand: Loka's territories and deleted towns read as a
+     * sweep reads them, every town standing fallen listed with whether it was announced, and one of
+     * them posted — as a real alert is built, marked as a test — to every place in the config. With
+     * {@code ping}, the role is pinged too. Nothing is recorded: the watch carries on as it was.
+     */
+    static void simulate(FallenTownWatcher watcher, BotState state, DiscordPoster poster, BotConfig config,
+                         boolean ping) throws InterruptedException {
+        LOG.info("Simulation: reading Loka as a sweep does...");
+        List<FallenTowns.Fallen> standing;
+        try {
+            standing = watcher.current();
+        } catch (ApiException e) {
+            LOG.error("Simulation: could not read Loka: {}", e.getMessage());
+            return;
+        }
+        int notYet = 0;
+        LOG.info("Simulation: {} town(s) stand fallen on Loka right now (their territory still theirs):", standing.size());
+        for (FallenTowns.Fallen town : standing) {
+            boolean announced = watcher.announced(town);
+            notYet += announced ? 0 : 1;
+            LOG.info("  {} - {} - {}", town.town().name(), town.numbers(),
+                    announced ? "announced (or recorded on the first run)" : "NOT announced yet");
+        }
+        if (notYet > 0 && state.isFirstRun()) {
+            LOG.info("Simulation: this is the bot's first run - these are recorded quietly by its first sweep, "
+                    + "and only towns falling after that are announced");
+        } else if (notYet > 0) {
+            LOG.warn("Simulation: {} fallen town(s) not announced yet - the next sweep announces them", notYet);
+        }
+        List<BotState.Pending> queued = state.pending();
+        LOG.info("Simulation: {} alert(s) waiting for Discord{}", queued.size(),
+                queued.isEmpty() ? "" : " (tried again every few minutes)");
+        for (BotState.Pending alert : queued) {
+            LOG.info("  {} - {} failed tr{} so far", alert.what(), alert.attempts(), alert.attempts() == 1 ? "y" : "ies");
+        }
+
+        FallenTowns.Fallen sample = standing.isEmpty() ? null : standing.get(0);
+        if (sample == null) {
+            LOG.info("Simulation: no town stands fallen, so the test alert shows a made-up one");
+            com.betterloka.api.model.LokaTown town = com.betterloka.api.model.LokaTown.fromSaved(
+                    new com.betterloka.api.model.LokaTown.Saved("test", "Test Town", "west", "", 1, 0, false, 1, -1,
+                            "1", "", List.of(), 0));
+            JsonObject json = new JsonObject();
+            json.addProperty("world", "west");
+            json.addProperty("num", "1");
+            JsonObject tg = new JsonObject();
+            tg.addProperty("townId", "test");
+            tg.addProperty("beacon", "west,0,64,0");
+            json.add("tg", tg);
+            sample = new FallenTowns.Fallen(town, List.of(Territory.fromJson(json)));
+        }
+        JsonObject embed = embedFor(sample);
+        embed.addProperty("title", "TEST - " + sample.town().name());
+        JsonObject footer = new JsonObject();
+        footer.addProperty("text", "BetterLoka - simulation: this town did not fall just now");
+        embed.add("footer", footer);
+        for (BotConfig.Target target : config.targets()) {
+            String where = target.usesWebhook() ? "the webhook" : "channel " + target.channelId();
+            String mention = ping && !target.roleId().isBlank() ? "<@&" + target.roleId() + "> " : "";
+            try {
+                poster.post(target, mention + "\uD83E\uDDEA **TEST** - this is how an alert looks: **" + sample.town().name()
+                        + "** has fallen - its territory is open.", List.of(embed));
+                LOG.info("Simulation: test alert posted to {}{}", where, ping ? ", with the role pinged" : "");
+            } catch (InterruptedException e) {
+                throw e;
+            } catch (Exception e) {
+                LOG.error("Simulation: could not post to {}: {}", where, describe(e));
+            }
         }
     }
 
@@ -556,46 +758,6 @@ public final class BetterLokaBot {
                 LOG.error("Could not post the test message to {}: {}",
                         target.usesWebhook() ? "the webhook" : "channel " + target.channelId(), describe(e), e);
                 LOG.error("Check webhookUrl (or botToken and channelId) in the config.");
-            }
-        }
-    }
-
-    /** Posts one message per batch, split when there are more towns than Discord allows embeds. */
-    private static void announce(List<FallenTowns.Fallen> fallen, DiscordPoster poster, BotConfig config,
-                                 BotStatus status) {
-        if (fallen.isEmpty()) {
-            return;
-        }
-        LOG.info("Announcing {} fallen town(s)", fallen.size());
-
-        for (int from = 0; from < fallen.size(); from += DiscordPoster.MAX_EMBEDS) {
-            List<FallenTowns.Fallen> batch =
-                    fallen.subList(from, Math.min(fallen.size(), from + DiscordPoster.MAX_EMBEDS));
-            List<JsonObject> embeds = new ArrayList<>();
-            for (FallenTowns.Fallen town : batch) {
-                embeds.add(embedFor(town));
-            }
-            List<String> names = new ArrayList<>();
-            for (FallenTowns.Fallen town : batch) {
-                names.add(town.town().name());
-            }
-            // Each place on its own: one channel the bot cannot reach must not cost the others.
-            for (BotConfig.Target target : config.targets()) {
-                try {
-                    poster.post(target, headline(batch, target.roleId()), embeds);
-                    status.announced(String.join(", ", names));
-                } catch (Exception e) {
-                    if (e instanceof InterruptedException) {
-                        Thread.currentThread().interrupt();
-                    }
-                    String where = target.usesWebhook() ? "webhook" : "channel " + target.channelId();
-                    status.postFailed(where + ": " + describe(e));
-                    // The message alone is often null on a connection failure, and "could not post: null"
-                    // tells somebody debugging their webhook nothing at all.
-                    LOG.error("Could not post to Discord ({}): {}", where, describe(e), e);
-                    // Not rethrown: the state already records these as announced, and a Discord outage
-                    // should not stop the watch. The next genuine fall still gets through.
-                }
             }
         }
     }

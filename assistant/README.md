@@ -72,6 +72,11 @@ Pterodactyl wystarczy **jeden serwer**. Bot i asystent używają jednego połąc
    programy z tym samym tokenem podbierałyby sobie kliknięcia, a alerty szłyby podwójnie.
 5. Uruchom ponownie. W konsoli zobaczysz `Unanswered questions go to Discord channel ...` i
    `Watching Loka every 30s`.
+6. **Sprawdzenie alertów o upadłych townach:** wpisz w konsoli panelu `simulate` (albo `symulacja`).
+   Bot przeczyta Lokę tak jak przy prawdziwym przeglądzie, wypisze każdy town, który teraz stoi
+   upadły, z informacją, czy został już ogłoszony, i wyśle na kanał **testowy alert** jednego z nich
+   — zbudowany dokładnie jak prawdziwy, z dopiskiem TEST. `simulate ping` robi to samo z pingiem
+   rangi. Nic nie zapisuje: obserwacja Loki idzie dalej jak wcześniej.
 
 ### Baza danych statystyk duela (po polsku)
 
@@ -112,7 +117,7 @@ nie trafia do jara moda ani do graczy.
 
 | Command | What it does |
 | --- | --- |
-| `serve` (or nothing) | Answers players. Type `status` for spending, `stop` to stop. |
+| `serve` (or nothing) | Answers players. In the console: `status` for spending, `simulate` for a test fallen-town alert (`simulate ping` pings the role too), `stop` to stop. |
 | `build-kb` | `crawl`, then `distill`. |
 | `crawl` | Reads Loka's pages into `sources/`, one text file per page. Run again later to fetch only what is new. |
 | `distill` | Writes the knowledge base `kb/generated/*.md` from `sources/` with Claude. Shows the estimated cost and asks first (`--yes` skips the question). Parts already written are not paid for twice. |

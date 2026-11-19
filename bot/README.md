@@ -321,11 +321,26 @@ everything after that is news. Set `announceBacklogOnFirstRun` to `true` if you 
 What has been announced is kept in `betterloka-bot-state.json`, so a restart does not repeat itself.
 A town that later loses *more* ground is announced again for the new territory.
 
-The same file keeps Loka's deleted-town listing as last read, its count and when the last full sweep
-was, so a **restart is not a burst**: it asks for the count, and reads the listing's forty-odd pages
-(Loka serves twenty towns a page, whatever size is asked for) only when the count has moved or the
-hourly backstop is due — and even then the listing itself only when it is incomplete or twelve hours
-old. Before 0.58.2 every start read all of it, which with the stat channels' month of battles on top
+The same file keeps Loka's deleted-town listing as last read and its count, so a **restart is not a
+burst**: it looks the territories over once (five requests, one per world, to find whatever fell
+while the bot was off) and reads the listing's forty-odd pages (Loka serves twenty towns a page,
+whatever size is asked for) only when the count has moved — or when the listing is incomplete or
+twelve hours old.
+
+**No alert is lost on the way.** A count only counts as seen once the sweep it set off has finished:
+a sweep that fails part-way (Loka answering 429 on page thirty, say) leaves it unseen, so the next
+check, thirty seconds on, sweeps again. Each request of a sweep is tried four times, waiting 15, 30
+and 45 seconds, before the sweep gives up. And an alert goes into a queue in the state file, one per
+place, and leaves it only once Discord has taken it: Discord down, a missing permission put right
+later, or a restart in between — it is tried again (after 30 s, 1 min, 2 min … up to every 30 min)
+for a day, and each place that took it is not sent it again. Before 0.59 a count was taken as seen
+before its sweep had finished, and an alert Discord refused was dropped; with the 429s of 0.55–0.58,
+falls could go unannounced.
+
+**To see it work**, type `simulate` in the console (or run the bot with `--simulate`): it reads Loka
+as a sweep does, lists every town standing fallen with whether it was announced, shows the alerts
+waiting for Discord, and posts one test alert — built as a real one, marked TEST — to every place.
+`simulate ping` (`--simulate-ping`) pings the role as well. It records nothing. Before 0.58.2 every start read all of it, which with the stat channels' month of battles on top
 is what made Loka answer 429 for a minute after each restart. The stat channels keep their tally of
 the month's battles in `betterloka-bot-month.json` for the same reason, and say a refused potion
 ladder (HTTP 403) once rather than every refresh.

@@ -174,6 +174,23 @@ public final class BotConfig {
             return webhookUrl != null && !webhookUrl.isBlank();
         }
 
+        /**
+         * A name for this place that can be written to the state file: the channel's id, or for a
+         * webhook a hash of its address — the address itself is a secret.
+         */
+        public String key() {
+            if (!usesWebhook()) {
+                return "channel:" + channelId;
+            }
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(webhookUrl.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return "webhook:" + java.util.HexFormat.of().formatHex(digest, 0, 8);
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
         /** As Discord shows it in a message: the channel's mention, or just "webhook". */
         public String describe() {
             return usesWebhook() ? "webhook" : "<#" + channelId + ">";
