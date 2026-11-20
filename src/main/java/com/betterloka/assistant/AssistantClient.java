@@ -44,7 +44,7 @@ public final class AssistantClient {
      */
     public static String server(java.util.Map<String, String> environment) {
         String diag = environment.get("BETTERLOKA_DIAG");
-        if ("v43".equals(diag) || "duel".equals(diag) || "translator".equals(diag)) {
+        if ("v43".equals(diag) || "duel".equals(diag) || "translator".equals(diag) || "video".equals(diag)) {
             String local = environment.get("BETTERLOKA_ASSISTANT");
             if (local != null && !local.isBlank()) {
                 return normalize(local);

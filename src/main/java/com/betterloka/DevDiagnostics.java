@@ -28,6 +28,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 public final class DevDiagnostics {
     private final List<Runnable> steps = new ArrayList<>();
     private final List<Integer> waits = new ArrayList<>();
+    /** For a step that waits on something rather than a fixed time: the condition, and the most it waits. */
+    private final List<java.util.function.BooleanSupplier> untils = new ArrayList<>();
+    private final List<Integer> untilLimits = new ArrayList<>();
     private int index;
     private int ticks;
 
@@ -51,7 +54,7 @@ public final class DevDiagnostics {
      */
     public static synchronized java.util.List<com.betterloka.api.model.ScheduledFight> stagedFights(
             com.betterloka.api.LokaApi loka) throws com.betterloka.api.ApiException {
-        if (!"v46".equals(System.getenv("BETTERLOKA_DIAG"))) {
+        if (!"v46".equals(System.getenv("BETTERLOKA_DIAG")) && !"video".equals(System.getenv("BETTERLOKA_DIAG"))) {
             return null;
         }
         if (staged == null) {
@@ -166,6 +169,11 @@ public final class DevDiagnostics {
         }
         if ("market".equals(System.getenv("BETTERLOKA_DIAG"))) {
             marketInput();
+            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
+            return;
+        }
+        if ("video".equals(System.getenv("BETTERLOKA_DIAG"))) {
+            videoInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
@@ -813,6 +821,10 @@ public final class DevDiagnostics {
         if (ticks++ < waits.get(index)) {
             return;
         }
+        java.util.function.BooleanSupplier until = untils.get(index);
+        if (until != null && ticks < waits.get(index) + untilLimits.get(index) && !holds(until)) {
+            return;
+        }
         ticks = 0;
         Runnable action = steps.get(index++);
         try {
@@ -825,12 +837,744 @@ public final class DevDiagnostics {
     private void step(int wait, Runnable action) {
         waits.add(wait);
         steps.add(action);
+        untils.add(null);
+        untilLimits.add(0);
+    }
+
+    /** Waits until {@code condition} holds, or {@code limit} ticks have gone, then runs nothing. */
+    private void await(java.util.function.BooleanSupplier condition, int limit) {
+        waits.add(0);
+        steps.add(() -> { });
+        untils.add(condition);
+        untilLimits.add(limit);
+    }
+
+    private static boolean holds(java.util.function.BooleanSupplier condition) {
+        try {
+            return condition.getAsBoolean();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private void shot(int wait, String name) {
-        step(wait, () -> net.minecraft.client.Screenshot.grab(
+        step(wait, () -> BetterLoka.LOGGER.info("DIAG mark shot-{} {}", name, System.currentTimeMillis()));
+        step(0, () -> net.minecraft.client.Screenshot.grab(
                 client().gameDirectory, name + ".png", client().gameRenderer.mainRenderTarget(), 1,
                 message -> BetterLoka.LOGGER.info("DIAG shot {} -> {}", name, message.getString())));
+    }
+
+    // --- the promo video: every module in turn, paced for a screen recording ---
+
+    /**
+     * {@code BETTERLOKA_DIAG=video}: walks through the modules slowly enough to be filmed. The pointer
+     * is moved by a helper outside the game, which reads the {@code DIAG cursor} lines (the game cannot
+     * move the system pointer itself without focus), so the hover states are real; {@code DIAG mark}
+     * lines carry the wall clock, for cutting the recording. {@code BETTERLOKA_VIDEO} picks the parts.
+     */
+    private void videoInput() {
+        java.util.Set<String> parts = new java.util.HashSet<>(java.util.Arrays.asList(System.getenv()
+                .getOrDefault("BETTERLOKA_VIDEO", "menu,finder,translator,market,map,logger,grinder,helper,calculator,assistant")
+                .split(",")));
+        int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
+        step(2, () -> {
+            client().options.guiScale().set(scale);
+            client().resizeGui();
+            client().gui.toastManager().clear();
+            BetterLokaClient.config().setAssistantNoticeAccepted(true);
+            server("gamerule send_command_feedback false");
+            server("gamerule advance_time false");
+            server("gamerule advance_weather false");
+            server("time set 6000");
+            server("weather clear");
+            server("gamemode creative @a");
+        });
+        step(40, () -> {
+            client().gui.toastManager().clear();
+            client().gui.hud.getChat().clearMessages(false);
+        });
+        mark("start");
+        if (parts.contains("menu")) {
+            videoMenu();
+        }
+        if (parts.contains("finder")) {
+            videoFinder();
+        }
+        if (parts.contains("translator")) {
+            videoTranslator();
+        }
+        if (parts.contains("market")) {
+            videoMarket();
+        }
+        if (parts.contains("map")) {
+            videoMap();
+        }
+        if (parts.contains("logger")) {
+            videoLogger();
+        }
+        if (parts.contains("grinder")) {
+            videoGrinder();
+        }
+        if (parts.contains("helper")) {
+            videoHelper();
+        }
+        if (parts.contains("calculator")) {
+            videoCalculator();
+        }
+        if (parts.contains("assistant")) {
+            videoAssistant();
+        }
+        mark("end");
+        step(20, () -> {
+            BetterLoka.LOGGER.info("DIAG video done");
+            client().stop();
+        });
+    }
+
+    private static final String[] MODULES = {"Player Finder", "Translator", "Loka Market", "Town Logger",
+            "Loka Grinder", "Loka Map", "Loka Helper", "Loka Calculator", "Loka Assistant"};
+
+    private void videoMenu() {
+        openMenu();
+        mark("menu");
+        step(30, () -> { });
+        for (String module : MODULES) {
+            glide(() -> buttonCentre(module), 8);
+            step(6, () -> { });
+        }
+        glide(() -> buttonCentre("Player Finder"), 14);
+        step(20, () -> { });
+        mark("menu-end");
+    }
+
+    /** The menu, then the module's own button pressed the way a hand would. */
+    private void enter(String module) {
+        openMenu();
+        step(12, () -> { });
+        glide(() -> buttonCentre(module), 12);
+        step(8, () -> realClick(module, com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+    }
+
+    private void openMenu() {
+        step(1, () -> {
+            client().gui.toastManager().clear();
+            client().gui.hud.getChat().clearMessages(false);
+            client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null));
+        });
+    }
+
+    private void videoFinder() {
+        enter("Player Finder");
+        mark("finder");
+        step(10, () -> { });
+        glide(DevDiagnostics::fieldCentre, 10);
+        typeSlowly("haapi", 3);
+        step(6, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.finder.search")), 8);
+        step(4, () -> click(client().gui.screen(), tr("betterloka.finder.search")));
+        await(() -> client().gui.screen() instanceof PlayerFinderScreen finder && field(finder, "profile") instanceof com.betterloka.stats.PlayerProfile, 600);
+        step(60, () -> { });
+        mark("finder-loaded");
+        // Over the column of details, right of the stand.
+        glide(() -> new int[] {client().gui.screen().width / 2 + 90, client().gui.screen().height / 2 + 30}, 14);
+        step(60, () -> { });
+        for (int i = 0; i < 14; i++) {
+            step(4, () -> {
+                var screen = client().gui.screen();
+                screen.mouseScrolled(screen.width / 2.0 + 90, screen.height / 2.0 + 30, 0, -1);
+            });
+        }
+        step(50, () -> { });
+        for (int i = 0; i < 14; i++) {
+            step(2, () -> {
+                var screen = client().gui.screen();
+                screen.mouseScrolled(screen.width / 2.0 + 90, screen.height / 2.0 + 30, 0, 1);
+            });
+        }
+        glide(() -> buttonCentre(tr("betterloka.finder.tab.month")), 12);
+        step(6, () -> {
+            if (client().gui.screen() instanceof PlayerFinderScreen finder) {
+                finder.devTab(true);
+            }
+        });
+        step(90, () -> { });
+        mark("finder-end");
+    }
+
+    private void videoTranslator() {
+        step(2, () -> {
+            cursorAway();
+            client().gui.setScreen(null);
+            BetterLokaClient.config().setNativeLanguage("en");
+            BetterLokaClient.config().setChatLanguage("pl");
+            BetterLokaClient.config().setTranslatorAi(true);
+        });
+        step(20, () -> client().gui.toastManager().clear());
+        mark("chat");
+        step(10, () -> server("tellraw @a {\"text\":\"[Alliance] Wojtek_PL: idziemy na fighta o 20, kto jest online?\",\"color\":\"aqua\"}"));
+        step(24, () -> server("tellraw @a \"Lukas_DE: wir brauchen noch zwei Leute am Tor, schnell!\""));
+        step(24, () -> server("tellraw @a \"Mateo: alguien vende pociones de fuerza? pago bien\""));
+        step(24, () -> server("tellraw @a \"Rin: anyone up for conquest tonight? we need 3 more on Balak\""));
+        step(24, () -> server("tellraw @a {\"text\":\"[Town] Aurelie: quelqu'un a vu le boss Warden aujourd'hui ?\",\"color\":\"green\"}"));
+        step(60, () -> { });
+        mark("chat-end");
+        enter("Translator");
+        mark("translator");
+        await(() -> {
+            String target = BetterLokaClient.config().nativeLanguage();
+            for (var line : BetterLokaClient.chatLog().recent(10)) {
+                if (!line.hasTranslation(target) && !line.needsNoTranslation(target) && !line.failed()) {
+                    return false;
+                }
+            }
+            return true;
+        }, 300);
+        step(90, () -> { });
+        mark("translator-compose");
+        glide(DevDiagnostics::fieldCentre, 12);
+        step(6, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen screen) {
+                for (GuiEventListener element : screen.children()) {
+                    if (element instanceof EditBox box) {
+                        screen.setFocused(box);
+                    }
+                }
+            }
+        });
+        for (char c : "Anyone want to team up for the fight at 8?".toCharArray()) {
+            step(2, () -> client().gui.screen().charTyped(new net.minecraft.client.input.CharacterEvent(c)));
+        }
+        step(10, () -> client().gui.screen().keyPressed(new net.minecraft.client.input.KeyEvent(
+                com.mojang.blaze3d.platform.InputConstants.KEY_RETURN, 0, 0)));
+        step(60, () -> { });
+        glide(() -> buttonCentre("Copy"), 10);
+        step(6, () -> realClick("Copy", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(50, () -> { });
+        glide(() -> buttonNth("Translate to", 1), 12);
+        step(6, () -> realClickNth("Translate to", 1, com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(20, () -> { });
+        glide(() -> client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen t ? t.devPickerCell("de") : null, 12);
+        step(8, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.TranslatorScreen translator) {
+                realClickAt(translator.devPickerCell("de"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+            }
+        });
+        step(80, () -> { });
+        mark("translator-end");
+    }
+
+    private void videoMarket() {
+        enter("Loka Market");
+        mark("market");
+        await(() -> client().gui.screen() instanceof LokaMarketScreen market && market.devStallCentre("armor") != null
+                && BetterLokaClient.market().shown() != null && !BetterLokaClient.market().shown().listings().isEmpty(), 600);
+        step(40, () -> { });
+        mark("market-square");
+        for (String stall : new String[] {"weapons", "brewing", "enchanting", "armor"}) {
+            glide(() -> client().gui.screen() instanceof LokaMarketScreen m ? m.devStallCentre(stall) : null, 12);
+            step(26, () -> { });
+        }
+        step(4, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                realClickAt(market.devStallCentre("armor"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+            }
+        });
+        step(40, () -> { });
+        mark("market-stall");
+        glide(() -> client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen s ? s.devFilterButton() : null, 12);
+        step(6, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devFilterButton(), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+            }
+        });
+        glide(() -> client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen s ? s.devFilterOption(3) : null, 10);
+        step(6, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devFilterOption(3), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+            }
+        });
+        step(50, () -> { });
+        glide(() -> client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen s ? s.devRowWhere(listing -> true) : null, 12);
+        step(8, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                realClickAt(stall.devRowWhere(listing -> true), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+            }
+        });
+        step(70, () -> { });
+        mark("market-item");
+        step(60, () -> { });
+        step(2, () -> client().gui.screen().onClose());
+        step(2, () -> client().gui.screen().onClose());
+        step(10, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.market.tab.search")), 10);
+        step(6, () -> realClick(tr("betterloka.market.tab.search"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(10, () -> { });
+        glide(DevDiagnostics::fieldCentre, 10);
+        typeSlowly("diamond sword", 3);
+        step(6, () -> {
+            if (client().gui.screen() instanceof LokaMarketScreen market) {
+                market.devSearch("diamond sword");
+            }
+        });
+        step(70, () -> { });
+        mark("market-search");
+        glide(() -> client().gui.screen() instanceof LokaMarketScreen m ? m.devRowWhere(l -> true) : null, 14);
+        step(70, () -> { });
+        mark("market-end");
+    }
+
+    private void videoMap() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(1, () -> com.betterloka.gui.LokaMapScreen.devNoHover = false);
+        enter("Loka Map");
+        step(4, () -> mapScreen().devSelect(com.betterloka.map.Continent.BALAK));
+        step(4, () -> click(client().gui.screen(), "Fit continent"));
+        step(160, () -> { });
+        mark("map");
+        // A few hexes under the pointer: the card says whose each is.
+        glide(() -> mapScreen().devPointAt(t -> t.seat()), 16);
+        step(50, () -> { });
+        glide(() -> mapScreen().devPointAt(t -> t.hasBonus()), 16);
+        step(50, () -> { });
+        glide(() -> mapScreen().devPointAt(t -> t.owner() == null), 16);
+        step(50, () -> { });
+        glide(() -> mapScreen().devZoomInButton(), 12);
+        for (int i = 0; i < 3; i++) {
+            step(10, () -> realClickAt(mapScreen().devZoomInButton(), left));
+        }
+        step(60, () -> { });
+        glide(() -> new int[] {client().gui.screen().width / 2, client().gui.screen().height / 2}, 12);
+        step(10, () -> panAcross(80));
+        step(60, () -> { });
+        mark("map-fights");
+        glide(() -> mapScreen().devFightsButton(), 12);
+        step(6, () -> realClickAt(mapScreen().devFightsButton(), left));
+        step(50, () -> { });
+        glide(() -> mapScreen().devFightCard(0), 12);
+        step(6, () -> realClickAt(mapScreen().devFightCard(0), left));
+        step(100, () -> { });
+        for (int i = 0; i < 6; i++) {
+            step(8, () -> mapScreen().devScrollFights(-1));
+        }
+        step(60, () -> { });
+        glide(() -> mapScreen().devFightsButton(), 12);
+        step(6, () -> realClickAt(mapScreen().devFightsButton(), left));
+        mark("map-places");
+        step(4, () -> {
+            cursorAway();
+            mapScreen().devSelect(com.betterloka.map.Continent.KALROS);
+        });
+        step(4, () -> click(client().gui.screen(), "Fit continent"));
+        step(140, () -> { });
+        step(2, () -> com.betterloka.gui.LokaMapScreen.devHoverPlace = "witch_hunter");
+        step(80, () -> com.betterloka.gui.LokaMapScreen.devHoverPlace = null);
+        mark("map-town");
+        // The continent's biggest town, found by the search and opened in full.
+        glide(DevDiagnostics::fieldCentre, 12);
+        step(4, () -> {
+            String town = biggestTown(mapScreen().devContinent());
+            BetterLoka.LOGGER.info("DIAG video town {}", town);
+            videoTown = town == null ? "" : town;
+        });
+        step(2, () -> {
+            EditBox box = firstField();
+            if (box != null) {
+                mapScreen().setFocused(box);
+            }
+        });
+        for (int i = 1; i <= 12; i++) {
+            int length = i;
+            step(3, () -> {
+                if (length <= videoTown.length()) {
+                    mapScreen().charTyped(new net.minecraft.client.input.CharacterEvent(videoTown.charAt(length - 1)));
+                }
+            });
+        }
+        step(6, () -> mapScreen().devSearch(videoTown));
+        step(70, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.map.town_info")), 12);
+        step(6, () -> click(client().gui.screen(), tr("betterloka.map.town_info")));
+        await(() -> client().gui.screen() instanceof com.betterloka.gui.TownInfoScreen, 100);
+        step(120, () -> { });
+        mark("map-town-info");
+        glide(() -> new int[] {client().gui.screen().width / 2 + 60, client().gui.screen().height / 2}, 12);
+        for (int i = 0; i < 12; i++) {
+            step(4, () -> {
+                var screen = client().gui.screen();
+                screen.mouseScrolled(screen.width / 2.0 + 60, screen.height / 2.0, 0, -1);
+            });
+        }
+        step(60, () -> { });
+        mark("map-end");
+    }
+
+    private static String videoTown = "";
+
+    /** Whoever holds the most territories on the continent. */
+    private static String biggestTown(com.betterloka.map.Continent continent) {
+        Map<String, Integer> held = new java.util.HashMap<>();
+        for (var territory : BetterLokaClient.mapData().snapshot(continent).territories()) {
+            if (territory.owner() != null && !territory.neutral()) {
+                held.merge(territory.owner(), 1, Integer::sum);
+            }
+        }
+        return held.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
+    }
+
+    private void videoLogger() {
+        enter("Town Logger");
+        mark("logger");
+        step(20, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.town_log.check_now")), 12);
+        step(6, () -> click(client().gui.screen(), tr("betterloka.town_log.check_now")));
+        step(200, () -> { });
+        mark("logger-loaded");
+        glide(() -> new int[] {client().gui.screen().width / 2, client().gui.screen().height / 2 + 20}, 12);
+        for (int i = 0; i < 8; i++) {
+            step(5, () -> scroll(-1));
+        }
+        step(40, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.town_log.tab.unowned")), 12);
+        step(6, () -> click(client().gui.screen(), tr("betterloka.town_log.tab.unowned")));
+        step(80, () -> { });
+        mark("logger-end");
+    }
+
+    private void videoGrinder() {
+        String nether = "execute in minecraft:the_nether run tp @a ";
+        step(2, () -> {
+            cursorAway();
+            client().gui.setScreen(null);
+            var config = BetterLokaClient.config();
+            config.setShrineWaypointsEnabled(true);
+            for (var kind : com.betterloka.grind.ShrineKind.values()) {
+                config.setShrineKindEnabled(kind, true);
+            }
+            server("gamemode spectator @a");
+            server("effect give @a minecraft:night_vision infinite 0 true");
+        });
+        step(2, () -> server(nether + "1075 183 1172 40 8"));
+        step(60, () -> {
+            String in = "execute in minecraft:the_nether run ";
+            server(in + "fill 1015 172 1132 1105 172 1222 minecraft:netherrack");
+            server(in + "fill 1030 172 1150 1060 172 1180 minecraft:crimson_nylium");
+            server(in + "fill 1062 172 1196 1090 172 1215 minecraft:soul_sand");
+            server(in + "fill 1020 172 1185 1040 172 1200 minecraft:warped_nylium");
+            server(in + "fill 1036 173 1188 1044 176 1196 minecraft:nether_bricks hollow");
+            server(in + "fill 1038 177 1190 1042 177 1194 minecraft:nether_brick_slab");
+            for (int[] p : new int[][] {{1050, 1160}, {1085, 1150}, {1095, 1200}, {1025, 1140}, {1070, 1210}}) {
+                server(in + "fill " + p[0] + " 173 " + p[1] + " " + (p[0] + 1) + " 178 " + (p[1] + 1) + " minecraft:blackstone");
+                server(in + "setblock " + p[0] + " 179 " + p[1] + " minecraft:glowstone");
+            }
+            server(in + "fill 1056 172 1188 1060 172 1192 minecraft:magma_block");
+        });
+        step(240, () -> client().gui.toastManager().clear());
+        mark("shrines");
+        // A slow turn across the shrines' markers.
+        for (int yaw = 40; yaw <= 80; yaw += 1) {
+            int at = yaw;
+            step(2, () -> server("execute in minecraft:the_nether run tp @a 1075 181 1172 " + at + " 14"));
+        }
+        step(30, () -> { });
+        mark("shrines-on");
+        step(2, () -> server(nether + "1040 179 1192 60 14"));
+        step(60, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
+        step(60, () -> { });
+        enter("Loka Grinder");
+        step(10, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.grind.tab.shrines")), 12);
+        step(6, () -> realClick(tr("betterloka.grind.tab.shrines"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(10, () -> { });
+        mark("grinder");
+        step(100, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.grind.tab.glowstone")), 12);
+        step(6, () -> realClick(tr("betterloka.grind.tab.glowstone"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(60, () -> { });
+        glide(() -> buttonCentre(tr("betterloka.grind.tab.shulker")), 12);
+        step(6, () -> realClick(tr("betterloka.grind.tab.shulker"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(60, () -> { });
+        mark("grinder-end");
+    }
+
+    private void videoHelper() {
+        step(2, () -> {
+            cursorAway();
+            client().gui.setScreen(null);
+            server("execute in minecraft:overworld run tp @a 0 -60 0 0 0");
+            server("gamemode creative @a");
+            server("time set 6000");
+        });
+        step(60, () -> { });
+        enter("Loka Helper");
+        mark("helper");
+        step(40, () -> { });
+        for (String label : new String[] {"On screen", "See through lava", "Kalros", "Auto-join"}) {
+            glide(() -> buttonCentre(label), 12);
+            step(20, () -> { });
+        }
+        glide(() -> new int[] {client().gui.screen().width / 2, client().gui.screen().height / 2}, 10);
+        for (int i = 0; i < 10; i++) {
+            step(4, () -> client().gui.screen().mouseScrolled(client().gui.screen().width / 2.0, client().gui.screen().height / 2.0, 0, -1));
+        }
+        step(60, () -> { });
+        mark("helper-coords");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
+                helper.devSet(true, true, false);
+            }
+            BetterLokaClient.config().setCoordsHudScale(200);
+            cursorAway();
+        });
+        step(10, () -> client().gui.setScreen(null));
+        step(80, () -> { });
+        // Into lava, with fire resistance, looking along the ground: clear, then as it really looks.
+        step(2, () -> {
+            server("gamemode survival @a");
+            server("effect give @a minecraft:fire_resistance 600 0 true");
+            server("execute at @a run fill ~-12 ~-1 ~-12 ~12 ~4 ~12 minecraft:lava");
+            server("execute at @a run fill ~-2 ~-2 ~6 ~2 ~6 ~8 minecraft:gold_block");
+            server("execute as @a at @s run tp @s ~ ~ ~ 180 10");
+        });
+        step(40, () -> { });
+        mark("helper-lava");
+        step(80, () -> BetterLokaClient.config().setClearLava(false));
+        step(70, () -> BetterLokaClient.config().setClearLava(true));
+        step(40, () -> { });
+        mark("helper-important");
+        step(2, () -> {
+            server("execute at @a run fill ~-13 ~-2 ~-13 ~13 ~5 ~13 minecraft:air");
+            server("gamemode creative @a");
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region, region == com.betterloka.helper.ImportantPlaces.Region.ALADRA);
+            }
+            server("fill -126 79 54 -114 79 66 minecraft:stone");
+            server("tp @a -120 80 60 -40 0");
+        });
+        step(60, () -> { });
+        for (int yaw = -40; yaw <= 60; yaw += 2) {
+            int at = yaw;
+            step(2, () -> server("tp @a -120 80 60 " + at + " 0"));
+        }
+        step(40, () -> { });
+        mark("helper-shulker");
+        step(2, () -> {
+            BetterLokaClient.config().setShulkerScanner(true);
+            server("clear @a");
+            String heal = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
+            String drink = "{id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
+            String weak = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:healing\"}}}";
+            String steak = "{id:\"minecraft:cooked_beef\",count:32}";
+            server("gamemode survival @a");
+            server("item replace entity @a container.9 with " + shulker("lime_shulker_box", heal, 20, null, 0));
+            server("item replace entity @a container.10 with " + shulker("shulker_box", heal, 16, null, 0));
+            server("item replace entity @a container.11 with " + shulker("shulker_box", heal, 15, null, 0));
+            server("item replace entity @a container.12 with " + shulker("blue_shulker_box", heal, 5, steak, 3));
+            server("item replace entity @a container.13 with minecraft:shulker_box");
+            server("item replace entity @a container.14 with " + shulker("purple_shulker_box", drink, 10, weak, 10));
+            server("item replace entity @a hotbar.0 with " + shulker("shulker_box", heal, 27, null, 0));
+            server("item replace entity @a hotbar.1 with minecraft:diamond_sword");
+        });
+        step(20, () -> {
+            server("effect clear @a");
+            BetterLokaClient.config().setGuiScaleEnabled(true);
+            BetterLokaClient.config().setInventoryGuiScale(4);
+        });
+        step(10, () -> {
+            client().gui.toastManager().clear();
+            client().gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(client().player));
+        });
+        step(5, () -> client().gui.toastManager().clear());
+        step(20, () -> { });
+        // Over a full box, a box with a few, and one with none.
+        for (int slot : new int[] {9, 11, 14}) {
+            glide(() -> slotCentre(slot), 12);
+            step(26, () -> { });
+        }
+        step(2, () -> {
+            client().gui.setScreen(null);
+            BetterLokaClient.config().setGuiScaleEnabled(false);
+            BetterLokaClient.config().setCoordsHudScale(100);
+            BetterLokaClient.config().setCoordsHudEnabled(false);
+            BetterLokaClient.config().setClearLava(false);
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region, false);
+            }
+            server("gamemode creative @a");
+        });
+        mark("helper-end");
+    }
+
+    private void videoCalculator() {
+        com.betterloka.gui.BrewerCalculatorScreen.devSet(false, com.betterloka.brewing.Brewing.Effect.HEALING,
+                com.betterloka.brewing.Brewing.Form.SPLASH, com.betterloka.brewing.Brewing.Level.STRONG, "64", "8");
+        step(1, () -> {
+            com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.STRENGTH);
+            BetterLokaClient.config().setCalculatorTown("");
+            com.betterloka.gui.LokaCalculatorScreen.devQuery("");
+        });
+        enter("Loka Calculator");
+        mark("calculator");
+        step(60, () -> { });
+        glide(DevDiagnostics::fieldCentre, 12);
+        step(2, () -> {
+            var fights = BetterLokaClient.fights().fights();
+            videoTown = fights.isEmpty() ? "Silvermoon" : fights.get(0).attackerName();
+            BetterLoka.LOGGER.info("DIAG video calculator town {}", videoTown);
+        });
+        for (int i = 1; i <= 14; i++) {
+            int length = i;
+            step(3, () -> {
+                if (length <= videoTown.length()) {
+                    com.betterloka.gui.LokaCalculatorScreen.devQuery(videoTown.substring(0, length));
+                }
+            });
+        }
+        step(2, () -> com.betterloka.gui.LokaCalculatorScreen.devQuery(videoTown));
+        step(160, () -> { });
+        mark("calculator-town");
+        for (int i = 0; i < 6; i++) {
+            step(6, () -> com.betterloka.gui.LokaCalculatorScreen.devScroll(-1));
+        }
+        step(40, () -> com.betterloka.gui.LokaCalculatorScreen.devPick(2));
+        step(50, () -> { });
+        mark("calculator-sim");
+        step(2, () -> {
+            com.betterloka.gui.LokaCalculatorScreen.devScroll(100);
+            com.betterloka.gui.LokaCalculatorScreen.devPick(0);
+            com.betterloka.gui.LokaCalculatorScreen.devSimulate(0, true);
+        });
+        for (int i = 0; i < 4; i++) {
+            step(14, () -> com.betterloka.gui.LokaCalculatorScreen.devSimulate(1, true));
+        }
+        step(14, () -> com.betterloka.gui.LokaCalculatorScreen.devSimulate(1, false));
+        for (int i = 0; i < 7; i++) {
+            step(6, () -> com.betterloka.gui.LokaCalculatorScreen.devScroll(-1));
+        }
+        step(70, () -> { });
+        mark("brewer");
+        step(2, () -> {
+            com.betterloka.gui.LokaCalculatorScreen.devSimulate(0, true);
+            cursorAway();
+            com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.BREWER);
+            client().gui.setScreen(com.betterloka.gui.CalculatorTabs.open(null));
+        });
+        step(80, () -> { });
+        for (int i = 0; i < 8; i++) {
+            step(5, () -> com.betterloka.gui.BrewerCalculatorScreen.devScroll(-1));
+        }
+        step(40, () -> com.betterloka.gui.BrewerCalculatorScreen.devSet(true, com.betterloka.brewing.Brewing.Effect.HEALING,
+                com.betterloka.brewing.Brewing.Form.SPLASH, com.betterloka.brewing.Brewing.Level.STRONG, "20k", "8"));
+        step(80, () -> { });
+        mark("calculator-end");
+    }
+
+    private void videoAssistant() {
+        String question = "How do I beat the Witch Hunter?";
+        enter("Loka Assistant");
+        await(() -> BetterLokaClient.assistant().loggedInAs() != null, 200);
+        step(20, () -> { });
+        mark("assistant");
+        glide(DevDiagnostics::fieldCentre, 12);
+        typeSlowly(question, 2);
+        step(8, () -> com.betterloka.gui.AssistantScreen.devAsk(question));
+        step(140, () -> { });
+        mark("assistant-answer");
+        step(120, () -> { });
+        mark("assistant-end");
+    }
+
+    private void mark(String name) {
+        step(0, () -> BetterLoka.LOGGER.info("DIAG mark {} {}", name, System.currentTimeMillis()));
+    }
+
+    /** Moves the pointer to a point of the GUI over {@code ticks}, then waits that long. */
+    private void glide(java.util.function.Supplier<int[]> to, int ticks) {
+        step(0, () -> {
+            int[] point;
+            try {
+                point = to.get();
+            } catch (RuntimeException e) {
+                point = null;
+            }
+            if (point == null) {
+                BetterLoka.LOGGER.info("DIAG cursor: nothing to point at");
+                return;
+            }
+            double scale = client().getWindow().getGuiScale();
+            BetterLoka.LOGGER.info("DIAG cursor {} {} {}", Math.round(point[0] * scale), Math.round(point[1] * scale), ticks * 50);
+        });
+        step(ticks + 2, () -> { });
+    }
+
+    private static void cursorAway() {
+        BetterLoka.LOGGER.info("DIAG cursor away");
+    }
+
+    /** Types into the open screen's first text field one letter at a time. */
+    private void typeSlowly(String text, int ticksPerLetter) {
+        for (int i = 1; i <= text.length(); i++) {
+            String part = text.substring(0, i);
+            step(ticksPerLetter, () -> {
+                EditBox box = firstField();
+                if (box != null) {
+                    client().gui.screen().setFocused(box);
+                    box.setValue(part);
+                }
+            });
+        }
+    }
+
+    private static EditBox firstField() {
+        Screen screen = client().gui.screen();
+        if (screen == null) {
+            return null;
+        }
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof EditBox box && box.isVisible()) {
+                return box;
+            }
+        }
+        return null;
+    }
+
+    private static int[] fieldCentre() {
+        EditBox box = firstField();
+        return box == null ? null : new int[] {box.getX() + Math.min(box.getWidth() / 2, 60), box.getY() + box.getHeight() / 2};
+    }
+
+    /** Where a slot of the open container screen is, in GUI coordinates. */
+    private static int[] slotCentre(int index) {
+        if (!(client().gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen)) {
+            return null;
+        }
+        try {
+            Field left = net.minecraft.client.gui.screens.inventory.AbstractContainerScreen.class.getDeclaredField("leftPos");
+            Field top = net.minecraft.client.gui.screens.inventory.AbstractContainerScreen.class.getDeclaredField("topPos");
+            left.setAccessible(true);
+            top.setAccessible(true);
+            var slot = screen.getMenu().slots.get(index);
+            return new int[] {left.getInt(screen) + slot.x + 8, top.getInt(screen) + slot.y + 8};
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static int[] buttonCentre(String label) {
+        return buttonNth(label, 0);
+    }
+
+    private static int[] buttonNth(String label, int n) {
+        Screen screen = client().gui.screen();
+        if (screen == null) {
+            return null;
+        }
+        int seen = 0;
+        for (GuiEventListener element : screen.children()) {
+            if (element instanceof Button widget && widget.getMessage().getString().contains(label) && seen++ == n) {
+                return new int[] {widget.getX() + widget.getWidth() / 2, widget.getY() + widget.getHeight() / 2};
+            }
+        }
+        return null;
     }
 
     // --- the map's controls, pressed the way a hand presses them ---
@@ -1421,6 +2165,11 @@ public final class DevDiagnostics {
      * with /join, and a fight against a dummy with a real sword — swings, hits, sweeps, a jump crit
      * and a miss — so the server's own packets go through the hooks, then the summary in chat.
      */
+    /** Who the staged duel is against: a ranked player, for the ranked lines. */
+    private static final String DUEL_OPPONENT = System.getenv().getOrDefault("BETTERLOKA_DUEL_OPPONENT", "Knucior");
+    /** A named opponent means the run is being filmed: tidier chat, an opponent that stands its ground. */
+    private static final boolean FILMED = System.getenv("BETTERLOKA_DUEL_OPPONENT") != null;
+
     private void duelInput() {
         int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
         step(2, () -> {
@@ -1445,6 +2194,11 @@ public final class DevDiagnostics {
             server("difficulty easy");
             server("time set day");
             server("effect give @a resistance 600 4 true");
+            if (FILMED) {
+                server("gamerule send_command_feedback false");
+                server("gamerule show_advancement_messages false");
+                server("time set 6000");
+            }
             server("effect give @a regeneration 600 4 true");
             server("tp @a 0 -60 0 0 0");
             server("item replace entity @a weapon.mainhand with diamond_sword");
@@ -1463,7 +2217,7 @@ public final class DevDiagnostics {
             server("scoreboard objectives add duel dummy \"Ranked Potion\"");
             server("scoreboard objectives setdisplay sidebar duel");
             server("scoreboard players set line1 duel 2");
-            server("scoreboard players display name line1 duel \"Opponent: Knucior\"");
+            server("scoreboard players display name line1 duel \"Opponent: " + DUEL_OPPONENT + "\"");
             server("scoreboard players set line2 duel 1");
             server("scoreboard players display name line2 duel \"Map: Nether\"");
         });
@@ -1499,9 +2253,15 @@ public final class DevDiagnostics {
             // packet — the one an opponent's swings were missed on. Named after a ranked player, for
             // the ranked lines (found by name: the zombie's UUID is nobody's).
             server("execute as @a at @s run summon zombie ^ ^ ^2.5 "
-                    + "{PersistenceRequired:1b,Silent:1b,CustomName:'Knucior',Health:500f,"
+                    + "{PersistenceRequired:1b,Silent:1b,CustomName:'" + DUEL_OPPONENT + "',Health:500f,"
                     + "attributes:[{id:\"minecraft:max_health\",base:500},{id:\"minecraft:knockback_resistance\",base:1.0}],"
                     + "equipment:{mainhand:{id:\"minecraft:iron_sword\",count:1}}}");
+        });
+        // On film the opponent holds still, so the hits land where the camera looks.
+        step(2, () -> {
+            if (FILMED) {
+                server("effect give @e[type=zombie] minecraft:slowness infinite 255 true");
+            }
         });
         // Its ping, as the player list would show it: 62, then a spike up, then one down.
         step(8, () -> com.betterloka.duel.DuelTracker.get().devPing(duelZombie(), 62));
