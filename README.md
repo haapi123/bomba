@@ -25,6 +25,10 @@ into: a question you ask **Loka Assistant** goes, with your name, to the assista
 | **Loka Calculator** | Working |
 | **Loka Assistant** | Working (needs an assistant server) |
 
+The square button with Discord's logo, beside **Done**, opens the official BetterLoka Discord,
+[discord.gg/3Wwbq8mrKR](https://discord.gg/3Wwbq8mrKR). It goes through the game's own "open this link?"
+screen first, which shows the address and also offers to copy it instead.
+
 
 ## Player Finder
 

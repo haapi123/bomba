@@ -10,7 +10,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.function.Function;
 
-/** The root menu, opened by the BetterLoka keybind. One button per module. */
+/** The root menu, opened by the BetterLoka keybind. One button per module, and one to the Discord. */
 public class BetterLokaMenuScreen extends Screen {
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
@@ -43,6 +43,8 @@ public class BetterLokaMenuScreen extends Screen {
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> onClose())
                 .bounds(x, this.height - 30, BUTTON_WIDTH, BUTTON_HEIGHT).build());
+        // Beside Done, where the game puts its own small icon buttons.
+        addRenderableWidget(new DiscordButton(this, x + BUTTON_WIDTH + 4, this.height - 30));
     }
 
     /**

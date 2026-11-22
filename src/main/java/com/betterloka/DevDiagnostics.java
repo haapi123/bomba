@@ -924,6 +924,9 @@ public final class DevDiagnostics {
         if (parts.contains("assistant")) {
             videoAssistant();
         }
+        if (parts.contains("discord")) {
+            videoDiscord();
+        }
         mark("end");
         step(20, () -> {
             BetterLoka.LOGGER.info("DIAG video done");
@@ -1466,6 +1469,29 @@ public final class DevDiagnostics {
                 com.betterloka.brewing.Brewing.Form.SPLASH, com.betterloka.brewing.Brewing.Level.STRONG, "20k", "8"));
         step(80, () -> { });
         mark("calculator-end");
+    }
+
+    /** The menu's Discord button: hovered (its tooltip), pressed (the game's link check), at two scales. */
+    private void videoDiscord() {
+        openMenu();
+        step(20, () -> { });
+        glide(() -> buttonCentre("Discord"), 12);
+        shot(20, "discord-hover");
+        step(4, () -> realClick("Discord", com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+        step(10, () -> BetterLoka.LOGGER.info("DIAG discord pressed, screen: {}", client().gui.screen()));
+        shot(10, "discord-confirm");
+        step(2, () -> {
+            cursorAway();
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            client().gui.setScreen(new com.betterloka.gui.BetterLokaMenuScreen(null));
+        });
+        shot(20, "discord-menu-2");
+        step(2, () -> {
+            client().options.guiScale().set(4);
+            client().resizeGui();
+        });
+        shot(20, "discord-menu-4");
     }
 
     private void videoAssistant() {

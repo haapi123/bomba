@@ -3,6 +3,8 @@
   "key.betterloka.open_menu": "Otwórz menu BetterLoka",
   "betterloka.menu.title": "BetterLoka",
   "betterloka.menu.subtitle": "Mod pomocniczy dla play.lokamc.com",
+  "betterloka.menu.discord": "Discord",
+  "betterloka.menu.discord.tip": "Dołącz do oficjalnego Discorda BetterLoka",
   "betterloka.module.player_finder": "Player Finder",
   "betterloka.module.translator": "Translator",
   "betterloka.module.loka_helper": "Loka Helper",
