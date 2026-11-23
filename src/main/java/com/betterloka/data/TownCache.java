@@ -164,6 +164,22 @@ public final class TownCache {
         }
     }
 
+    /**
+     * The town with this name if the roster is already in hand, without loading anything — for the
+     * render thread, which must not wait on the network.
+     */
+    public LokaTown peekByName(String townName) {
+        if (townName == null || townName.isEmpty()) {
+            return null;
+        }
+        for (LokaTown town : byId.values()) {
+            if (townName.equalsIgnoreCase(town.name())) {
+                return town;
+            }
+        }
+        return null;
+    }
+
     /** Every living town, loading the roster first if it is stale. */
     public List<LokaTown> all() {
         ensureLoaded();

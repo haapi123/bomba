@@ -371,7 +371,10 @@ than drawn every frame. Drawing them per frame — one small quad per pixel of o
 the map lag: with a whole continent on screen it was twenty thousand quads and three tenths of a
 second a frame. Painted into the tiles, a frame of the map costs well under a millisecond. When a
 territory changes hands, every tile it touches is repainted in the background and swapped in place. **Hovering** one shows the card the website shows: the holding town, its alliance and
-strength, its members and how many territories it holds.
+strength, its members and how many territories it holds — and **when it can be attacked**: its
+vulnerability window in your own clock (its alliance's, when it is in one) and whether it is open
+right now, with how long it has left or how long until it opens. See *Towns* below for how the hours
+are worked out.
 
 The markers are Loka's artwork, so they are fetched at runtime the way a browser viewing the map
 fetches them and cached under `config/betterloka/map-icons` — about ten kilobytes, once, and never
@@ -476,11 +479,18 @@ right, in tiles and cards:
   fact.
 - **Active members**, and how long the town has left — see below
 - **Level, strength, members, territories**
-- **Vulnerable from** — the eight hours it is attackable for, in your own clock, and **right now**:
-  open with how long it has left, or closed with how long until it opens. Loka publishes the
-  opening hour and publishes it in **UTC**: the API says 19 for a town whose in-game panel reads
-  "9pm – 5am", so the number is converted rather than printed as it comes. The eight-hour length is
-  the server's rule, confirmed against that panel.
+- **Vulnerable from** — the eight hours it is attackable for, in your own clock (the time zone your
+  computer is set to, named: `21:00 – 05:00 CET`), the same hours **in Loka's time**, and **right
+  now**: open with how long it has left, or closed with how long until it opens. A town in an alliance
+  is attackable in the **alliance's** window — an alliance has one, set with `/town a vulnerable` —
+  so that is the one shown, and the label says so.
+
+  Loka's API gives the window as the number chosen with `/town vulnerable <1-24>`, not as a time, and
+  Loka's wiki tables what it means: an hour of Loka's day, which is **US Eastern** time — 1 is 9 pm to
+  5 am, each number an hour later, 24 is 8 pm to 4 am. So a town on 19 opens at 3 pm in New York, which
+  is 21:00 in Poland winter and summer alike (apart from the few weeks each spring and autumn when
+  America and Europe change their clocks on different dates). Before 0.64 the number was read as a UTC
+  hour, which agrees with this in a Central European summer and was an hour early all winter.
 - **Leader** and **sub-owners**, resolved from the identity IDs the roster stores them as, three to
   a row so a town with thirty of them still fits
 - **Alliance** it belongs to now, and **who it has been allied with, longest first**

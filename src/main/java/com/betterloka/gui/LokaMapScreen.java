@@ -273,6 +273,8 @@ public class LokaMapScreen extends Screen implements LokaStyled {
     @Override
     protected void init() {
         window.layout(this.width, this.height);
+        // The town roster and the alliances, for the vulnerability windows on the territory cards.
+        VulnInfo.prefetch();
         int width = contentWidth();
         int left = contentLeft();
 
@@ -1441,6 +1443,17 @@ public class LokaMapScreen extends Screen implements LokaStyled {
             lines.add(CardLine.row(Component.translatable("betterloka.map.conquest_points"),
                     Component.translatable("betterloka.map.cp_per_day", territory.conquestPoints()),
                     MapStyle.CONQUEST_POINTS));
+        }
+        // When the holder can be attacked: its alliance's window if it is in one, else its own, in
+        // the player's clock.
+        VulnInfo.Found vuln = territory.neutral() ? null : VulnInfo.find(territory.owner(), territory.alliance());
+        if (vuln != null) {
+            java.time.Instant now = java.time.Instant.now();
+            lines.add(CardLine.row(Component.translatable(vuln.fromAlliance()
+                            ? "betterloka.map.vuln_alliance" : "betterloka.map.vuln"),
+                    Component.literal(VulnInfo.localRange(vuln.window(), now)), GuiTheme.LIVE));
+            lines.add(CardLine.row(Component.translatable("betterloka.town.vuln_now"),
+                    VulnInfo.state(vuln.window(), now), VulnInfo.stateColor(vuln.window(), now)));
         }
 
         List<CardLine> extra = new ArrayList<>();

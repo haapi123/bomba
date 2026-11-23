@@ -1607,6 +1607,24 @@ public final class DevDiagnostics {
             });
             shot(80, tag + "town");
         }
+        if (only.contains("vuln")) {
+            // A territory of a town in an alliance, one of a town on its own, and a town's screen.
+            step(1, () -> {
+                com.betterloka.gui.LokaMapScreen.devNoHover = false;
+                client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(menu.get()));
+            });
+            step(120, () -> mapScreen().devSelect(com.betterloka.map.Continent.KALROS));
+            step(60, () -> BetterLoka.LOGGER.info("DIAG vuln zone {}", java.time.ZoneId.systemDefault()));
+            glide(() -> mapScreen().devPointAt(t -> t.alliance() != null && !t.neutral()), 14);
+            shot(30, tag + "vuln-alliance");
+            glide(() -> mapScreen().devPointAt(t -> t.alliance() == null && !t.neutral()), 14);
+            shot(30, tag + "vuln-town");
+            step(2, () -> {
+                cursorAway();
+                mapScreen().devOpenAnyTown();
+            });
+            shot(80, tag + "vuln-townscreen");
+        }
         if (only.contains("shrines")) {
             step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaGrinderScreen(menu.get())));
             step(4, () -> click(client().gui.screen(), tr("betterloka.grind.tab.shrines")));

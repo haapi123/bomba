@@ -53,6 +53,8 @@ public final class StandingsService {
     private final Set<String> watched = ConcurrentHashMap.newKeySet();
 
     private volatile Standings standings = Standings.EMPTY;
+    /** Every alliance as last read, for their vulnerability windows. */
+    private volatile List<LokaAlliance> alliances = List.of();
     private volatile long updatedAt;
     private volatile long lastRequestAt;
     private volatile boolean inFlight;
@@ -93,6 +95,11 @@ public final class StandingsService {
         return standings;
     }
 
+    /** Every alliance as of the last read; empty until one has been made. */
+    public List<LokaAlliance> alliances() {
+        return alliances;
+    }
+
     /** When the standings were last read, or 0 before the first reading. */
     public long updatedAt() {
         return updatedAt;
@@ -111,6 +118,7 @@ public final class StandingsService {
     void refresh() {
         try {
             List<LokaAlliance> alliances = source.alliances();
+            this.alliances = List.copyOf(alliances);
             List<LokaTown> roster = source.towns();
             long now = System.currentTimeMillis();
             Standings built = Standings.of(alliances, overlay(roster, now));

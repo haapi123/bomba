@@ -52,8 +52,6 @@ public class TownInfoScreen extends Screen implements LokaStyled {
     private static final int SEPARATOR = GuiTheme.SEPARATOR;
     private static final int ROW_HEIGHT = 26;
 
-    /** A Loka vulnerability window runs eight hours from the hour the API publishes. */
-    private static final int VULN_HOURS = 8;
     /** How many past allies to name. Beyond a handful it stops being a summary. */
     private static final int MAX_PARTNERS = 5;
 
@@ -471,69 +469,42 @@ public class TownInfoScreen extends Screen implements LokaStyled {
         scroll.render(context, mouseX, mouseY);
     }
 
-    /** The vulnerability window — when, and whether it is open right now — and when it was founded. */
+    /**
+     * The vulnerability window — when, in the player's clock and in Loka's, and whether it is open
+     * right now — and when the town was founded. A town in an alliance is attackable in the
+     * alliance's window, so that is the one shown, and said to be.
+     */
     private int renderWar(GuiGraphicsExtractor context, int x, int y, int width) {
-        int hour = town.vulnerabilityWindow();
-        String window = hour < 0 ? "—" : String.format(Locale.ROOT, "%02d:00 – %02d:00",
-                localHour(hour), (localHour(hour) + VULN_HOURS) % 24);
-        Component state;
-        int stateColor;
-        if (hour < 0) {
-            state = Component.literal("—");
-            stateColor = GuiTheme.MUTED;
-        } else {
-            long untilOpenMinutes = minutesUntilOpen(hour, Instant.now());
-            if (untilOpenMinutes == 0) {
-                long left = minutesLeftOpen(hour, Instant.now());
-                state = Component.translatable("betterloka.town.vuln_open", hoursMinutes(left));
-                stateColor = GuiTheme.BAD;
-            } else {
-                state = Component.translatable("betterloka.town.vuln_opens", hoursMinutes(untilOpenMinutes));
-                stateColor = GuiTheme.GOOD;
-            }
+        String allianceName = alliance != null ? alliance.name()
+                : mapTown != null && mapTown.hasAlliance() ? mapTown.alliance() : null;
+        VulnInfo.Found vuln = alliance != null ? VulnInfo.find(town, alliance) : VulnInfo.find(town.name(), allianceName);
+        if (vuln == null) {
+            vuln = VulnInfo.find(town, null);
         }
-        Component stateText = state;
-        int stateTint = stateColor;
-        return card(context, x, y, width, 3, (textX, textY, inner) -> {
-            GuiTheme.statRow(context, this.font, textX, textY, inner, label("betterloka.town_finder.vuln"), window,
-                    GuiTheme.LIVE);
-            GuiTheme.statRow(context, this.font, textX, textY + LINE, inner, label("betterloka.town.vuln_now"),
-                    stateText.getString(), stateTint);
-            GuiTheme.statRow(context, this.font, textX, textY + LINE * 2, inner,
+        Instant now = Instant.now();
+        VulnInfo.Found found = vuln;
+        return card(context, x, y, width, 4, (textX, textY, inner) -> {
+            String windowLabel = label(found != null && found.fromAlliance()
+                    ? "betterloka.town.vuln_alliance" : "betterloka.town_finder.vuln");
+            if (found == null) {
+                GuiTheme.statRow(context, this.font, textX, textY, inner, windowLabel, "—", GuiTheme.MUTED);
+                GuiTheme.statRow(context, this.font, textX, textY + LINE, inner, label("betterloka.town.vuln_loka"),
+                        "—", GuiTheme.MUTED);
+                GuiTheme.statRow(context, this.font, textX, textY + LINE * 2, inner, label("betterloka.town.vuln_now"),
+                        "—", GuiTheme.MUTED);
+            } else {
+                GuiTheme.statRow(context, this.font, textX, textY, inner, windowLabel,
+                        VulnInfo.localRange(found.window(), now), GuiTheme.LIVE);
+                GuiTheme.statRow(context, this.font, textX, textY + LINE, inner, label("betterloka.town.vuln_loka"),
+                        VulnInfo.lokaRange(found.window(), now), GuiTheme.MUTED);
+                GuiTheme.statRow(context, this.font, textX, textY + LINE * 2, inner, label("betterloka.town.vuln_now"),
+                        VulnInfo.state(found.window(), now).getString(), VulnInfo.stateColor(found.window(), now));
+            }
+            GuiTheme.statRow(context, this.font, textX, textY + LINE * 3, inner,
                     label(town.foundedIsImport() ? "betterloka.town_finder.on_record_since"
                             : "betterloka.town_finder.founded"),
                     TimeFormat.dateTime(town.founded()), town.foundedIsImport() ? GuiTheme.MUTED : GuiTheme.TEXT);
         });
-    }
-
-    /** Minutes until a window opening at {@code utcHour} opens: 0 while it is open. */
-    static long minutesUntilOpen(int utcHour, Instant now) {
-        long minuteOfDay = (now.getEpochSecond() / 60) % (24 * 60);
-        long start = utcHour * 60L;
-        long sinceStart = Math.floorMod(minuteOfDay - start, 24 * 60);
-        if (sinceStart < VULN_HOURS * 60L) {
-            return 0;
-        }
-        return 24 * 60 - sinceStart;
-    }
-
-    /** Minutes left of a window that is open now. */
-    static long minutesLeftOpen(int utcHour, Instant now) {
-        long minuteOfDay = (now.getEpochSecond() / 60) % (24 * 60);
-        long sinceStart = Math.floorMod(minuteOfDay - utcHour * 60L, 24 * 60);
-        return Math.max(0, VULN_HOURS * 60L - sinceStart);
-    }
-
-    private static String hoursMinutes(long minutes) {
-        return minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min";
-    }
-
-    /** An hour of the UTC day, moved into the local zone as it stands today. */
-    private static int localHour(int utcHour) {
-        return java.time.OffsetTime.of(utcHour, 0, 0, 0, java.time.ZoneOffset.UTC)
-                .atDate(java.time.LocalDate.now())
-                .atZoneSameInstant(java.time.ZoneId.systemDefault())
-                .getHour();
     }
 
     /** How many columns the sub-owners are set in; a town can have thirty of them. */
