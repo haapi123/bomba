@@ -118,6 +118,64 @@ public final class HelperUi {
         return mix(color, color | 0x00FFFFFF, amount);
     }
 
+    // --- the game's own widgets, as BetterLoka draws them on its screens ---
+
+    /**
+     * A button: navy with a lighter edge, brighter under the pointer, gold-edged when it is the chosen
+     * one of a row of tabs, darker when it cannot be pressed.
+     *
+     * @param hover how far into its hover look it is, 0 to 1
+     */
+    public static void button(GuiGraphicsExtractor context, int x, int y, int width, int height, float hover,
+                              boolean active, boolean chosen) {
+        int radius = height >= 16 ? 4 : 3;
+        int fill;
+        int edge;
+        if (!active) {
+            fill = 0xFF141B28;
+            edge = 0xFF222C40;
+        } else if (chosen) {
+            fill = mix(0xFF2A2716, 0xFF3A3318, hover);
+            edge = mix(0xFFB8913A, GOLD, hover);
+        } else {
+            fill = mix(0xFF1C2638, 0xFF283652, hover);
+            edge = mix(0xFF2E3C58, 0xFF4A5E88, hover);
+        }
+        round(context, x, y + 1, width, height, radius, 0x40000000);
+        framed(context, x, y, width, height, radius, fill, edge);
+        if (active) {
+            // A faint light along the top, so it reads as raised.
+            context.fill(x + radius, y + 1, x + width - radius, y + 2, alpha(0xFFFFFF, chosen ? 0x22 : 0x14));
+        }
+        if (chosen) {
+            context.fill(x + radius + 2, y + height - 3, x + width - radius - 2, y + height - 2, GOLD);
+        }
+    }
+
+    /** A text box: darker than the window, its edge gold while it is being typed in. */
+    public static void field(GuiGraphicsExtractor context, int x, int y, int width, int height, boolean focused,
+                             boolean active) {
+        int edge = focused ? 0xFFC9A04A : active ? 0xFF2E3C58 : 0xFF222C40;
+        framed(context, x, y, width, height, 3, active ? 0xFF0B111C : 0xFF0E141F, edge);
+        if (focused) {
+            context.fill(x + 3, y + height - 2, x + width - 3, y + height - 1, alpha(GOLD, 0x60));
+        }
+    }
+
+    // --- on the game's screen, over the world ---
+
+    /** Fill and edge of a box drawn over the world: the window's navy, see-through enough to play past. */
+    public static final int HUD_FILL = 0xB80D131F;
+    public static final int HUD_EDGE = 0xC0304060;
+
+    /** A box over the world, with {@code accent} (if not 0) as a short bar down its left side. */
+    public static void hudPanel(GuiGraphicsExtractor context, int x, int y, int width, int height, int accent) {
+        framed(context, x, y, width, height, Math.min(4, height / 2), HUD_FILL, HUD_EDGE);
+        if (accent != 0) {
+            context.fill(x + 1, y + 3, x + 3, y + height - 3, accent);
+        }
+    }
+
     /** Eases out: quick at first, settling at the end. */
     public static float easeOut(float t) {
         float s = Math.max(0f, Math.min(1f, t));

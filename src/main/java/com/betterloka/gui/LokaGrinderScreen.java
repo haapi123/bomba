@@ -14,7 +14,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -27,7 +26,7 @@ import java.util.Locale;
  * <p>The timers live outside the screen, so shutting the GUI does not stop them — a twenty minute
  * countdown that only ran while you were looking at it would be no use at all.
  */
-public class LokaGrinderScreen extends Screen {
+public class LokaGrinderScreen extends Screen implements LokaStyled {
     private enum Tab {
         SHULKER("betterloka.grind.tab.shulker"),
         GLOWSTONE("betterloka.grind.tab.glowstone"),
@@ -40,17 +39,12 @@ public class LokaGrinderScreen extends Screen {
         }
     }
 
-    private static final int MAX_CONTENT_WIDTH = 320;
-
     /** The shrine list carries coordinates and a button on every row, so it gets more room. */
     private static final int SHRINES_MAX_WIDTH = 440;
     private static final int ROW_HEIGHT = 11;
     private static final int CARD_PADDING = 6;
     private static final int CARD_GAP = 6;
-
-    private static final int TAB_ROW_Y = 26;
     private static final int TAB_ROW_HEIGHT = 16;
-    private static final int VIEWPORT_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 8;
 
     /** The square in the corner of the card that starts and stops the countdown. */
     private static final int BOX_SIZE = 12;
@@ -59,6 +53,7 @@ public class LokaGrinderScreen extends Screen {
     private static final int GLOWSTONE_STEP = 5;
 
     private final Screen parent;
+    private final LokaWindow window;
     private Tab tab = Tab.SHULKER;
 
     /** Where the start box was drawn this frame, so a click can find it. */
@@ -88,23 +83,36 @@ public class LokaGrinderScreen extends Screen {
     public LokaGrinderScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_grinder"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.loka_grinder.desc"),
+                this::onClose).content(SHRINES_MAX_WIDTH, 290);
+    }
+
+    private int tabRowY() {
+        return window.top();
+    }
+
+    private int viewportTop() {
+        return tabRowY() + TAB_ROW_HEIGHT + 8;
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 40, tab == Tab.SHRINES ? SHRINES_MAX_WIDTH : MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     /** Where the shrine list starts: under two rows of switches and the line saying where the player is. */
-    private static int shrineListTop() {
-        return VIEWPORT_TOP + (TAB_ROW_HEIGHT + 4) * 2 + 14;
+    private int shrineListTop() {
+        return viewportTop() + (TAB_ROW_HEIGHT + 4) * 2 + 14;
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     @Override
     protected void init() {
+        // The timers need less room than the list of shrines; the width stays, so the tabs do not move.
+        window.content(SHRINES_MAX_WIDTH, tab == Tab.SHRINES ? 290 : 148);
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
 
@@ -114,18 +122,16 @@ public class LokaGrinderScreen extends Screen {
             Tab target = value;
             int thisWidth = value == Tab.SHRINES ? left + width - x : tabWidth;
             addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
-                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+                    .bounds(x, tabRowY(), thisWidth, TAB_ROW_HEIGHT).build());
             x += tabWidth + 4;
         }
 
         if (tab == Tab.SHRINES) {
             initShrines(left, width);
-            addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                    .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
             return;
         }
 
-        int controlY = VIEWPORT_TOP + CARD_PADDING * 2 + ROW_HEIGHT * 6 + CARD_GAP;
+        int controlY = viewportTop() + CARD_PADDING * 2 + ROW_HEIGHT * 6 + CARD_GAP;
         if (tab == Tab.SHULKER) {
             addRenderableWidget(Button.builder(autoStartLabel(), button -> {
                         BetterLokaClient.config().setShulkerAutoStart(
@@ -158,9 +164,6 @@ public class LokaGrinderScreen extends Screen {
                     button.setMessage(hudLabel());
                 })
                 .bounds(left, controlY + TAB_ROW_HEIGHT + 4, width, TAB_ROW_HEIGHT).build());
-
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 30, 200, 20).build());
     }
 
     /**
@@ -169,14 +172,14 @@ public class LokaGrinderScreen extends Screen {
      */
     private void initShrines(int left, int width) {
         scrollPanel.setViewport(left, shrineListTop(), width,
-                Math.max(20, this.height - 36 - shrineListTop()));
+                Math.max(20, window.bottom() - shrineListTop()));
         int quarter = (width - 12) / 4;
         addRenderableWidget(Button.builder(shrineMasterLabel(), button -> {
                     BetterLokaConfig config = BetterLokaClient.config();
                     config.setShrineWaypointsEnabled(!config.shrineWaypointsEnabled());
                     rebuildWidgets();
                 })
-                .bounds(left, VIEWPORT_TOP, quarter, TAB_ROW_HEIGHT).build());
+                .bounds(left, viewportTop(), quarter, TAB_ROW_HEIGHT).build());
         int x = left + quarter + 4;
         for (ShrineKind kind : ShrineKind.values()) {
             int thisWidth = kind == ShrineKind.MAGMA_CUBE ? left + width - x : quarter;
@@ -185,13 +188,13 @@ public class LokaGrinderScreen extends Screen {
                         config.setShrineKindEnabled(kind, !config.shrineKindEnabled(kind));
                         button.setMessage(shrineKindLabel(kind));
                     })
-                    .bounds(x, VIEWPORT_TOP, thisWidth, TAB_ROW_HEIGHT).build()).active =
+                    .bounds(x, viewportTop(), thisWidth, TAB_ROW_HEIGHT).build()).active =
                     BetterLokaClient.config().shrineWaypointsEnabled();
             x += quarter + 4;
         }
 
         // Second row: the chat notice when a shrine restarts, and how long the cooldown is.
-        int rowY = VIEWPORT_TOP + TAB_ROW_HEIGHT + 4;
+        int rowY = viewportTop() + TAB_ROW_HEIGHT + 4;
         int half = (width - 4) / 2;
         addRenderableWidget(Button.builder(shrineNotifyLabel(), button -> {
                     BetterLokaConfig config = BetterLokaClient.config();
@@ -311,6 +314,9 @@ public class LokaGrinderScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (tab == Tab.SHRINES) {
             if (scrollPanel.mouseClicked(click.x(), click.y())) {
                 return true;
@@ -339,9 +345,14 @@ public class LokaGrinderScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -351,7 +362,7 @@ public class LokaGrinderScreen extends Screen {
             return;
         }
 
-        renderTimer(context, left, VIEWPORT_TOP, width, mouseX, mouseY,
+        renderTimer(context, left, viewportTop(), width, mouseX, mouseY,
                 tab == Tab.SHULKER ? shulker() : glowstone(),
                 tab == Tab.SHULKER ? "betterloka.grind.shulker.title" : "betterloka.grind.glowstone.title",
                 tab == Tab.SHULKER ? "betterloka.grind.shulker.hint" : "betterloka.grind.glowstone.hint");

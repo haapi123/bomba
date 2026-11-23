@@ -13,9 +13,9 @@ public final class ScrollPanel {
     /** Width of the bar's track, including the gap between it and the content. */
     public static final int BAR_WIDTH = 6;
 
-    private static final int TRACK_COLOR = 0x40FFFFFF;
-    private static final int THUMB_COLOR = 0xFF5A5A6E;
-    private static final int THUMB_HOVER_COLOR = 0xFF8A8AA0;
+    private static final int TRACK_COLOR = 0x26FFFFFF;
+    private static final int THUMB_COLOR = 0xFF46557A;
+    private static final int THUMB_HOVER_COLOR = 0xFF7A8CB8;
     private static final int MIN_THUMB_HEIGHT = 16;
 
     private int x;
@@ -167,10 +167,12 @@ public final class ScrollPanel {
         int thumbHeight = thumbHeight();
         int thumbY = thumbY(thumbHeight);
 
-        context.fill(barX, y, barX + BAR_WIDTH - 2, y + height, TRACK_COLOR);
+        // A thin rounded bar, a little wider under the pointer.
         boolean hovered = dragging
                 || (mouseX >= barX && mouseX <= barX + BAR_WIDTH && mouseY >= y && mouseY <= y + height);
-        context.fill(barX, thumbY, barX + BAR_WIDTH - 2, thumbY + thumbHeight,
-                hovered ? THUMB_HOVER_COLOR : THUMB_COLOR);
+        int barW = hovered ? BAR_WIDTH - 2 : BAR_WIDTH - 3;
+        int bx = barX + (BAR_WIDTH - 2 - barW);
+        HelperUi.round(context, bx, y, barW, height, barW / 2, TRACK_COLOR);
+        HelperUi.round(context, bx, thumbY, barW, thumbHeight, barW / 2, hovered ? THUMB_HOVER_COLOR : THUMB_COLOR);
     }
 }

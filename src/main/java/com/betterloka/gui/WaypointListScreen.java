@@ -11,7 +11,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -30,7 +29,7 @@ import java.util.Locale;
  * <p>The buttons on the cards are painted rather than added as widgets: the cards scroll, and a
  * widget per card would have to be moved and hidden by hand on every frame.
  */
-public class WaypointListScreen extends Screen {
+public class WaypointListScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 440;
     private static final int ROW_HEIGHT = 10;
     private static final int CARD_PADDING = 5;
@@ -39,15 +38,13 @@ public class WaypointListScreen extends Screen {
     private static final int SWATCH = 7;
     private static final int ACTION_WIDTH = 58;
     private static final int ACTION_GAP = 3;
-
-    private static final int CONTROL_ROW_Y = 26;
     private static final int CONTROL_ROW_HEIGHT = 16;
-    private static final int VIEWPORT_TOP = CONTROL_ROW_Y + CONTROL_ROW_HEIGHT + 16;
 
     /** A delete has to be pressed twice within this long; the first press only arms it. */
     static final long CONFIRM_MILLIS = 3000;
 
     private final Screen parent;
+    private final LokaWindow window;
 
     /**
      * The territory selected on the map when this was opened, as the waypoint it would make, or
@@ -78,6 +75,8 @@ public class WaypointListScreen extends Screen {
     public WaypointListScreen(Screen parent, Waypoint candidate) {
         super(Component.translatable("betterloka.waypoints.title"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.waypoints.subtitle"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 380);
         this.candidate = candidate;
     }
 
@@ -85,33 +84,39 @@ public class WaypointListScreen extends Screen {
         return BetterLokaClient.map();
     }
 
+    private int controlRowY() {
+        return window.top();
+    }
+
+    private int viewportTop() {
+        return controlRowY() + CONTROL_ROW_HEIGHT + 16;
+    }
+
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int viewportBottom() {
-        return this.height - 34;
+        return window.bottom();
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
-        scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
+        scrollPanel.setViewport(left, viewportTop(), width, Math.max(20, viewportBottom() - viewportTop()));
 
         // Adding lives where the old button did its job: on whatever was selected on the map.
         if (candidate != null) {
             addButton = addRenderableWidget(Button.builder(addLabel(), button -> addCandidate())
-                    .bounds(left, CONTROL_ROW_Y, width, CONTROL_ROW_HEIGHT).build());
+                    .bounds(left, controlRowY(), width, CONTROL_ROW_HEIGHT).build());
             addButton.active = !alreadyAdded();
         }
-
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
     }
 
     private boolean alreadyAdded() {
@@ -174,6 +179,9 @@ public class WaypointListScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (scrollPanel.mouseClicked(click.x(), click.y())) {
             return true;
         }
@@ -202,9 +210,14 @@ public class WaypointListScreen extends Screen {
     // --- drawing ---
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
@@ -212,13 +225,13 @@ public class WaypointListScreen extends Screen {
 
         if (candidate == null) {
             context.centeredText(this.font, Component.translatable("betterloka.waypoints.hint"),
-                    this.width / 2, CONTROL_ROW_Y + 4, GuiTheme.MUTED);
+                    window.centreX(), controlRowY() + 4, GuiTheme.MUTED);
         }
         context.text(this.font, Component.translatable("betterloka.waypoints.count", waypoints.size()),
-                left, VIEWPORT_TOP - 12, GuiTheme.MUTED);
+                left, viewportTop() - 12, GuiTheme.MUTED);
 
         actions.clear();
-        context.enableScissor(left, VIEWPORT_TOP, left + width, viewportBottom());
+        context.enableScissor(left, viewportTop(), left + width, viewportBottom());
         int y = scrollPanel.contentTop();
         int cardWidth = scrollPanel.contentWidth();
         int end = waypoints.isEmpty()

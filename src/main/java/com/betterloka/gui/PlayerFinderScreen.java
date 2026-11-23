@@ -26,7 +26,6 @@ import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.EntityModelSet;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
@@ -50,7 +49,7 @@ import java.util.function.Supplier;
  * <p>Career totals come from EldritchBot in a single request, so the card fills in as fast as the
  * network allows; the per-fight breakdown at the bottom arrives a moment later.
  */
-public class PlayerFinderScreen extends Screen {
+public class PlayerFinderScreen extends Screen implements LokaStyled {
     /** Which view of the same loaded profile is showing. */
     private enum Tab {
         PROFILE("betterloka.finder.tab.profile"),
@@ -69,12 +68,10 @@ public class PlayerFinderScreen extends Screen {
 
     private static final int MAX_CONTENT_WIDTH = 470;
     private static final int SEARCH_BUTTON_WIDTH = 60;
-    private static final int TITLE_Y = 8;
-    private static final int SEARCH_Y = 21;
     private static final int SEARCH_HEIGHT = 20;
-    private static final int TOP = SEARCH_Y + SEARCH_HEIGHT + 6;
     private static final int TAB_HEIGHT = 16;
-    private static final int VIEWPORT_TOP = TOP + TAB_HEIGHT + 6;
+    /** The nameplate switches along the bottom, and the gap above them. */
+    private static final int FOOTER = 18 + 6;
 
     private static final int STAND_WIDTH = 132;
     private static final int TAG_HEIGHT = 38;
@@ -89,8 +86,8 @@ public class PlayerFinderScreen extends Screen {
     private static final int CHIP_PADDING = 5;
     private static final int CHIP_GAP = 4;
 
-    private static final int CARD_BORDER = 0xFF2C2C38;
-    private static final int SEPARATOR = 0xFF33333F;
+    private static final int CARD_BORDER = HelperUi.CARD_EDGE;
+    private static final int SEPARATOR = GuiTheme.SEPARATOR;
 
     /** How wide a chip's explanation is allowed to get before it wraps. */
     private static final int TOOLTIP_WIDTH = 190;
@@ -140,18 +137,26 @@ public class PlayerFinderScreen extends Screen {
     public PlayerFinderScreen(Screen parent) {
         super(Component.translatable("betterloka.finder.title"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.player_finder.desc"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 420);
     }
 
+    // Where things go in the window, worked out in init.
+    private final LokaWindow window;
+    private int searchY;
+    private int top;
+    private int viewportTop;
+
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int bottom() {
-        return this.height - 31;
+        return window.bottom() - FOOTER;
     }
 
     private int detailsX() {
@@ -164,15 +169,19 @@ public class PlayerFinderScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
+        searchY = window.top();
+        top = searchY + SEARCH_HEIGHT + 6;
+        viewportTop = top + TAB_HEIGHT + 6;
         int left = contentLeft();
         int width = contentWidth();
         int fieldWidth = width - SEARCH_BUTTON_WIDTH - 4;
 
-        scrollPanel.setViewport(detailsX(), VIEWPORT_TOP, detailsWidth(),
-                Math.max(20, bottom() - VIEWPORT_TOP));
+        scrollPanel.setViewport(detailsX(), viewportTop, detailsWidth(),
+                Math.max(20, bottom() - viewportTop));
 
         String previous = nameField != null ? nameField.getValue() : "";
-        nameField = new EditBox(this.font, left, SEARCH_Y, fieldWidth, SEARCH_HEIGHT,
+        nameField = new EditBox(this.font, left, searchY, fieldWidth, SEARCH_HEIGHT,
                 Component.translatable("betterloka.finder.field"));
         nameField.setMaxLength(16);
         nameField.setHint(Component.translatable("betterloka.finder.placeholder").withStyle(ChatFormatting.DARK_GRAY));
@@ -180,7 +189,7 @@ public class PlayerFinderScreen extends Screen {
         addRenderableWidget(nameField);
 
         searchButton = Button.builder(Component.translatable("betterloka.finder.search"), button -> search())
-                .bounds(left + fieldWidth + 4, SEARCH_Y, SEARCH_BUTTON_WIDTH, SEARCH_HEIGHT)
+                .bounds(left + fieldWidth + 4, searchY, SEARCH_BUTTON_WIDTH, SEARCH_HEIGHT)
                 .build();
         addRenderableWidget(searchButton);
 
@@ -193,17 +202,17 @@ public class PlayerFinderScreen extends Screen {
             // The last one takes whatever the division left over, so the row ends flush.
             int thisWidth = i == tabs.length - 1 ? detailsX() + detailsWidth() - tabX : share;
             tabButtons.add(addRenderableWidget(Button.builder(tabLabel(target), button -> selectTab(target))
-                    .bounds(tabX, TOP, thisWidth, TAB_HEIGHT).build()));
+                    .bounds(tabX, top, thisWidth, TAB_HEIGHT).build()));
             tabX += share + 4;
         }
 
-        // The nameplate switches and Back, in one row under everything: "Above nameplates:" and
-        // a short switch each for the K/D, the Elo and the ping.
-        int rowWidth = Math.min(width, 470);
-        int rowLeft = this.width / 2 - rowWidth / 2;
+        // The nameplate switches, in one row under everything: "Above nameplates:" and a short
+        // switch each for the K/D, the Elo and the ping.
+        int rowWidth = width;
+        int rowLeft = left;
+        int rowY = window.bottom() - 18;
         int labelWidth = this.font.width(Component.translatable("betterloka.finder.nameplates")) + 6;
-        int backWidth = Math.min(90, rowWidth / 5);
-        int each = (rowWidth - labelWidth - backWidth - 4 * 3) / 3;
+        int each = (rowWidth - labelWidth - 4 * 2) / 3;
         nameplatesLabelX = rowLeft;
         int x = rowLeft + labelWidth;
         addRenderableWidget(Button.builder(switchLabel("betterloka.finder.kd_short",
@@ -211,24 +220,21 @@ public class PlayerFinderScreen extends Screen {
                     BetterLokaClient.config().setShowNameplateKd(!BetterLokaClient.config().showNameplateKd());
                     button.setMessage(switchLabel("betterloka.finder.kd_short", BetterLokaClient.config().showNameplateKd()));
                 })
-                .bounds(x, this.height - 25, each, 20).build());
+                .bounds(x, rowY, each, 18).build());
         x += each + 4;
         addRenderableWidget(Button.builder(switchLabel("betterloka.finder.elo",
                         BetterLokaClient.config().showNameplateElo()), button -> {
                     BetterLokaClient.config().setShowNameplateElo(!BetterLokaClient.config().showNameplateElo());
                     button.setMessage(switchLabel("betterloka.finder.elo", BetterLokaClient.config().showNameplateElo()));
                 })
-                .bounds(x, this.height - 25, each, 20).build());
+                .bounds(x, rowY, each, 18).build());
         x += each + 4;
         addRenderableWidget(Button.builder(switchLabel("betterloka.finder.ping",
                         BetterLokaClient.config().showNameplatePing()), button -> {
                     BetterLokaClient.config().setShowNameplatePing(!BetterLokaClient.config().showNameplatePing());
                     button.setMessage(switchLabel("betterloka.finder.ping", BetterLokaClient.config().showNameplatePing()));
                 })
-                .bounds(x, this.height - 25, each, 20).build());
-        x += each + 4;
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(x, this.height - 25, rowLeft + rowWidth - x, 20).build());
+                .bounds(x, rowY, rowLeft + rowWidth - x, 18).build());
 
         if (wideModel == null) {
             EntityModelSet models = this.minecraft.getEntityModels();
@@ -400,6 +406,9 @@ public class PlayerFinderScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (showingProfile() && click.button() == InputConstants.MOUSE_BUTTON_LEFT
                 && click.x() >= skinX0 && click.x() < skinX1 && click.y() >= skinY0 && click.y() < skinY1) {
             turning = true;
@@ -427,6 +436,12 @@ public class PlayerFinderScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         boolean showing = showingProfile();
         for (Button button : tabButtons) {
@@ -438,9 +453,8 @@ public class PlayerFinderScreen extends Screen {
         lastMouseY = mouseY;
         hoveredTrait = null;
 
-        context.centeredText(this.font, this.title, this.width / 2, TITLE_Y, GuiTheme.TEXT);
         context.text(this.font, Component.translatable("betterloka.finder.nameplates"), nameplatesLabelX,
-                this.height - 19, GuiTheme.MUTED);
+                window.bottom() - 13, GuiTheme.MUTED);
 
         long now = System.currentTimeMillis();
         float seconds = lastFrame == 0 ? 0 : Math.min(0.25f, (now - lastFrame) / 1000f);
@@ -481,10 +495,10 @@ public class PlayerFinderScreen extends Screen {
         int color = searching ? GuiTheme.MUTED : error != null ? GuiTheme.BAD : GuiTheme.MUTED;
         List<FormattedCharSequence> lines = this.font.split(message, width - 24);
         int height = 20 + lines.size() * LINE;
-        MapStyle.card(context, left, TOP, width, height, CARD_BORDER);
-        int y = TOP + 10;
+        MapStyle.card(context, left, top, width, height, CARD_BORDER);
+        int y = top + 10;
         for (FormattedCharSequence line : lines) {
-            context.centeredText(this.font, line, this.width / 2, y, color);
+            context.centeredText(this.font, line, window.centreX(), y, color);
             y += LINE;
         }
     }
@@ -497,7 +511,7 @@ public class PlayerFinderScreen extends Screen {
      */
     private void drawStand(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         int left = contentLeft();
-        int top = TOP;
+        int top = this.top;
         int bottom = bottom();
         EldritchStats stats = profile.stats();
         double ratio = stats.killDeathRatio();
@@ -523,9 +537,9 @@ public class PlayerFinderScreen extends Screen {
 
         // The stand under their feet.
         int plinthY = skinY1 - 2;
-        context.fill(centreX - 30, plinthY, centreX + 30, plinthY + 4, 0xFF4A4A5A);
-        context.fill(centreX - 26, plinthY + 4, centreX + 26, plinthY + 10, 0xFF33333F);
-        context.fill(centreX - 30, plinthY, centreX + 30, plinthY + 1, 0xFF6E6E82);
+        context.fill(centreX - 30, plinthY, centreX + 30, plinthY + 4, 0xFF3A4766);
+        context.fill(centreX - 26, plinthY + 4, centreX + 26, plinthY + 10, 0xFF243048);
+        context.fill(centreX - 30, plinthY, centreX + 30, plinthY + 1, 0xFF5C6E96);
 
         PlayerSkin look = skin != null ? skin.get() : null;
         if (look != null) {
@@ -634,7 +648,7 @@ public class PlayerFinderScreen extends Screen {
     private void drawDetails(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         int x = detailsX();
         int width = scrollPanel.contentWidth();
-        context.enableScissor(x, VIEWPORT_TOP, x + detailsWidth(), bottom());
+        context.enableScissor(x, viewportTop, x + detailsWidth(), bottom());
         int top = scrollPanel.contentTop();
         int end = switch (tab) {
             case MONTH -> renderMonth(context, x, top, width);
@@ -785,7 +799,7 @@ public class PlayerFinderScreen extends Screen {
 
     private boolean hovering(int x, int y, int width, int height) {
         return lastMouseX >= x && lastMouseX < x + width && lastMouseY >= y && lastMouseY < y + height
-                && lastMouseY >= VIEWPORT_TOP && lastMouseY < bottom();
+                && lastMouseY >= viewportTop && lastMouseY < bottom();
     }
 
     /**
@@ -841,7 +855,7 @@ public class PlayerFinderScreen extends Screen {
     private void tile(GuiGraphicsExtractor context, int x, int y, int width, Tile tile) {
         MapStyle.card(context, x, y, width, TILE_HEIGHT, CARD_BORDER);
         // Its colour along the top edge, and faintly through the tile.
-        context.fill(x + 2, y + 1, x + width - 2, y + 3, tile.color());
+        context.fill(x + 3, y + 1, x + width - 3, y + 3, tile.color());
         context.fill(x + 2, y + 3, x + width - 2, y + TILE_HEIGHT - 2, 0x14000000 | (tile.color() & 0xFFFFFF));
         Component value = Component.literal(tile.value()).withStyle(ChatFormatting.BOLD);
         context.centeredText(this.font, value, x + width / 2, y + 7, tile.color());
@@ -852,7 +866,7 @@ public class PlayerFinderScreen extends Screen {
     /** Wins against losses as one bar: green for the wins, red for the rest. */
     private int winBar(GuiGraphicsExtractor context, int x, int y, int width, int wins, int losses) {
         int total = wins + losses;
-        context.fill(x, y, x + width, y + 4, 0xFF23232B);
+        context.fill(x, y, x + width, y + 4, 0xFF1B2538);
         if (total > 0) {
             int split = (int) Math.round((double) width * wins / total);
             context.fill(x, y, x + split, y + 4, GuiTheme.GOOD);

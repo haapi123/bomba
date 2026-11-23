@@ -59,16 +59,16 @@ public final class MapStyle {
     public static final int ZOOM_BUTTON_GAP = 2;
     public static final int ZOOM_BUTTON_MARGIN = 6;
 
-    public static final int BUTTON_FILL = 0xC81A1A22;
-    public static final int BUTTON_FILL_HOVER = 0xE0343442;
-    public static final int BUTTON_BORDER = 0xFF4A4A5A;
-    public static final int BUTTON_BORDER_HOVER = 0xFF7A7A92;
-    public static final int BUTTON_TEXT = 0xFFE8E8EC;
-    public static final int BUTTON_TEXT_DISABLED = 0xFF5A5A68;
+    public static final int BUTTON_FILL = 0xE81C2638;
+    public static final int BUTTON_FILL_HOVER = 0xF0283652;
+    public static final int BUTTON_BORDER = 0xFF2E3C58;
+    public static final int BUTTON_BORDER_HOVER = 0xFF4A5E88;
+    public static final int BUTTON_TEXT = HelperUi.TEXT;
+    public static final int BUTTON_TEXT_DISABLED = HelperUi.FAINT;
 
     // --- the information card ---
 
-    public static final int CARD_FILL = 0xE60D0D12;
+    public static final int CARD_FILL = 0xF20F1624;
     public static final int CARD_SEPARATOR = 0x40FFFFFF;
     public static final int CARD_PADDING = 6;
     public static final int CARD_ROW_HEIGHT = 11;
@@ -110,41 +110,19 @@ public final class MapStyle {
     // --- drawing ---
 
     /**
-     * The card's body: translucent dark, corners cut back a pixel so they read as rounded, and a
-     * border in whatever colour the thing being described is.
+     * The card's body: the windows' navy with rounded corners, a soft shadow, and a border in
+     * whatever colour the thing being described is.
      */
     public static void card(GuiGraphicsExtractor context, int x, int y, int width, int height,
                             int borderColor) {
-        int right = x + width;
-        int bottom = y + height;
-
-        context.fill(x + 2, y, right - 2, bottom, CARD_FILL);
-        context.fill(x, y + 2, x + 2, bottom - 2, CARD_FILL);
-        context.fill(right - 2, y + 2, right, bottom - 2, CARD_FILL);
-        context.fill(x + 1, y + 1, x + 2, y + 2, CARD_FILL);
-        context.fill(right - 2, y + 1, right - 1, y + 2, CARD_FILL);
-        context.fill(x + 1, bottom - 2, x + 2, bottom - 1, CARD_FILL);
-        context.fill(right - 2, bottom - 2, right - 1, bottom - 1, CARD_FILL);
-
-        context.fill(x + 2, y, right - 2, y + 1, borderColor);
-        context.fill(x + 2, bottom - 1, right - 2, bottom, borderColor);
-        context.fill(x, y + 2, x + 1, bottom - 2, borderColor);
-        context.fill(right - 1, y + 2, right, bottom - 2, borderColor);
-        context.fill(x + 1, y + 1, x + 2, y + 2, borderColor);
-        context.fill(right - 2, y + 1, right - 1, y + 2, borderColor);
-        context.fill(x + 1, bottom - 2, x + 2, bottom - 1, borderColor);
-        context.fill(right - 2, bottom - 2, right - 1, bottom - 1, borderColor);
+        HelperUi.round(context, x - 1, y + 2, width + 2, height, 5, 0x50000000);
+        HelperUi.framed(context, x, y, width, height, 4, CARD_FILL, borderColor);
     }
 
     /** A square button with a hover state, drawn by hand so it can sit over the map. */
     public static void button(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
                               int size, String label, boolean hovered, boolean enabled) {
-        context.fill(x, y, x + size, y + size, hovered && enabled ? BUTTON_FILL_HOVER : BUTTON_FILL);
-        int border = hovered && enabled ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
-        context.fill(x, y, x + size, y + 1, border);
-        context.fill(x, y + size - 1, x + size, y + size, border);
-        context.fill(x, y, x + 1, y + size, border);
-        context.fill(x + size - 1, y, x + size, y + size, border);
+        HelperUi.button(context, x, y, size, size, hovered && enabled ? 1f : 0f, enabled, false);
 
         int width = textRenderer.width(label);
         context.text(textRenderer, label,
@@ -161,12 +139,7 @@ public final class MapStyle {
      */
     public static void downloadButton(GuiGraphicsExtractor context, int x, int y, int size,
                                       boolean hovered, boolean enabled, boolean running) {
-        context.fill(x, y, x + size, y + size, hovered && enabled ? BUTTON_FILL_HOVER : BUTTON_FILL);
-        int border = hovered && enabled ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
-        context.fill(x, y, x + size, y + 1, border);
-        context.fill(x, y + size - 1, x + size, y + size, border);
-        context.fill(x, y, x + 1, y + size, border);
-        context.fill(x + size - 1, y, x + size, y + size, border);
+        HelperUi.button(context, x, y, size, size, hovered && enabled ? 1f : 0f, enabled, false);
 
         int ink = enabled ? BUTTON_TEXT : BUTTON_TEXT_DISABLED;
         int mid = x + size / 2;
@@ -196,14 +169,10 @@ public final class MapStyle {
     public static void wideButton(GuiGraphicsExtractor context, Font textRenderer, int x, int y,
                                   int width, Component label, boolean hovered, boolean confirmed,
                                   boolean danger) {
-        int fill = danger ? 0xE04A2024 : confirmed ? 0xE0204A2A : hovered ? BUTTON_FILL_HOVER : BUTTON_FILL;
+        int fill = danger ? 0xF04A2024 : confirmed ? 0xF0204A2A : hovered ? 0xFF283652 : 0xFF1C2638;
         int border = danger ? 0xFFE06C75 : confirmed ? 0xFF5FD37A
                 : hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER;
-        context.fill(x, y, x + width, y + PIN_BUTTON_HEIGHT, fill);
-        context.fill(x, y, x + width, y + 1, border);
-        context.fill(x, y + PIN_BUTTON_HEIGHT - 1, x + width, y + PIN_BUTTON_HEIGHT, border);
-        context.fill(x, y, x + 1, y + PIN_BUTTON_HEIGHT, border);
-        context.fill(x + width - 1, y, x + width, y + PIN_BUTTON_HEIGHT, border);
+        HelperUi.framed(context, x, y, width, PIN_BUTTON_HEIGHT, 3, fill, border);
 
         int textWidth = textRenderer.width(label);
         context.text(textRenderer, label, x + (width - textWidth) / 2,

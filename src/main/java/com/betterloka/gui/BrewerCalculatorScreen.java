@@ -17,7 +17,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.Holder;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.Item;
@@ -44,14 +43,13 @@ import java.util.Map;
  *
  * <p>The arithmetic is {@link Brewing}; this screen only turns it into items, names and a layout.
  */
-public class BrewerCalculatorScreen extends Screen {
+public class BrewerCalculatorScreen extends Screen implements LokaStyled {
     private static final int MAX_WIDTH = 520;
-    private static final int TOP = 24;
     private static final int LINE = 10;
     private static final int PAD = 6;
     private static final int ROW = 22;
-    private static final int OFF = 0xFF3A3A46;
-    private static final int DISABLED = 0xFF26262E;
+    private static final int OFF = 0xFF34435F;
+    private static final int DISABLED = 0xFF1E2738;
     private static final int PICKER_COLUMNS = 7;
     private static final int PICKER_CELL = 20;
 
@@ -73,6 +71,7 @@ public class BrewerCalculatorScreen extends Screen {
     private static BrewerCalculatorScreen devInstance;
 
     private final Screen parent;
+    private final LokaWindow window;
     private final ScrollPanel scroll = new ScrollPanel();
     /** Clickable things outside the list, and inside it (which only count inside its window). */
     private final List<Hit> hits = new ArrayList<>();
@@ -89,16 +88,18 @@ public class BrewerCalculatorScreen extends Screen {
     public BrewerCalculatorScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_calculator"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.loka_calculator.desc"),
+                this::onClose).content(MAX_WIDTH, Integer.MAX_VALUE);
     }
 
     // ---- layout ----
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_WIDTH);
+        return window.innerWidth();
     }
 
     private int left() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int leftWidth() {
@@ -114,11 +115,11 @@ public class BrewerCalculatorScreen extends Screen {
     }
 
     private int bottom() {
-        return this.height - 30;
+        return window.bottom();
     }
 
     private int modeY() {
-        return TOP;
+        return window.top();
     }
 
     private int potionY() {
@@ -151,6 +152,8 @@ public class BrewerCalculatorScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
+        window.reserveHeader(CalculatorTabs.totalWidth(this.font) + 8);
         devInstance = this;
         int left = left();
         int boxWidth = (leftWidth() - 6) / 2;
@@ -164,9 +167,7 @@ public class BrewerCalculatorScreen extends Screen {
                 });
         standsField = numberBox(left + boxWidth + 6, inputY(), leftWidth() - boxWidth - 6, standsText,
                 "betterloka.brewer.stands", value -> standsText = value);
-        scroll.setViewport(rightX(), TOP, rightWidth(), bottom() - TOP);
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 50, this.height - 24, 100, 20).build());
+        scroll.setViewport(rightX(), window.top(), rightWidth(), bottom() - window.top());
     }
 
     private EditBox numberBox(int x, int y, int width, String value, String labelKey,
@@ -376,7 +377,10 @@ public class BrewerCalculatorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (CalculatorTabs.click(this.font, this.width, CalculatorTabs.Tab.BREWER, click.x(), click.y(), parent)) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
+        if (CalculatorTabs.click(this.font, window, CalculatorTabs.Tab.BREWER, click.x(), click.y(), parent)) {
             return true;
         }
         boolean wasOpen = pickerOpen;
@@ -468,8 +472,9 @@ public class BrewerCalculatorScreen extends Screen {
     @Override
     public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractBackground(context, mouseX, mouseY, delta);
-        context.fill(left() - 4, TOP - 4, left() + leftWidth() + 4, bottom() + 2, 0x60000000);
-        context.fill(rightX() - 4, TOP - 4, rightX() + rightWidth() + 4, bottom() + 2, 0x70000000);
+        window.draw(context, this.font, mouseX, mouseY);
+        GuiTheme.panel(context, left() - 4, window.top() - 4, leftWidth() + 8, bottom() - window.top() + 6);
+        GuiTheme.panel(context, rightX() - 4, window.top() - 4, rightWidth() + 8, bottom() - window.top() + 6);
     }
 
     @Override
@@ -477,7 +482,7 @@ public class BrewerCalculatorScreen extends Screen {
         hits.clear();
         listHits.clear();
         super.extractRenderState(context, mouseX, mouseY, delta);
-        CalculatorTabs.draw(context, this.font, this.width, CalculatorTabs.Tab.BREWER, mouseX, mouseY);
+        CalculatorTabs.draw(context, this.font, window, CalculatorTabs.Tab.BREWER, mouseX, mouseY);
 
         Plan plan = plan();
         shown = plan;
@@ -974,7 +979,7 @@ public class BrewerCalculatorScreen extends Screen {
 
     public static void devScroll(double amount) {
         if (devInstance != null) {
-            devInstance.scroll.mouseScrolled(devInstance.rightX() + 10, TOP + 10, amount);
+            devInstance.scroll.mouseScrolled(devInstance.rightX() + 10, devInstance.window.top() + 10, amount);
         }
     }
 

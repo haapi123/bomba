@@ -21,7 +21,7 @@ import java.util.List;
  * with the picture its marker carries. Every continent starts off; a marker only ever shows on the
  * continent the player is standing on.
  */
-public class ImportantWaypointsScreen extends Screen {
+public class ImportantWaypointsScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 340;
     private static final int TOP = 40;
     private static final int HEADER_HEIGHT = 22;

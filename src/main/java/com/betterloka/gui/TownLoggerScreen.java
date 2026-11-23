@@ -10,7 +10,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
@@ -22,7 +21,7 @@ import java.util.List;
  * nothing; a territory still recorded to a town Loka no longer has means that town is gone, and that
  * is what is listed, with its continent, territory number and beacon coordinates.
  */
-public class TownLoggerScreen extends Screen {
+public class TownLoggerScreen extends Screen implements LokaStyled {
     private enum Tab {
         FALLEN("betterloka.town_log.tab.fallen"),
         CHANGES("betterloka.town_log.tab.changes"),
@@ -39,14 +38,11 @@ public class TownLoggerScreen extends Screen {
     private static final int ROW_HEIGHT = 10;
     private static final int CARD_PADDING = 5;
     private static final int CARD_GAP = 4;
-
-    private static final int TAB_ROW_Y = 26;
     private static final int TAB_ROW_HEIGHT = 16;
-    private static final int CONTROL_ROW_Y = TAB_ROW_Y + TAB_ROW_HEIGHT + 4;
     private static final int CONTROL_ROW_HEIGHT = 16;
-    private static final int VIEWPORT_TOP = CONTROL_ROW_Y + CONTROL_ROW_HEIGHT + 16;
 
     private final Screen parent;
+    private final LokaWindow window;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
     private Tab tab = Tab.FALLEN;
@@ -54,6 +50,8 @@ public class TownLoggerScreen extends Screen {
     public TownLoggerScreen(Screen parent) {
         super(Component.translatable("betterloka.module.town_logger"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.town_logger.desc"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 420);
     }
 
     private static TownLogger logger() {
@@ -64,24 +62,37 @@ public class TownLoggerScreen extends Screen {
         return BetterLokaClient.config();
     }
 
+    private int controlRowY() {
+        return tabRowY() + TAB_ROW_HEIGHT + 4;
+    }
+
+    private int tabRowY() {
+        return window.top();
+    }
+
+    private int viewportTop() {
+        return controlRowY() + CONTROL_ROW_HEIGHT + 16;
+    }
+
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int viewportBottom() {
-        return this.height - 34;
+        return window.bottom();
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
 
-        scrollPanel.setViewport(left, VIEWPORT_TOP, width, Math.max(20, viewportBottom() - VIEWPORT_TOP));
+        scrollPanel.setViewport(left, viewportTop(), width, Math.max(20, viewportBottom() - viewportTop()));
 
         int tabWidth = (width - 8) / 3;
         int x = left;
@@ -89,7 +100,7 @@ public class TownLoggerScreen extends Screen {
             Tab target = value;
             int thisWidth = value == Tab.UNOWNED ? left + width - x : tabWidth;
             addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
-                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build());
+                    .bounds(x, tabRowY(), thisWidth, TAB_ROW_HEIGHT).build());
             x += tabWidth + 4;
         }
 
@@ -101,21 +112,18 @@ public class TownLoggerScreen extends Screen {
                         logger().poll();
                     }
                 })
-                .bounds(left, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left, controlRowY(), third, CONTROL_ROW_HEIGHT).build());
 
         addRenderableWidget(Button.builder(intervalLabel(), button -> {
                     config().setTownLogIntervalMinutes(nextInterval(config().townLogIntervalMinutes()));
                     button.setMessage(intervalLabel());
                 })
-                .bounds(left + third + 4, CONTROL_ROW_Y, third, CONTROL_ROW_HEIGHT).build());
+                .bounds(left + third + 4, controlRowY(), third, CONTROL_ROW_HEIGHT).build());
 
         addRenderableWidget(Button.builder(Component.translatable("betterloka.town_log.check_now"),
                         button -> logger().poll())
-                .bounds(left + (third + 4) * 2, CONTROL_ROW_Y, width - (third + 4) * 2, CONTROL_ROW_HEIGHT)
+                .bounds(left + (third + 4) * 2, controlRowY(), width - (third + 4) * 2, CONTROL_ROW_HEIGHT)
                 .build());
-
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
     }
 
     private Component tabLabel(Tab value) {
@@ -161,6 +169,9 @@ public class TownLoggerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         return scrollPanel.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
@@ -176,15 +187,20 @@ public class TownLoggerScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
 
         int left = contentLeft();
         int width = contentWidth();
         renderStatus(context, left, width);
 
-        context.enableScissor(left, VIEWPORT_TOP, left + width, viewportBottom());
+        context.enableScissor(left, viewportTop(), left + width, viewportBottom());
         int y = scrollPanel.contentTop();
         int cardWidth = scrollPanel.contentWidth();
         int used = switch (tab) {
@@ -201,7 +217,7 @@ public class TownLoggerScreen extends Screen {
     /** One line saying whether the watch is running and when it last looked. */
     private void renderStatus(GuiGraphicsExtractor context, int left, int width) {
         TownLogger logger = logger();
-        int y = VIEWPORT_TOP - 12;
+        int y = viewportTop() - 12;
 
         Component status = switch (logger.state()) {
             case OFF -> Component.translatable("betterloka.town_log.state.off");

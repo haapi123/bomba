@@ -930,6 +930,9 @@ public final class DevDiagnostics {
         if (parts.contains("helperui")) {
             videoHelperUi();
         }
+        if (parts.contains("redesign")) {
+            videoRedesign();
+        }
         mark("end");
         step(20, () -> {
             BetterLoka.LOGGER.info("DIAG video done");
@@ -1495,6 +1498,173 @@ public final class DevDiagnostics {
             client().resizeGui();
         });
         shot(20, "discord-menu-4");
+    }
+
+    /**
+     * Every module in the new window, one picture each: the menu (and a tile hovered), then each screen
+     * opened from it with its data in. {@code BETTERLOKA_REDESIGN} narrows it to a few of them.
+     */
+    private void videoRedesign() {
+        java.util.Set<String> only = new java.util.HashSet<>(java.util.Arrays.asList(System.getenv()
+                .getOrDefault("BETTERLOKA_REDESIGN", "menu,finder,translator,market,logger,grinder,shrines,map,town,helper,calculator,brewer,assistant,hud")
+                .split(",")));
+        String tag = "rd" + System.getenv().getOrDefault("BETTERLOKA_SCALE", "3") + "-";
+        java.util.function.Supplier<Screen> menu = () -> new com.betterloka.gui.BetterLokaMenuScreen(null);
+        if (only.contains("menu")) {
+            openMenu();
+            step(2, DevDiagnostics::cursorAway);
+            shot(30, tag + "menu");
+            glide(() -> buttonCentre("Loka Map"), 8);
+            shot(12, tag + "menu-hover");
+            step(1, DevDiagnostics::cursorAway);
+        }
+        if (only.contains("finder")) {
+            step(1, () -> client().gui.setScreen(new PlayerFinderScreen(menu.get())));
+            step(5, () -> {
+                if (client().gui.screen() instanceof PlayerFinderScreen finder
+                        && field(finder, "nameField") instanceof net.minecraft.client.gui.components.EditBox box) {
+                    box.setValue("haapi");
+                }
+                click(client().gui.screen(), tr("betterloka.finder.search"));
+            });
+            await(() -> client().gui.screen() instanceof PlayerFinderScreen finder
+                    && field(finder, "profile") instanceof com.betterloka.stats.PlayerProfile, 600);
+            shot(240, tag + "finder");
+            step(2, () -> click(client().gui.screen(), tr("betterloka.finder.tab.month")));
+            shot(60, tag + "finder-month");
+        }
+        if (only.contains("translator")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.TranslatorScreen(menu.get())));
+            shot(40, tag + "translator");
+        }
+        if (only.contains("market")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaMarketScreen(menu.get())));
+            await(() -> client().gui.screen() instanceof LokaMarketScreen market && market.devStallCentre("armor") != null
+                    && BetterLokaClient.market().shown() != null && !BetterLokaClient.market().shown().listings().isEmpty(), 600);
+            shot(40, tag + "market");
+            step(2, () -> {
+                if (client().gui.screen() instanceof LokaMarketScreen market) {
+                    realClickAt(market.devStallCentre("armor"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
+            shot(40, tag + "market-stall");
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                    realClickAt(stall.devFilterButton(), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
+            shot(10, tag + "market-filter");
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                    realClickAt(stall.devFilterOption(3), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
+            step(20, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.MarketStallScreen stall) {
+                    realClickAt(stall.devRowWhere(listing -> true), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
+            step(2, DevDiagnostics::cursorAway);
+            shot(50, tag + "market-item");
+            step(1, () -> {
+                client().gui.setScreen(new com.betterloka.gui.LokaMarketScreen(menu.get(), "diamond sword"));
+            });
+            step(4, () -> {
+                if (client().gui.screen() instanceof LokaMarketScreen market) {
+                    market.devSearch("diamond sword");
+                }
+            });
+            shot(80, tag + "market-search");
+        }
+        if (only.contains("logger")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.TownLoggerScreen(menu.get())));
+            shot(80, tag + "logger");
+        }
+        if (only.contains("grinder")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaGrinderScreen(menu.get())));
+            shot(30, tag + "grinder");
+        }
+        if (only.contains("map")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaMapScreen(menu.get())));
+            shot(160, tag + "map");
+            step(2, () -> click(client().gui.screen(), tr("betterloka.map.waypoint_list")));
+            shot(30, tag + "waypoints");
+        }
+        if (only.contains("town")) {
+            step(1, () -> {
+                var map = new com.betterloka.gui.LokaMapScreen(menu.get());
+                client().gui.setScreen(map);
+            });
+            step(120, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                    map.devSelect(com.betterloka.map.Continent.KALROS);
+                }
+            });
+            step(60, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaMapScreen map) {
+                    map.devOpenAnyTown();
+                }
+            });
+            shot(80, tag + "town");
+        }
+        if (only.contains("shrines")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaGrinderScreen(menu.get())));
+            step(4, () -> click(client().gui.screen(), tr("betterloka.grind.tab.shrines")));
+            shot(30, tag + "grinder-shrines");
+        }
+        if (only.contains("helper")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(menu.get())));
+            shot(30, tag + "helper");
+        }
+        if (only.contains("calculator")) {
+            step(1, () -> {
+                com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.STRENGTH);
+                client().gui.setScreen(com.betterloka.gui.CalculatorTabs.open(menu.get()));
+            });
+            shot(120, tag + "calculator");
+        }
+        if (only.contains("brewer")) {
+            step(1, () -> {
+                com.betterloka.gui.CalculatorTabs.devSet(com.betterloka.gui.CalculatorTabs.Tab.BREWER);
+                client().gui.setScreen(com.betterloka.gui.CalculatorTabs.open(menu.get()));
+            });
+            shot(40, tag + "brewer");
+        }
+        if (only.contains("assistant")) {
+            step(1, () -> client().gui.setScreen(new com.betterloka.gui.AssistantScreen(menu.get())));
+            shot(40, tag + "assistant");
+        }
+        if (only.contains("hud")) {
+            // The boxes over the world: the coordinates, both timers and a waypoint.
+            com.betterloka.map.Waypoint[] demo = new com.betterloka.map.Waypoint[1];
+            java.util.Set<com.betterloka.helper.ImportantPlaces.Region> wereOn = new java.util.HashSet<>();
+            step(1, () -> {
+                client().gui.setScreen(null);
+                for (var region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                    if (BetterLokaClient.config().importantRegionEnabled(region)) {
+                        wereOn.add(region);
+                    }
+                    BetterLokaClient.config().setImportantRegionEnabled(region, false);
+                }
+                BetterLokaClient.config().setCoordsHudEnabled(true);
+                BetterLokaClient.grindTimers().shulker().start();
+                BetterLokaClient.grindTimers().glowstone().start();
+                var player = client().player;
+                demo[0] = BetterLokaClient.map().add(new com.betterloka.map.Waypoint("Base", "overworld",
+                        player.getX() + 40, player.getY(), player.getZ() + 120, 0x4FC3F7, null));
+            });
+            shot(60, tag + "hud");
+            step(1, () -> {
+                BetterLokaClient.map().toggle(demo[0]);
+                BetterLokaClient.grindTimers().shulker().stop();
+                BetterLokaClient.grindTimers().glowstone().stop();
+                BetterLokaClient.config().setCoordsHudEnabled(false);
+                for (var region : wereOn) {
+                    BetterLokaClient.config().setImportantRegionEnabled(region, true);
+                }
+            });
+        }
+        step(1, () -> client().gui.setScreen(null));
     }
 
     /** The new Loka Helper: the islands hovered and picked, then every section, at two scales. */

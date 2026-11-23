@@ -2,6 +2,7 @@ package com.betterloka.helper;
 
 import com.betterloka.BetterLoka;
 import com.betterloka.config.BetterLokaConfig;
+import com.betterloka.gui.HelperUi;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -20,10 +21,9 @@ import java.util.Locale;
 public final class CoordsHud {
     static final int PADDING = 3;
     static final int LINE = 10;
-    private static final int BACKGROUND = 0x90000000;
     private static final int TEXT = 0xFFFFFFFF;
-    private static final int AXES = 0xFFAAAAAA;
-    private static final int FACING = 0xFFFFD46B;
+    private static final int AXES = 0xFF9AA6BE;
+    private static final int FACING = HelperUi.GOLD;
 
     private final BetterLokaConfig config;
 
@@ -123,7 +123,7 @@ public final class CoordsHud {
         pose.pushMatrix();
         pose.translate(x, y);
         pose.scale(scale, scale);
-        context.fill(0, 0, width(font, lines), height(lines), BACKGROUND);
+        HelperUi.framed(context, 0, 0, width(font, lines), height(lines), 3, HelperUi.HUD_FILL, HelperUi.HUD_EDGE);
         int lineY = PADDING;
         for (Line line : lines) {
             context.text(font, line.text(), PADDING, lineY, line.color());

@@ -17,7 +17,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
@@ -39,9 +38,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>What the map already knows — the colour, the territories, the map's own strength and title —
  * is drawn at once; Loka's town record fills in the rest a moment later.
  */
-public class TownInfoScreen extends Screen {
+public class TownInfoScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 470;
-    private static final int TOP = 24;
+    private final LokaWindow window;
     private static final int STAND_WIDTH = 132;
     private static final int LINE = 11;
     private static final int CARD_PADDING = 6;
@@ -49,8 +48,8 @@ public class TownInfoScreen extends Screen {
     private static final int TILE_GAP = 4;
     private static final int SECTION_GAP = 10;
     private static final int CHIP_HEIGHT = 14;
-    private static final int CARD_BORDER = 0xFF2C2C38;
-    private static final int SEPARATOR = 0xFF33333F;
+    private static final int CARD_BORDER = HelperUi.CARD_EDGE;
+    private static final int SEPARATOR = GuiTheme.SEPARATOR;
     private static final int ROW_HEIGHT = 26;
 
     /** A Loka vulnerability window runs eight hours from the hour the API publishes. */
@@ -100,6 +99,8 @@ public class TownInfoScreen extends Screen {
                 .thenComparing(MapTerritory::number, TownInfoScreen::byNumber));
         this.held = List.copyOf(sorted);
         this.color = 0xFF000000 | (color & 0xFFFFFF);
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.town.subtitle"), this::onClose)
+                .content(MAX_CONTENT_WIDTH, 420);
     }
 
     private static int byNumber(String a, String b) {
@@ -111,15 +112,19 @@ public class TownInfoScreen extends Screen {
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
+    }
+
+    private int top() {
+        return window.top();
     }
 
     private int bottom() {
-        return this.height - 31;
+        return window.bottom() - 24;
     }
 
     private int detailsX() {
@@ -128,9 +133,10 @@ public class TownInfoScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
-        scroll.setViewport(detailsX(), TOP, left + width - detailsX(), bottom() - TOP);
+        scroll.setViewport(detailsX(), top(), left + width - detailsX(), bottom() - top());
 
         int half = Math.min(160, (width - 4) / 2);
         addRenderableWidget(Button.builder(Component.translatable("betterloka.town.show_on_map"), button -> {
@@ -140,9 +146,7 @@ public class TownInfoScreen extends Screen {
                     }
                     onClose();
                 })
-                .bounds(this.width / 2 - half - 2, this.height - 25, half, 20).build()).active = !held.isEmpty();
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 + 2, this.height - 25, half, 20).build());
+                .bounds(window.centreX() - half / 2, window.bottom() - 18, half, 18).build()).active = !held.isEmpty();
 
         if (town == null && loading) {
             load();
@@ -210,10 +214,13 @@ public class TownInfoScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (scroll.mouseClicked(click.x(), click.y())) {
             return true;
         }
-        if (click.button() == InputConstants.MOUSE_BUTTON_LEFT && click.y() >= TOP && click.y() < bottom()) {
+        if (click.button() == InputConstants.MOUSE_BUTTON_LEFT && click.y() >= top() && click.y() < bottom()) {
             for (int i = 0; i < rowBounds.size(); i++) {
                 int[] bounds = rowBounds.get(i);
                 if (click.x() >= bounds[0] && click.x() < bounds[0] + bounds[2]
@@ -239,12 +246,16 @@ public class TownInfoScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
         lastMouseX = mouseX;
         lastMouseY = mouseY;
-        context.centeredText(this.font, Component.translatable("betterloka.town.title"), this.width / 2, 9,
-                GuiTheme.MUTED);
         drawBanner(context);
         drawDetails(context, mouseX, mouseY);
     }
@@ -262,7 +273,7 @@ public class TownInfoScreen extends Screen {
      */
     private void drawBanner(GuiGraphicsExtractor context) {
         int left = contentLeft();
-        int top = TOP;
+        int top = top();
         int bottom = bottom();
         MapStyle.card(context, left, top, STAND_WIDTH, bottom - top, CARD_BORDER);
         int centreX = left + STAND_WIDTH / 2;
@@ -407,7 +418,7 @@ public class TownInfoScreen extends Screen {
         int width = scroll.contentWidth();
         rowBounds.clear();
         rowTerritories.clear();
-        context.enableScissor(x, TOP, contentLeft() + contentWidth(), bottom());
+        context.enableScissor(x, top(), contentLeft() + contentWidth(), bottom());
         int top = scroll.contentTop();
         int y = top;
 
@@ -635,7 +646,7 @@ public class TownInfoScreen extends Screen {
         }
         for (MapTerritory territory : held) {
             boolean hovered = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + ROW_HEIGHT
-                    && mouseY >= TOP && mouseY < bottom();
+                    && mouseY >= top() && mouseY < bottom();
             MapStyle.card(context, x, y, width, ROW_HEIGHT, hovered ? color : CARD_BORDER);
             context.fill(x + 1, y + 2, x + 3, y + ROW_HEIGHT - 2, color);
             int textX = x + CARD_PADDING + 3;

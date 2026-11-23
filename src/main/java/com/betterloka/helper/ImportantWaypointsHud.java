@@ -3,6 +3,7 @@ package com.betterloka.helper;
 import com.betterloka.BetterLoka;
 import com.betterloka.config.BetterLokaConfig;
 import com.betterloka.grind.ShrineTracker;
+import com.betterloka.gui.HelperUi;
 import com.betterloka.map.WaypointWorldRenderer;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Camera;
@@ -135,9 +136,9 @@ public final class ImportantWaypointsHud {
         int x = marker.x();
         int y = marker.y();
         int half = ICON_SIZE / 2;
-        // A dark disc behind the picture, so it reads against any sky.
-        context.fill(x - half - 1, y - half, x + half + 1, y + half, 0x70000000);
-        context.fill(x - half, y - half - 1, x + half, y + half + 1, 0x70000000);
+        // A navy disc behind the picture, so it reads against any sky.
+        HelperUi.framed(context, x - half - 2, y - half - 2, ICON_SIZE + 4, ICON_SIZE + 4, half + 2, HelperUi.HUD_FILL,
+                HelperUi.HUD_EDGE);
         PlaceIcons.draw(context, marker.place().icon(), x - half, y - half, ICON_SIZE);
 
         String range = WaypointWorldRenderer.range(marker.distance());
@@ -145,8 +146,9 @@ public final class ImportantWaypointsHud {
         if (named) {
             Component name = Component.translatable(marker.place().nameKey());
             int nameWidth = client.font.width(name);
-            context.fill(x - nameWidth / 2 - 2, y - half - 12, x + nameWidth / 2 + 2, y - half - 2, 0x90000000);
-            context.text(client.font, name, x - nameWidth / 2, y - half - 11, 0xFFFFD46B);
+            HelperUi.framed(context, x - nameWidth / 2 - 4, y - half - 15, nameWidth + 8, 12, 4, HelperUi.HUD_FILL,
+                    HelperUi.alpha(HelperUi.GOLD, 0xB0));
+            context.text(client.font, name, x - nameWidth / 2, y - half - 13, HelperUi.GOLD_LIGHT);
         }
     }
 }

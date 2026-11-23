@@ -17,7 +17,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -30,12 +29,10 @@ import java.util.List;
  * stall opens the list of what it sells. The search asks the API for one item type, which is one
  * request and always current.
  */
-public class LokaMarketScreen extends Screen {
+public class LokaMarketScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 460;
-    private static final int TAB_Y = 22;
     private static final int TAB_HEIGHT = 16;
     private static final int TAB_WIDTH = 110;
-    private static final int BAR_Y = TAB_Y + TAB_HEIGHT + 5;
     private static final int BAR_HEIGHT = 18;
     private static final int SEARCH_BUTTON_WIDTH = 54;
     private static final int REFRESH_WIDTH = 56;
@@ -60,6 +57,7 @@ public class LokaMarketScreen extends Screen {
     }
 
     private final Screen parent;
+    private final LokaWindow window;
     private Tab tab;
 
     // --- the square ---
@@ -101,6 +99,8 @@ public class LokaMarketScreen extends Screen {
     public LokaMarketScreen(Screen parent, String search) {
         super(Component.translatable("betterloka.module.loka_market"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.loka_market.desc"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 440);
         this.tab = search == null ? Tab.SQUARE : Tab.SEARCH;
         this.pendingQuery = search;
     }
@@ -118,41 +118,51 @@ public class LokaMarketScreen extends Screen {
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int contentBottom() {
-        return this.height - 30;
+        return window.bottom();
+    }
+
+    private int tabY() {
+        return window.top();
+    }
+
+    /** The row under the tabs: the search box, or the square's status and Refresh. */
+    private int barY() {
+        return tabY() + TAB_HEIGHT + 5;
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
         BetterLokaClient.market().sweep(false);
         sweep = BetterLokaClient.market().shown();
 
-        int tabsX = this.width / 2 - TAB_WIDTH - 2;
+        int tabsX = window.centreX() - TAB_WIDTH - 2;
         for (Tab value : Tab.values()) {
             Tab target = value;
             addRenderableWidget(Button.builder(tabLabel(value), button -> selectTab(target))
-                    .bounds(tabsX + value.ordinal() * (TAB_WIDTH + 4), TAB_Y, TAB_WIDTH, TAB_HEIGHT).build());
+                    .bounds(tabsX + value.ordinal() * (TAB_WIDTH + 4), tabY(), TAB_WIDTH, TAB_HEIGHT).build());
         }
 
         if (tab == Tab.SQUARE) {
-            square.place(left, BAR_Y + 14, width, contentBottom() - (BAR_Y + 14));
+            square.place(left, barY() + 14, width, contentBottom() - (barY() + 14));
             addRenderableWidget(Button.builder(Component.translatable("betterloka.market.refresh"), button -> refresh())
-                    .bounds(left + width - REFRESH_WIDTH, BAR_Y - 2, REFRESH_WIDTH, 14).build());
+                    .bounds(left + width - REFRESH_WIDTH, barY() - 2, REFRESH_WIDTH, 14).build());
         } else {
             int filterWidth = FilterMenu.preferredWidth(this.font);
-            filter.place(left + width - filterWidth, BAR_Y, filterWidth);
+            filter.place(left + width - filterWidth, barY(), filterWidth);
             String previous = queryField != null ? queryField.getValue() : "";
             int fieldWidth = width - filterWidth - SEARCH_BUTTON_WIDTH - 8;
-            queryField = new EditBox(this.font, left, BAR_Y, fieldWidth, BAR_HEIGHT,
+            queryField = new EditBox(this.font, left, barY(), fieldWidth, BAR_HEIGHT,
                     Component.translatable("betterloka.market.field"));
             queryField.setMaxLength(48);
             queryField.setHint(Component.translatable("betterloka.market.placeholder")
@@ -160,9 +170,9 @@ public class LokaMarketScreen extends Screen {
             queryField.setValue(previous);
             addRenderableWidget(queryField);
             searchButton = Button.builder(Component.translatable("betterloka.market.search"), button -> search())
-                    .bounds(left + fieldWidth + 4, BAR_Y, SEARCH_BUTTON_WIDTH, BAR_HEIGHT).build();
+                    .bounds(left + fieldWidth + 4, barY(), SEARCH_BUTTON_WIDTH, BAR_HEIGHT).build();
             addRenderableWidget(searchButton);
-            results.setViewport(left, BAR_Y + BAR_HEIGHT + 16, width, contentBottom() - (BAR_Y + BAR_HEIGHT + 16));
+            results.setViewport(left, barY() + BAR_HEIGHT + 16, width, contentBottom() - (barY() + BAR_HEIGHT + 16));
             setInitialFocus(queryField);
             if (pendingQuery != null) {
                 queryField.setValue(MarketListing.pretty(pendingQuery));
@@ -172,9 +182,6 @@ public class LokaMarketScreen extends Screen {
                 searchType(exact);
             }
         }
-
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 25, 200, 20).build());
     }
 
     private Component tabLabel(Tab value) {
@@ -340,6 +347,9 @@ public class LokaMarketScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (tab == Tab.SQUARE) {
             if (click.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
                 MarketCategory stall = square.stallAt(click.x(), click.y());
@@ -395,6 +405,12 @@ public class LokaMarketScreen extends Screen {
     // --- drawing ---
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         lastMouseX = mouseX;
         lastMouseY = mouseY;
@@ -403,7 +419,6 @@ public class LokaMarketScreen extends Screen {
             refreshSuggestions();
         }
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 8, GuiTheme.TEXT);
         if (tab == Tab.SQUARE) {
             renderSquare(context, mouseX, mouseY);
         } else {
@@ -441,11 +456,11 @@ public class LokaMarketScreen extends Screen {
                                 coming.pagesTotal())).withStyle(ChatFormatting.YELLOW));
             }
         }
-        context.text(this.font, status, left, BAR_Y + 1, statusColor);
+        context.text(this.font, status, left, barY() + 1, statusColor);
         if (loading) {
             int barX = left + this.font.width(status) + 6;
             int barW = Math.max(20, contentLeft() + contentWidth() - REFRESH_WIDTH - 8 - barX);
-            GuiTheme.progressBar(context, barX, BAR_Y + 2, Math.min(barW, 120), 5, current.progress());
+            GuiTheme.progressBar(context, barX, barY() + 2, Math.min(barW, 120), 5, current.progress());
         }
 
         MarketCategory hovered = devHovered != null ? devHovered : square.stallAt(mouseX, mouseY);
@@ -468,7 +483,7 @@ public class LokaMarketScreen extends Screen {
 
     private void renderSearch(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         int left = contentLeft();
-        int headerY = BAR_Y + BAR_HEIGHT + 4;
+        int headerY = barY() + BAR_HEIGHT + 4;
         Found found = found();
         Component header;
         Component empty;
@@ -514,7 +529,7 @@ public class LokaMarketScreen extends Screen {
         }
         context.nextStratum();
         int rowHeight = ROW_HEIGHT + 2;
-        int y = BAR_Y + BAR_HEIGHT + 1;
+        int y = barY() + BAR_HEIGHT + 1;
         int panelWidth = queryField.getWidth();
         int height = suggestions.size() * rowHeight + 2;
         context.fill(left, y, left + panelWidth, y + height, 0xFF121218);

@@ -93,13 +93,13 @@ final class FilterMenu {
         MarketSort[] values = MarketSort.values();
         int top = y + HEIGHT + 1;
         int height = values.length * OPTION_HEIGHT + 4;
-        context.fill(x, top, x + width, top + height, 0xF0101016);
-        outline(context, x, top, width, height, 0xFF5A5A70);
+        HelperUi.round(context, x - 1, top + 2, width + 2, height, 4, 0x60000000);
+        HelperUi.framed(context, x, top, width, height, 4, 0xF8121A29, 0xFF34435F);
         for (int i = 0; i < values.length; i++) {
             int rowY = top + 2 + i * OPTION_HEIGHT;
             boolean hovered = inside(mouseX, mouseY, x, rowY, width, OPTION_HEIGHT);
             if (hovered) {
-                context.fill(x + 1, rowY, x + width - 1, rowY + OPTION_HEIGHT, 0x40FFFFFF);
+                HelperUi.round(context, x + 2, rowY, width - 4, OPTION_HEIGHT, 3, 0xFF1F2B44);
             }
             boolean chosen = values[i] == sort;
             if (chosen) {
@@ -154,8 +154,7 @@ final class FilterMenu {
 
     /** A button drawn by hand, in the same style as the map's. */
     static void button(GuiGraphicsExtractor context, int x, int y, int width, int height, boolean hovered) {
-        context.fill(x, y, x + width, y + height, hovered ? MapStyle.BUTTON_FILL_HOVER : MapStyle.BUTTON_FILL);
-        outline(context, x, y, width, height, hovered ? MapStyle.BUTTON_BORDER_HOVER : MapStyle.BUTTON_BORDER);
+        HelperUi.button(context, x, y, width, height, hovered ? 1f : 0f, true, false);
     }
 
     static void outline(GuiGraphicsExtractor context, int x, int y, int width, int height, int color) {

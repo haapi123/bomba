@@ -7,7 +7,6 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
@@ -20,9 +19,8 @@ import java.util.List;
  * its name and lore as the game writes them, its enchantments, who is selling it and since when,
  * and what it costs a unit, an item and all told.
  */
-public class MarketItemScreen extends Screen {
+public class MarketItemScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 440;
-    private static final int TOP = 26;
     private static final int STAND_WIDTH = 120;
     private static final int ITEM_SCALE = 4;
     private static final int LINE = 11;
@@ -32,6 +30,7 @@ public class MarketItemScreen extends Screen {
     }
 
     private final Screen parent;
+    private final LokaWindow window;
     private final MarketListing listing;
     private final ScrollPanel scroll = new ScrollPanel();
     private final long openedAt = System.currentTimeMillis();
@@ -40,41 +39,46 @@ public class MarketItemScreen extends Screen {
     public MarketItemScreen(Screen parent, MarketListing listing) {
         super(Component.translatable("betterloka.market.profile"));
         this.parent = parent;
+        this.window = new LokaWindow(MarketLook.of(listing).name(), Component.translatable("betterloka.market.profile"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 330);
         this.listing = listing;
     }
 
+    private int top() {
+        return window.top();
+    }
+
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private int bottom() {
-        return this.height - 52;
+        return window.bottom() - 24;
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
         int detailsX = left + STAND_WIDTH + 10;
-        scroll.setViewport(detailsX, TOP, left + width - detailsX, bottom() - TOP);
+        scroll.setViewport(detailsX, top(), left + width - detailsX, bottom() - top());
 
-        int buttonsY = this.height - 47;
+        int buttonsY = window.bottom() - 18;
         int third = (width - 8) / 3;
         addRenderableWidget(Button.builder(Component.translatable("betterloka.market.other_offers"),
                         button -> this.minecraft.gui.setScreen(new LokaMarketScreen(this, listing.type())))
-                .bounds(left, buttonsY, third, 20).build());
+                .bounds(left, buttonsY, third, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.market.copy_seller"),
                         button -> copySeller())
-                .bounds(left + third + 4, buttonsY, third, 20).build());
+                .bounds(left + third + 4, buttonsY, third, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.market.copy_type"),
                         button -> copy(listing.type()))
-                .bounds(left + (third + 4) * 2, buttonsY, width - (third + 4) * 2, 20).build());
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 25, 200, 20).build());
+                .bounds(left + (third + 4) * 2, buttonsY, width - (third + 4) * 2, 18).build());
     }
 
     private void copySeller() {
@@ -142,6 +146,9 @@ public class MarketItemScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         return scroll.mouseClicked(click.x(), click.y()) || super.mouseClicked(click, doubled);
     }
 
@@ -157,26 +164,25 @@ public class MarketItemScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
         MarketLook.Look look = MarketLook.of(listing);
         int left = contentLeft();
         int width = contentWidth();
 
-        // The item's own name, coloured as the game colours it.
-        int nameWidth = this.font.width(look.name());
-        if (nameWidth <= width) {
-            context.text(this.font, look.name(), this.width / 2 - nameWidth / 2, 9, GuiTheme.TEXT);
-        } else {
-            ListingList.drawClipped(context, this.font, look.name(), left, 9, width, GuiTheme.TEXT);
-        }
-
+        // The item's own name, coloured as the game colours it, is the window's title.
         drawStand(context, look, left, mouseX, mouseY);
         drawDetails(context, look, mouseX, mouseY);
 
         if (System.currentTimeMillis() - copiedAt < MapStyle.COPIED_NOTICE_MILLIS) {
             context.centeredText(this.font, Component.translatable("betterloka.market.copied"),
-                    this.width / 2, this.height - 58, GuiTheme.GOOD);
+                    window.centreX(), window.bottom() - 32, GuiTheme.GOOD);
         }
     }
 
@@ -185,7 +191,7 @@ public class MarketItemScreen extends Screen {
      * stall's colour glowing behind it.
      */
     private void drawStand(GuiGraphicsExtractor context, MarketLook.Look look, int left, int mouseX, int mouseY) {
-        int standTop = TOP;
+        int standTop = top();
         int standBottom = bottom();
         int color = listing.category().color();
         MapStyle.card(context, left, standTop, STAND_WIDTH, standBottom - standTop, 0xFF2C2C38);
@@ -266,7 +272,7 @@ public class MarketItemScreen extends Screen {
     private void drawDetails(GuiGraphicsExtractor context, MarketLook.Look look, int mouseX, int mouseY) {
         int x = contentLeft() + STAND_WIDTH + 10;
         int width = scroll.contentWidth();
-        context.enableScissor(x, TOP, x + width + ScrollPanel.BAR_WIDTH + 2, bottom());
+        context.enableScissor(x, top(), x + width + ScrollPanel.BAR_WIDTH + 2, bottom());
         int y = scroll.contentTop();
 
         List<Detail> details = details();

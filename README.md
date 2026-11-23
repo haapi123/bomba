@@ -25,9 +25,23 @@ into: a question you ask **Loka Assistant** goes, with your name, to the assista
 | **Loka Calculator** | Working |
 | **Loka Assistant** | Working (needs an assistant server) |
 
-The square button with Discord's logo, beside **Done**, opens the official BetterLoka Discord,
-[discord.gg/3Wwbq8mrKR](https://discord.gg/3Wwbq8mrKR). It goes through the game's own "open this link?"
-screen first, which shows the address and also offers to copy it instead.
+Each module is a tile with its icon and a line on what it does; **Join our Discord**, under them,
+opens the official BetterLoka Discord, [discord.gg/3Wwbq8mrKR](https://discord.gg/3Wwbq8mrKR). It goes
+through the game's own "open this link?" screen first, which shows the address and also offers to copy
+it instead.
+
+### The look
+
+Every module opens in a window of the same kind: a navy panel over the game, with the logo, the
+module's name and what it is for along its header, and **×** in the corner (Esc works too) — there is
+no Back button to find any more. Inside, the game's own buttons and text boxes are drawn in the same
+style rather than the game's stone: navy, lighter under the pointer, a gold edge on the box being typed
+in, and a gold bar under the chosen tab. Cards have rounded corners, scroll bars are thin, and the
+timers, coordinates and waypoints over the world sit in small navy boxes of the same kind.
+
+The window is as big as the module needs and shrinks to fit a small screen, so every module works from
+GUI scale 2 at 1080p down to GUI scale 3 at 720p. The duel screens keep their own full-screen layout,
+in the same colours.
 
 
 ## Player Finder
@@ -1024,6 +1038,11 @@ not painted: `docs/logo/gen.py` writes it as SVG and `docs/logo/render.js` rende
 Playwright's Chromium, at 128 px for the mod's icon, at the exact pixel size of every GUI scale for
 the menu, and for the README. The same script makes the Discord avatar (the hex on a dark
 background, inside the circle Discord crops to) and banner.
+
+The windows are drawn the same way, from fills rather than pictures, so they stay sharp at every GUI
+scale: `gui/LokaWindow.java` is the frame and `gui/HelperUi.java` the palette and the shapes, and two
+small mixins draw the game's buttons and text boxes in it — on BetterLoka's screens only, never the
+game's own.
 
 Loka Helper's islands are drawn too: `docs/islands/islands.py` takes each territory's outline from
 Loka's map and its biome from Loka's API, colours it, and adds the beach and the shallows round the

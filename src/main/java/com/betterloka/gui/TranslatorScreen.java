@@ -13,7 +13,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -33,7 +32,7 @@ import java.util.List;
  *
  * <p>Chat is only translated while this screen is open; see {@link ChatLog}.
  */
-public class TranslatorScreen extends Screen {
+public class TranslatorScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 420;
     private static final int ROW_HEIGHT = 10;
     private static final int HEADER_HEIGHT = 12;
@@ -43,9 +42,7 @@ public class TranslatorScreen extends Screen {
     /** The most lines a message or its translation is wrapped to before it is cut. */
     private static final int MAX_LINES = 4;
 
-    private static final int TOP_ROW_Y = 26;
     private static final int TOP_ROW_HEIGHT = 16;
-    private static final int CHAT_TOP = TOP_ROW_Y + TOP_ROW_HEIGHT + 6;
 
     /** The writing section: a header row, the text, and the translation. */
     private static final int SECTION_HEIGHT = 80;
@@ -68,6 +65,7 @@ public class TranslatorScreen extends Screen {
     private enum Picking { CHAT, COMPOSE }
 
     private final Screen parent;
+    private final LokaWindow window;
     private final ScrollPanel scrollPanel = new ScrollPanel();
 
     private EditBox composeField;
@@ -87,6 +85,8 @@ public class TranslatorScreen extends Screen {
     public TranslatorScreen(Screen parent) {
         super(Component.translatable("betterloka.module.translator"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.translator.desc"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 400);
     }
 
     private BetterLokaConfig config() {
@@ -94,15 +94,23 @@ public class TranslatorScreen extends Screen {
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
+    }
+
+    private int topRowY() {
+        return window.top();
+    }
+
+    private int chatTop() {
+        return topRowY() + TOP_ROW_HEIGHT + 6;
     }
 
     private int sectionTop() {
-        return this.height - 30 - SECTION_HEIGHT;
+        return window.bottom() - SECTION_HEIGHT;
     }
 
     private int composeY() {
@@ -115,15 +123,16 @@ public class TranslatorScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
 
-        scrollPanel.setViewport(left, CHAT_TOP, width, Math.max(20, sectionTop() - 6 - CHAT_TOP));
+        scrollPanel.setViewport(left, chatTop(), width, Math.max(20, sectionTop() - 6 - chatTop()));
         // From here on, and only while this is open, chat is translated as it arrives.
         BetterLokaClient.chatLog().setWatching(true);
 
         addRenderableWidget(Button.builder(targetLabel(config().nativeLanguage()), button -> picking = Picking.CHAT)
-                .bounds(left, TOP_ROW_Y, width, TOP_ROW_HEIGHT).build());
+                .bounds(left, topRowY(), width, TOP_ROW_HEIGHT).build());
 
         addRenderableWidget(Button.builder(targetLabel(config().chatLanguage()), button -> picking = Picking.COMPOSE)
                 .bounds(left + width - COMPOSE_TARGET_WIDTH - 4, sectionTop() + 4,
@@ -145,9 +154,6 @@ public class TranslatorScreen extends Screen {
         copyButton = Button.builder(Component.translatable("betterloka.translator.copy"), button -> copy())
                 .bounds(left + width - ACTION_WIDTH - 4, outputY(), ACTION_WIDTH, OUTPUT_HEIGHT).build();
         addRenderableWidget(copyButton);
-
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
         setInitialFocus(composeField);
     }
@@ -241,6 +247,9 @@ public class TranslatorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (picking != null) {
             // The picker takes every click while it is open: a language, or anywhere else to close it.
             if (click.button() == InputConstants.MOUSE_BUTTON_LEFT) {
@@ -270,6 +279,12 @@ public class TranslatorScreen extends Screen {
     // --- drawing ---
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         // With the picker open nothing underneath reacts to the pointer.
         int underX = picking != null ? -1 : mouseX;
@@ -278,8 +293,6 @@ public class TranslatorScreen extends Screen {
         super.extractRenderState(context, underX, underY, delta);
         translateButton.active = !translating && !composeField.getValue().trim().isEmpty();
         copyButton.active = !translated.isEmpty();
-
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
         renderChat(context, underX, underY);
         renderOutput(context);
         if (picking != null) {

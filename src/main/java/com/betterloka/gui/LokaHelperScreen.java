@@ -50,7 +50,7 @@ import java.util.Map;
  * worked out against what was drawn in the frame, which is what lets the islands be pictures and the
  * switches move.
  */
-public class LokaHelperScreen extends Screen {
+public class LokaHelperScreen extends Screen implements LokaStyled {
     private static final int MAX_WIDTH = 560;
     private static final int MAX_HEIGHT = 330;
     private static final int HEADER = 30;
@@ -210,7 +210,7 @@ public class LokaHelperScreen extends Screen {
         context.fillGradient(wx + 1, wy + 3, wx + ww - 1, wy + HEADER, HelperUi.HEADER_TOP, HelperUi.HEADER_BOTTOM);
         context.fillGradient(wx + 3, wy + 1, wx + ww - 3, wy + 3, HelperUi.HEADER_TOP, HelperUi.HEADER_TOP);
         context.fill(wx + 1, wy + HEADER, wx + ww - 1, wy + HEADER + 1, HelperUi.WINDOW_EDGE);
-        drawLogo(context, wx + 8, wy + 5, 20);
+        LokaWindow.logo(context, wx + 8, wy + 5, 20);
         context.text(this.font, this.title.copy().withStyle(ChatFormatting.BOLD), wx + 33, wy + 6, HelperUi.TEXT);
         context.text(this.font, Component.translatable("betterloka.helper.subtitle"), wx + 33, wy + 17, HelperUi.MUTED);
 
@@ -235,14 +235,6 @@ public class LokaHelperScreen extends Screen {
             pin(context, x + 9, by + 11, 0);
             context.text(this.font, where, x + 16, by + 4, HelperUi.MUTED);
         }
-    }
-
-    private void drawLogo(GuiGraphicsExtractor context, int x, int y, int size) {
-        int scale = Math.max(1, Math.min(6, this.minecraft.getWindow().getGuiScale()));
-        int pixels = 26 * scale;
-        Identifier logo = Identifier.fromNamespaceAndPath("betterloka", "textures/gui/logo_" + scale + ".png");
-        context.blit(RenderPipelines.GUI_TEXTURED, logo, x, y, 0f, 0f, size, size, pixels, pixels, pixels, pixels,
-                0xFFFFFFFF);
     }
 
     private void drawSidebar(GuiGraphicsExtractor context) {

@@ -24,7 +24,6 @@ public final class CalculatorTabs {
         }
     }
 
-    public static final int Y = 3;
     public static final int HEIGHT = 17;
     private static final int GAP = 4;
     private static final int ICON = 12;
@@ -39,11 +38,12 @@ public final class CalculatorTabs {
         return last == Tab.BREWER ? new BrewerCalculatorScreen(parent) : new LokaCalculatorScreen(parent);
     }
 
-    private static int tabWidth(Font font, Tab tab) {
+    static int tabWidth(Font font, Tab tab) {
         return font.width(Component.translatable(tab.key)) + ICON + 14;
     }
 
-    private static int totalWidth(Font font) {
+    /** How much of the header the tabs take. */
+    public static int totalWidth(Font font) {
         int width = -GAP;
         for (Tab tab : Tab.values()) {
             width += tabWidth(font, tab) + GAP;
@@ -51,28 +51,33 @@ public final class CalculatorTabs {
         return width;
     }
 
-    /** Where the tabs end on the right, for whatever is drawn beside them. */
-    public static int right(Font font, int screenWidth) {
-        return (screenWidth + totalWidth(font)) / 2;
+    /** Where the tabs start: at the right of the window's header, by the close button. */
+    public static int left(Font font, LokaWindow window) {
+        return window.headerRight() - totalWidth(font);
     }
 
-    public static void draw(GuiGraphicsExtractor context, Font font, int screenWidth, Tab active,
+    private static int top(LokaWindow window) {
+        return window.y() + (LokaWindow.HEADER - HEIGHT) / 2;
+    }
+
+    public static void draw(GuiGraphicsExtractor context, Font font, LokaWindow window, Tab active,
                             int mouseX, int mouseY) {
         last = active;
-        int x = (screenWidth - totalWidth(font)) / 2;
+        int x = left(font, window);
+        int ty = top(window);
         for (Tab tab : Tab.values()) {
             int width = tabWidth(font, tab);
             boolean on = tab == active;
-            boolean hover = !on && mouseX >= x && mouseX < x + width && mouseY >= Y && mouseY < Y + HEIGHT;
-            GuiTheme.chip(context, x, Y, width, HEIGHT, on ? GuiTheme.ACCENT : hover ? 0xFF6A6A7A : 0xFF3A3A46);
+            boolean hover = !on && mouseX >= x && mouseX < x + width && mouseY >= ty && mouseY < ty + HEIGHT;
+            HelperUi.button(context, x, ty, width, HEIGHT, hover ? 1f : 0f, true, on);
             var pose = context.pose();
             pose.pushMatrix();
-            pose.translate(x + 5, Y + (HEIGHT - ICON) / 2f);
+            pose.translate(x + 5, ty + (HEIGHT - ICON) / 2f);
             pose.scale(ICON / 16f, ICON / 16f);
             context.item(new ItemStack(tab == Tab.STRENGTH ? Items.IRON_SWORD : Items.BREWING_STAND), 0, 0);
             pose.popMatrix();
-            context.text(font, Component.translatable(tab.key), x + ICON + 9, Y + (HEIGHT - 8) / 2,
-                    on ? GuiTheme.TEXT : hover ? GuiTheme.TEXT : GuiTheme.MUTED);
+            context.text(font, Component.translatable(tab.key), x + ICON + 9, ty + (HEIGHT - 8) / 2,
+                    on ? HelperUi.GOLD_LIGHT : hover ? GuiTheme.TEXT : GuiTheme.MUTED);
             x += width + GAP;
         }
     }
@@ -82,11 +87,12 @@ public final class CalculatorTabs {
      *
      * @return whether the click was on a tab
      */
-    public static boolean click(Font font, int screenWidth, Tab active, double mouseX, double mouseY, Screen parent) {
-        if (mouseY < Y || mouseY >= Y + HEIGHT) {
+    public static boolean click(Font font, LokaWindow window, Tab active, double mouseX, double mouseY, Screen parent) {
+        int ty = top(window);
+        if (mouseY < ty || mouseY >= ty + HEIGHT) {
             return false;
         }
-        int x = (screenWidth - totalWidth(font)) / 2;
+        int x = left(font, window);
         for (Tab tab : Tab.values()) {
             int width = tabWidth(font, tab);
             if (mouseX >= x && mouseX < x + width) {

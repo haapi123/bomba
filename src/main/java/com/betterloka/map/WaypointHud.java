@@ -1,6 +1,7 @@
 package com.betterloka.map;
 
 import com.betterloka.BetterLoka;
+import com.betterloka.gui.HelperUi;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -21,7 +22,6 @@ import java.util.Locale;
  */
 public final class WaypointHud {
     private static final int MARGIN = 4;
-    private static final int LINE_HEIGHT = 11;
 
     /** Below the grind timers, which own the top right. */
     private static final int TOP_OFFSET = 26;
@@ -71,10 +71,12 @@ public final class WaypointHud {
                     arrow(waypoint, playerX, playerZ, yaw), waypoint.label(),
                     waypoint.distanceTo(playerX, playerZ), waypoint.chunksTo(playerX, playerZ)));
 
-            int width = client.font.width(line);
+            // A pill with the waypoint's colour down its side.
+            int width = client.font.width(line) + 12;
             int x = context.guiWidth() - width - MARGIN;
-            context.text(client.font, line, x, y, 0xFF000000 | waypoint.color());
-            y += LINE_HEIGHT;
+            HelperUi.hudPanel(context, x, y, width, 13, 0xFF000000 | waypoint.color());
+            context.text(client.font, line, x + 7, y + 3, 0xFF000000 | waypoint.color());
+            y += 16;
         }
     }
 

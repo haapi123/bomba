@@ -18,7 +18,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 
@@ -39,9 +38,9 @@ import java.util.Locale;
  * <p>The arithmetic is {@link StrengthMath}; who stands where is {@link Standings}, read afresh
  * while the screen is open.
  */
-public class LokaCalculatorScreen extends Screen {
+public class LokaCalculatorScreen extends Screen implements LokaStyled {
     private static final int MAX_WIDTH = 520;
-    private static final int TOP = 24;
+
     private static final int LINE = 10;
     private static final int PAD = 6;
     private static final int GAP = 5;
@@ -65,6 +64,7 @@ public class LokaCalculatorScreen extends Screen {
     private static LokaCalculatorScreen devInstance;
 
     private final Screen parent;
+    private final LokaWindow window;
     private final ScrollPanel scroll = new ScrollPanel();
     private final List<Hit> hits = new ArrayList<>();
 
@@ -94,27 +94,25 @@ public class LokaCalculatorScreen extends Screen {
     public LokaCalculatorScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_calculator"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.loka_calculator.desc"),
+                this::onClose).content(MAX_WIDTH, Integer.MAX_VALUE);
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_WIDTH);
+        return window.innerWidth();
     }
 
     private int left() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
-    private int backY() {
-        return this.height - 24;
-    }
-
-    /** The three boxes sit above the Back button, under their labels. */
+    /** The three boxes sit along the bottom of the window, under their labels. */
     private int manualY() {
-        return backY() - 24;
+        return window.bottom() - 18;
     }
 
     private int listTop() {
-        return TOP + 18 + GAP;
+        return window.top() + 18 + GAP;
     }
 
     private int listBottom() {
@@ -123,6 +121,8 @@ public class LokaCalculatorScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
+        window.reserveHeader(CalculatorTabs.totalWidth(this.font) + 8);
         devInstance = this;
         if (query == null) {
             query = BetterLokaClient.config().calculatorTown();
@@ -134,7 +134,7 @@ public class LokaCalculatorScreen extends Screen {
         int toggleWidth = 118;
         int fieldX = left + this.font.width(label) + 6;
         int fieldWidth = Math.max(60, Math.min(190, left + width - toggleWidth - 6 - fieldX));
-        townField = new EditBox(this.font, fieldX, TOP, fieldWidth, 18, label);
+        townField = new EditBox(this.font, fieldX, window.top(), fieldWidth, 18, label);
         townField.setMaxLength(48);
         townField.setHint(Component.translatable("betterloka.calculator.town_hint").withStyle(ChatFormatting.DARK_GRAY));
         townField.setValue(query);
@@ -151,7 +151,7 @@ public class LokaCalculatorScreen extends Screen {
                     scroll.reset();
                     rebuildWidgets();
                 })
-                .bounds(left + width - toggleWidth, TOP - 1, toggleWidth, 20).build());
+                .bounds(left + width - toggleWidth, window.top() - 1, toggleWidth, 20).build());
 
         int y = manualY();
         youField = numberBox(left, y, manualYou, "betterloka.calculator.your_strength", value -> manualYou = value);
@@ -161,8 +161,6 @@ public class LokaCalculatorScreen extends Screen {
                 "betterloka.calculator.lowest_level", value -> manualLevel = value);
 
         scroll.setViewport(left, listTop(), width, listBottom() - listTop());
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 50, backY(), 100, 20).build());
 
         if (query.isBlank() && !lookedUpOwnTown) {
             lookUpOwnTown();
@@ -363,7 +361,10 @@ public class LokaCalculatorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (CalculatorTabs.click(this.font, this.width, CalculatorTabs.Tab.STRENGTH, click.x(), click.y(), parent)) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
+        if (CalculatorTabs.click(this.font, window, CalculatorTabs.Tab.STRENGTH, click.x(), click.y(), parent)) {
             return true;
         }
         if (click.y() >= scroll.viewportTop() && click.y() < scroll.viewportBottom()) {
@@ -410,15 +411,16 @@ public class LokaCalculatorScreen extends Screen {
     @Override
     public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractBackground(context, mouseX, mouseY, delta);
-        // A shade under the list, so it reads over a bright sky too.
+        window.draw(context, this.font, mouseX, mouseY);
+        // A card under the list.
         int left = left();
-        context.fill(left - 4, listTop() - 3, left + contentWidth() + 4, listBottom() + 3, 0x70000000);
+        GuiTheme.panel(context, left - 3, listTop() - 3, contentWidth() + 6, listBottom() - listTop() + 6);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        CalculatorTabs.draw(context, this.font, this.width, CalculatorTabs.Tab.STRENGTH, mouseX, mouseY);
+        CalculatorTabs.draw(context, this.font, window, CalculatorTabs.Tab.STRENGTH, mouseX, mouseY);
         hits.clear();
 
         long now = System.currentTimeMillis();
@@ -432,7 +434,7 @@ public class LokaCalculatorScreen extends Screen {
 
         int left = left();
         int width = contentWidth();
-        context.text(this.font, Component.translatable("betterloka.calculator.town"), left, TOP + 5, GuiTheme.MUTED);
+        context.text(this.font, Component.translatable("betterloka.calculator.town"), left, window.top() + 5, GuiTheme.MUTED);
         drawChecked(context, service, now, left + width);
 
         context.enableScissor(left, scroll.viewportTop(), left + width, scroll.viewportBottom());
@@ -449,8 +451,12 @@ public class LokaCalculatorScreen extends Screen {
         Component text = service.updatedAt() == 0
                 ? Component.translatable(service.failed() ? "betterloka.calculator.unreachable" : "betterloka.calculator.loading")
                 : Component.translatable("betterloka.fights.checked", FightTiming.clock(now - service.updatedAt()));
-        int x = Math.max(CalculatorTabs.right(this.font, this.width) + 8, right - this.font.width(text));
-        context.text(this.font, text, x, 8, service.failed() ? GuiTheme.BAD : GuiTheme.MUTED);
+        // In the header, left of the tabs, where there is room for it beside the title.
+        int x = CalculatorTabs.left(this.font, window) - 10 - this.font.width(text);
+        if (x >= window.titleEnd(this.font) + 8) {
+            context.text(this.font, text, x, window.y() + (LokaWindow.HEADER - 8) / 2,
+                    service.failed() ? GuiTheme.BAD : GuiTheme.MUTED);
+        }
     }
 
     private int drawContent(GuiGraphicsExtractor context, Standings standings, StandingsService service,

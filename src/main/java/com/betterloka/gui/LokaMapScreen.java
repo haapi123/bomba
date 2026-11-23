@@ -25,7 +25,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.item.ItemStack;
@@ -47,11 +46,9 @@ import java.util.Map;
  *
  * <p>Everything about how it looks lives in {@link MapStyle}.
  */
-public class LokaMapScreen extends Screen {
+public class LokaMapScreen extends Screen implements LokaStyled {
     /** Below the toast strip, which owns the top right and would clip the last tabs. */
-    private static final int TAB_ROW_Y = 36;
     private static final int TAB_ROW_HEIGHT = 16;
-    private static final int MAP_TOP = TAB_ROW_Y + TAB_ROW_HEIGHT + 6;
     private static final int MAP_MARGIN = 8;
     private static final int MAX_CONTENT_WIDTH = 620;
 
@@ -68,6 +65,7 @@ public class LokaMapScreen extends Screen {
     private static Continent lastContinent = Continent.KALROS;
 
     private final Screen parent;
+    private final LokaWindow window;
 
     private Continent continent = lastContinent;
 
@@ -238,6 +236,8 @@ public class LokaMapScreen extends Screen {
     public LokaMapScreen(Screen parent) {
         super(Component.translatable("betterloka.module.loka_map"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.loka_map.desc"),
+                this::onClose).content(MAX_CONTENT_WIDTH, Integer.MAX_VALUE);
     }
 
     /** The map, opened on {@code continent} rather than the one last looked at. */
@@ -246,24 +246,33 @@ public class LokaMapScreen extends Screen {
         return new LokaMapScreen(parent);
     }
 
+    private int tabRowY() {
+        return window.top();
+    }
+
+    private int mapTop() {
+        return tabRowY() + TAB_ROW_HEIGHT + 6;
+    }
+
     private int contentWidth() {
-        return Math.min(this.width - 20, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     /** Where the map goes, worked out the same way for placing widgets on it and for drawing it. */
     private void layoutMap() {
         mapX = contentLeft() + MAP_MARGIN;
-        mapY = MAP_TOP;
+        mapY = mapTop();
         mapWidth = contentWidth() - MAP_MARGIN * 2;
-        mapHeight = Math.max(60, this.height - 32 - MAP_TOP);
+        mapHeight = Math.max(60, window.bottom() - 24 - mapTop());
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int width = contentWidth();
         int left = contentLeft();
 
@@ -275,32 +284,29 @@ public class LokaMapScreen extends Screen {
             Continent target = Continent.values()[i];
             int thisWidth = i == count - 1 ? left + width - x : tabWidth;
             tabButtons.add(addRenderableWidget(Button.builder(tabLabel(target), button -> select(target))
-                    .bounds(x, TAB_ROW_Y, thisWidth, TAB_ROW_HEIGHT).build()));
+                    .bounds(x, tabRowY(), thisWidth, TAB_ROW_HEIGHT).build()));
             x += tabWidth + 4;
         }
 
         // One row, so the map gets the rest of the screen. What is selected is described on the map
         // itself the way Loka's own does it, rather than in a panel eating half the height.
-        int bottomY = this.height - 26;
-        int fifth = (width - 16) / 5;
+        int bottomY = window.bottom() - 18;
+        int quarter = (width - 12) / 4;
         // Every waypoint, on every continent, is managed there. Adding one is the Waypoint button in
         // the right-click bubble, or the Add button the list offers for what is selected here.
         listButton = addRenderableWidget(Button.builder(listLabel(), button -> openWaypointList())
-                .bounds(left, bottomY, fifth, 20).build());
+                .bounds(left, bottomY, quarter, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.map.copy"),
                         button -> copyCoordinates())
-                .bounds(left + fifth + 4, bottomY, fifth, 20).build());
+                .bounds(left + quarter + 4, bottomY, quarter, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("betterloka.map.recenter"),
                         button -> fitToContinent())
-                .bounds(left + (fifth + 4) * 2, bottomY, fifth, 20).build());
+                .bounds(left + (quarter + 4) * 2, bottomY, quarter, 18).build());
         // The town that holds what is selected — click a territory, or search a town — in full.
         townButton = addRenderableWidget(Button.builder(Component.translatable("betterloka.map.town_info"),
                         button -> openTownInfo())
-                .bounds(left + (fifth + 4) * 3, bottomY, fifth, 20).build());
+                .bounds(left + (quarter + 4) * 3, bottomY, left + width - (left + (quarter + 4) * 3), 18).build());
         townButton.active = selectedTown() != null;
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(left + (fifth + 4) * 4, bottomY,
-                        left + width - (left + (fifth + 4) * 4), 20).build());
 
         // The search sits on the map's top right corner, the way a web map carries one. A child but
         // not a renderable: it is drawn after the map, which would otherwise paint over it.
@@ -321,15 +327,13 @@ public class LokaMapScreen extends Screen {
     /** The continent's name, and a crossed-swords count of the fights on it. */
     private Component tabLabel(Continent value) {
         MutableComponent label = Component.literal(value.displayName());
-        if (value == continent) {
-            label = label.withStyle(ChatFormatting.YELLOW);
-        }
         int fights = BetterLokaClient.fights().on(value.world()).size();
         if (fights > 0) {
             label = Component.empty().append(label)
                     .append(Component.literal(" (" + fights + ")").withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
         }
-        return label;
+        // Yellow on the outside, which is what marks the chosen tab.
+        return value == continent ? label.withStyle(ChatFormatting.YELLOW) : label;
     }
 
     private Component listLabel() {
@@ -351,7 +355,10 @@ public class LokaMapScreen extends Screen {
 
     /** Opens the town that holds what is selected, with what the map already knows of it. */
     private void openTownInfo() {
-        String town = selectedTown();
+        openTownInfo(selectedTown());
+    }
+
+    private void openTownInfo(String town) {
         if (town == null || this.minecraft == null) {
             return;
         }
@@ -611,6 +618,9 @@ public class LokaMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         // The search field sits on the map, so it is asked before the map is.
         if (searchField.isVisible() && searchField.isMouseOver(click.x(), click.y())) {
             return super.mouseClicked(click, doubled);
@@ -787,13 +797,17 @@ public class LokaMapScreen extends Screen {
     // --- drawing ---
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 10,
-                GuiTheme.TEXT);
 
         layoutMap();
-        GuiTheme.panel(context, contentLeft(), MAP_TOP - 4, contentWidth(), mapHeight + 8);
+        GuiTheme.panel(context, contentLeft(), mapTop() - 4, contentWidth(), mapHeight + 8);
 
         // The fights are asked for every fifteen seconds while the map is open, so one declared
         // now is on it within a quarter of a minute; the tabs say where they are.
@@ -819,7 +833,7 @@ public class LokaMapScreen extends Screen {
         // Nothing to search until there is something on the map.
         searchField.setVisible(!territories().isEmpty());
         if (territories().isEmpty()) {
-            centered(context, "betterloka.map.loading", MAP_TOP + mapHeight / 2, GuiTheme.MUTED);
+            centered(context, "betterloka.map.loading", mapTop() + mapHeight / 2, GuiTheme.MUTED);
             return;
         }
 
@@ -871,7 +885,7 @@ public class LokaMapScreen extends Screen {
 
     private void centered(GuiGraphicsExtractor context, String key, int y, int color) {
         context.centeredText(this.font, Component.translatable(key),
-                this.width / 2, y, color);
+                window.centreX(), y, color);
     }
 
     private void drawMap(GuiGraphicsExtractor context, int mouseX, int mouseY) {
@@ -1999,6 +2013,18 @@ public class LokaMapScreen extends Screen {
      * labelled {@code +} finds nothing and silently photographs an unzoomed map, which is exactly
      * what the first run of this did.
      */
+    /** Opens the town screen for the town holding the most territories on this continent. */
+    public void devOpenAnyTown() {
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        for (MapTerritory territory : territories()) {
+            if (!territory.neutral() && territory.owner() != null) {
+                counts.merge(territory.owner(), 1, Integer::sum);
+            }
+        }
+        counts.entrySet().stream().max(java.util.Map.Entry.comparingByValue())
+                .ifPresent(best -> openTownInfo(best.getKey()));
+    }
+
     /** Switches continent as its tab would. */
     public void devSelect(Continent target) {
         select(target);

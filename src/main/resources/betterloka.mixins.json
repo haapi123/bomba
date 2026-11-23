@@ -10,7 +10,9 @@
     "DuelSwingMixin",
     "DuelChatClickMixin",
     "ShulkerSlotMixin",
-    "DuelHudTitleMixin"
+    "DuelHudTitleMixin",
+    "LokaButtonMixin",
+    "LokaEditBoxMixin"
   ],
   "injectors": {
     "defaultRequire": 1

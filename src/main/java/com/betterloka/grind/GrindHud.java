@@ -2,6 +2,7 @@ package com.betterloka.grind;
 
 import com.betterloka.BetterLoka;
 import com.betterloka.config.BetterLokaConfig;
+import com.betterloka.gui.HelperUi;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -21,7 +22,8 @@ public final class GrindHud {
     private static final int GLOWSTONE_COLOR = 0xFFFFC93C;
 
     private static final int MARGIN = 4;
-    private static final int LINE_HEIGHT = 11;
+    private static final int PILL_HEIGHT = 14;
+    private static final int PILL_GAP = 3;
 
     private final GrindTimers timers;
     private final BetterLokaConfig config;
@@ -59,9 +61,17 @@ public final class GrindHud {
                 ? Component.translatable(key, Component.translatable("betterloka.grind.ready").getString())
                 : Component.translatable(key, timer.remainingText());
 
-        int width = client.font.width(line);
+        // A pill in the timer's colour, with how far it has run along its foot.
+        int width = client.font.width(line) + 16;
         int x = context.guiWidth() - width - MARGIN;
-        context.text(client.font, line, x, y, color);
-        return y + LINE_HEIGHT;
+        HelperUi.framed(context, x, y, width, PILL_HEIGHT, 4, HelperUi.HUD_FILL,
+                HelperUi.mix(HelperUi.HUD_EDGE, color, 0.45f));
+        HelperUi.round(context, x + 5, y + 4, 6, 6, 3, timer.finished() ? HelperUi.ON : color);
+        context.text(client.font, line, x + 13, y + 3, color);
+        int run = Math.round((width - 8) * (timer.finished() ? 1f : timer.progress()));
+        if (run > 0) {
+            context.fill(x + 4, y + PILL_HEIGHT - 2, x + 4 + run, y + PILL_HEIGHT - 1, HelperUi.alpha(color, 0xC0));
+        }
+        return y + PILL_HEIGHT + PILL_GAP;
     }
 }

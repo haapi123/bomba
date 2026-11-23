@@ -23,7 +23,7 @@ import java.util.List;
  *
  * <p>Opened with P, or from Loka Helper.
  */
-public class CoordsHudPositionScreen extends Screen {
+public class CoordsHudPositionScreen extends Screen implements LokaStyled {
     /** How close to an edge or the middle the box has to come to snap to it. */
     private static final int SNAP = 6;
     /** The row of controls: as wide as the two buttons at the bottom of it. */

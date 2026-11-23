@@ -9,7 +9,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
@@ -26,11 +25,9 @@ import java.util.Map;
  * inventory ten seconds after its purge, so the list is what the player actually came away with —
  * see {@link ShrineLoot}.
  */
-public class ShrineStatsScreen extends Screen {
+public class ShrineStatsScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 400;
-    private static final int HEADER_TOP = 26;
     private static final int HEADER_HEIGHT = 44;
-    private static final int LIST_TOP = HEADER_TOP + HEADER_HEIGHT + 6;
     private static final int ROW_HEIGHT = 20;
     private static final int SECTION_HEIGHT = 14;
     private static final int PADDING = 6;
@@ -39,6 +36,7 @@ public class ShrineStatsScreen extends Screen {
     private static final long CONFIRM_MILLIS = 3000;
 
     private final Screen parent;
+    private final LokaWindow window;
     private final Shrine shrine;
     private final ScrollPanel scrollPanel = new ScrollPanel();
     private long resetArmedAt;
@@ -47,15 +45,25 @@ public class ShrineStatsScreen extends Screen {
     public ShrineStatsScreen(Screen parent, Shrine shrine) {
         super(Component.translatable("betterloka.shrine.stats.title", shrine.label()));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.shrine.stats.subtitle"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 360);
         this.shrine = shrine;
     }
 
+    private int headerTop() {
+        return window.top();
+    }
+
+    private int listTop() {
+        return headerTop() + HEADER_HEIGHT + 6;
+    }
+
     private int contentWidth() {
-        return Math.min(this.width - 40, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
     private ShrineLoot.Stats stats() {
@@ -64,16 +72,13 @@ public class ShrineStatsScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
-        scrollPanel.setViewport(left, LIST_TOP, width, Math.max(20, this.height - 34 - LIST_TOP));
-
-        int half = (width - 4) / 2;
+        scrollPanel.setViewport(left, listTop(), width, Math.max(20, window.bottom() - 24 - listTop()));
         resetButton = addRenderableWidget(Button.builder(resetLabel(), button -> reset())
-                .bounds(left, this.height - 28, half, 20).build());
+                .bounds(left, window.bottom() - 18, width, 18).build());
         resetButton.active = stats().runs() > 0;
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(left + half + 4, this.height - 28, width - half - 4, 20).build());
     }
 
     private boolean armed() {
@@ -104,6 +109,9 @@ public class ShrineStatsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         return (click.button() == InputConstants.MOUSE_BUTTON_LEFT && scrollPanel.mouseClicked(click.x(), click.y()))
                 || super.mouseClicked(click, doubled);
     }
@@ -120,9 +128,14 @@ public class ShrineStatsScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 10, GuiTheme.TEXT);
         // The confirmation runs out by itself; the label has to follow.
         if (resetButton != null && resetArmedAt != 0 && !armed()) {
             resetArmedAt = 0;
@@ -156,21 +169,21 @@ public class ShrineStatsScreen extends Screen {
     }
 
     private void renderHeader(GuiGraphicsExtractor context, int left, int width, ShrineLoot.Stats stats) {
-        GuiTheme.panel(context, left, HEADER_TOP, width, HEADER_HEIGHT);
-        context.fill(left, HEADER_TOP, left + 2, HEADER_TOP + HEADER_HEIGHT, 0xFF000000 | shrine.kind().color());
-        BetterLokaClient.shrineIcons().draw(context, shrine.kind(), left + PADDING + 2, HEADER_TOP + PADDING, 16);
+        GuiTheme.panel(context, left, headerTop(), width, HEADER_HEIGHT);
+        context.fill(left, headerTop(), left + 2, headerTop() + HEADER_HEIGHT, 0xFF000000 | shrine.kind().color());
+        BetterLokaClient.shrineIcons().draw(context, shrine.kind(), left + PADDING + 2, headerTop() + PADDING, 16);
         int textX = left + PADDING + 24;
-        context.text(this.font, shrine.label(), textX, HEADER_TOP + PADDING, 0xFF000000 | shrine.kind().color());
+        context.text(this.font, shrine.label(), textX, headerTop() + PADDING, 0xFF000000 | shrine.kind().color());
         context.text(this.font, Component.translatable("betterloka.shrine.coords", shrine.x(),
                         shrine.hasY() ? String.valueOf(shrine.y()) : "?", shrine.z()),
-                textX, HEADER_TOP + PADDING + 11, GuiTheme.MUTED);
+                textX, headerTop() + PADDING + 11, GuiTheme.MUTED);
         Component runs = Component.translatable("betterloka.shrine.stats.runs", stats.runs());
-        context.text(this.font, runs, textX, HEADER_TOP + PADDING + 22, GuiTheme.TEXT);
+        context.text(this.font, runs, textX, headerTop() + PADDING + 22, GuiTheme.TEXT);
         if (stats.runs() > 0) {
             String last = Component.translatable("betterloka.shrine.stats.last", TimeFormat.ago(stats.lastRunAt()))
                     .getString();
             context.text(this.font, last, left + width - PADDING - this.font.width(last),
-                    HEADER_TOP + PADDING + 22, GuiTheme.MUTED);
+                    headerTop() + PADDING + 22, GuiTheme.MUTED);
         }
     }
 

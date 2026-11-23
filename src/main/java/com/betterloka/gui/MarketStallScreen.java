@@ -12,7 +12,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -23,13 +22,13 @@ import java.util.Locale;
  * One stall of the market square: everything it has on offer, newest first unless the Filter says
  * otherwise, with a field to narrow it down by name.
  */
-public class MarketStallScreen extends Screen {
+public class MarketStallScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 460;
     private static final int AWNING_HEIGHT = 12;
-    private static final int TITLE_Y = AWNING_HEIGHT + 8;
-    private static final int BAR_Y = TITLE_Y + 16;
+
 
     private final Screen parent;
+    private final LokaWindow window;
     private final MarketCategory category;
     private final ListingList list = new ListingList();
     private final FilterMenu filter = new FilterMenu(MarketSort.NEWEST, sort -> list.reset());
@@ -45,28 +44,40 @@ public class MarketStallScreen extends Screen {
     public MarketStallScreen(Screen parent, MarketCategory category) {
         super(Component.translatable(category.key()));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.market.stall_subtitle"),
+                this::onClose).content(MAX_CONTENT_WIDTH, 420);
         this.category = category;
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_CONTENT_WIDTH);
+        return window.innerWidth();
     }
 
     private int contentLeft() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
+    }
+
+    /** The awning hangs from the header, right across the window. */
+    private int awningTop() {
+        return window.y() + LokaWindow.HEADER + 1;
+    }
+
+    private int barY() {
+        return awningTop() + AWNING_HEIGHT + 6;
     }
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
         BetterLokaClient.market().sweep(false);
         sweep = BetterLokaClient.market().shown();
         int filterWidth = FilterMenu.preferredWidth(this.font);
-        filter.place(left + width - filterWidth, BAR_Y, filterWidth);
+        filter.place(left + width - filterWidth, barY(), filterWidth);
 
         String previous = narrowField != null ? narrowField.getValue() : "";
-        narrowField = new EditBox(this.font, left, BAR_Y, Math.min(180, width - filterWidth - 8), FilterMenu.HEIGHT,
+        narrowField = new EditBox(this.font, left, barY(), Math.min(180, width - filterWidth - 8), FilterMenu.HEIGHT,
                 Component.translatable("betterloka.market.narrow"));
         narrowField.setMaxLength(40);
         narrowField.setHint(Component.translatable("betterloka.market.narrow_hint").withStyle(ChatFormatting.DARK_GRAY));
@@ -74,9 +85,7 @@ public class MarketStallScreen extends Screen {
         narrowField.setResponder(text -> list.reset());
         addRenderableWidget(narrowField);
 
-        list.setViewport(left, BAR_Y + FilterMenu.HEIGHT + 6, width, this.height - 30 - (BAR_Y + FilterMenu.HEIGHT + 6));
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 100, this.height - 25, 200, 20).build());
+        list.setViewport(left, barY() + FilterMenu.HEIGHT + 6, width, window.bottom() - (barY() + FilterMenu.HEIGHT + 6));
     }
 
     /** What the stall shows, worked out again only when the market, the order or the filter changes. */
@@ -115,6 +124,9 @@ public class MarketStallScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (filter.mouseClicked(click.x(), click.y())) {
             return true;
         }
@@ -149,27 +161,32 @@ public class MarketStallScreen extends Screen {
     }
 
     @Override
+    public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         List<MarketListing> listings = shown();
         super.extractRenderState(context, mouseX, mouseY, delta);
         int left = contentLeft();
         int width = contentWidth();
 
-        drawAwning(context, left, width);
-        // The stall's name beside the item it is known for.
-        Component title = Component.translatable(category.key());
-        int titleWidth = this.font.width(title) + 20;
-        int titleX = this.width / 2 - titleWidth / 2;
+        drawAwning(context, window.x() + 1, window.width() - 2);
+        // The item the stall is known for, in the header beside its name.
+        int iconX = window.headerRight() - 20;
+        int iconY = window.y() + (LokaWindow.HEADER - 20) / 2;
+        HelperUi.round(context, iconX, iconY, 20, 20, 4, HelperUi.mix(HelperUi.ICON_TILE, 0xFF000000 | category.color(), 0.25f));
         context.item(MarketLook.icon(stall == null || stall.showcase().isEmpty() ? category.icon()
-                : stall.showcase().get(0)), titleX, TITLE_Y - 4);
-        context.text(this.font, title, titleX + 20, TITLE_Y, MarketLook.shade(category.color(), 1.45f));
+                : stall.showcase().get(0)), iconX + 2, iconY + 2);
 
         boolean loading = sweep != null && sweep.running();
         String count = stall == null ? "..." : Component.translatable("betterloka.market.stall_count",
                 listings.size(), stall.types()).getString() + (loading ? " ..." : "");
         int countX = narrowField.getX() + narrowField.getWidth() + 8;
         if (countX + this.font.width(count) < filter.x() - 6) {
-            context.text(this.font, count, countX, BAR_Y + 5, GuiTheme.MUTED);
+            context.text(this.font, count, countX, barY() + 5, GuiTheme.MUTED);
         }
 
         Component empty = loading
@@ -191,10 +208,11 @@ public class MarketStallScreen extends Screen {
             int x0 = left + Math.round(s * stripeW);
             int x1 = left + Math.round((s + 1) * stripeW);
             int stripe = s % 2 == 0 ? color : 0xFFF2EEE4;
-            context.fill(x0, 0, x1, AWNING_HEIGHT - 2, stripe);
-            context.fill(x0 + 1, AWNING_HEIGHT - 2, x1 - 1, AWNING_HEIGHT, stripe);
+            int top = awningTop();
+            context.fill(x0, top, x1, top + AWNING_HEIGHT - 2, stripe);
+            context.fill(x0 + 1, top + AWNING_HEIGHT - 2, x1 - 1, top + AWNING_HEIGHT, stripe);
         }
-        context.fill(left, 0, left + width, 1, MarketLook.shade(category.color(), 0.5f));
+        context.fill(left, awningTop(), left + width, awningTop() + 1, MarketLook.shade(category.color(), 0.5f));
     }
 
     // --- for the dev harness ---

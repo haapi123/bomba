@@ -12,7 +12,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.locale.Language;
-import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -35,11 +34,10 @@ import java.util.concurrent.CompletionException;
  * waits for the player to agree. Under the chat a red line says the assistant can be wrong, and that
  * punishments are a question for Loka's staff, not for it.
  */
-public class AssistantScreen extends Screen {
+public class AssistantScreen extends Screen implements LokaStyled {
     private static final int MAX_WIDTH = 480;
     /** Minecraft's own red (§c): the disclaimer has to read as a warning, not as a hint. */
     private static final int DISCLAIMER_RED = 0xFFFF5555;
-    private static final int TOP = 22;
     private static final int TAB_HEIGHT = 16;
     private static final int LINE = 10;
     private static final int PAD = 5;
@@ -81,12 +79,10 @@ public class AssistantScreen extends Screen {
     private static AssistantScreen devInstance;
 
     private final Screen parent;
+    private final LokaWindow window;
     private final AssistantClient client = BetterLokaClient.assistant();
     private final ScrollPanel scroll = new ScrollPanel();
     private final List<Hit> hits = new ArrayList<>();
-
-    private int activeTabX;
-    private int activeTabWidth;
     private EditBox input;
     private EditBox helpQuestion;
     private MultiLineEditBox helpAnswer;
@@ -107,18 +103,21 @@ public class AssistantScreen extends Screen {
     public AssistantScreen(Screen parent) {
         super(Component.translatable("betterloka.module.assistant"));
         this.parent = parent;
+        this.window = new LokaWindow(this.title, Component.translatable("betterloka.module.assistant.desc"),
+                this::onClose).content(MAX_WIDTH, Integer.MAX_VALUE);
     }
 
     private int contentWidth() {
-        return Math.min(this.width - 24, MAX_WIDTH);
+        return window.innerWidth();
     }
 
     private int left() {
-        return (this.width - contentWidth()) / 2;
+        return window.left();
     }
 
+    /** Just under the window's content: what the input, the disclaimer and the composer stand on. */
     private int backY() {
-        return this.height - 24;
+        return window.bottom() + 2;
     }
 
     /** The input sits above the red disclaimer, however many lines it wraps to at this width. */
@@ -133,7 +132,7 @@ public class AssistantScreen extends Screen {
     }
 
     private int listTop() {
-        return TOP + TAB_HEIGHT + GAP;
+        return window.top() + TAB_HEIGHT + GAP;
     }
 
     private boolean needsNotice() {
@@ -146,6 +145,7 @@ public class AssistantScreen extends Screen {
 
     @Override
     protected void init() {
+        window.layout(this.width, this.height);
         devInstance = this;
         int left = left();
         int width = contentWidth();
@@ -176,8 +176,6 @@ public class AssistantScreen extends Screen {
             }
             scroll.setViewport(left, listTop(), width, listBottom() - listTop());
         }
-        addRenderableWidget(Button.builder(CommonComponents.GUI_BACK, button -> onClose())
-                .bounds(this.width / 2 - 50, backY(), 100, 20).build());
 
         if (ready() && client.loggedInAs() == null && !connecting && connectError == null) {
             connect();
@@ -205,12 +203,9 @@ public class AssistantScreen extends Screen {
                 case ASK -> Component.translatable("betterloka.assistant.tab.ask");
                 case HELP -> Component.translatable("betterloka.assistant.tab.help", open.size());
             };
-            Button button = Button.builder(label, b -> switchTab(each)).bounds(x, TOP, tabWidth, TAB_HEIGHT).build();
-            button.active = tab != each;
-            if (tab == each) {
-                activeTabX = x;
-                activeTabWidth = tabWidth;
-            }
+            // Yellow is what marks the chosen tab.
+            Button button = Button.builder(tab == each ? label.copy().withStyle(ChatFormatting.YELLOW) : label,
+                    b -> switchTab(each)).bounds(x, window.top(), tabWidth, TAB_HEIGHT).build();
             addRenderableWidget(button);
             x += tabWidth + 4;
         }
@@ -453,6 +448,9 @@ public class AssistantScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (window.mouseClicked(click.x(), click.y())) {
+            return true;
+        }
         if (ready() && click.y() >= scroll.viewportTop() && click.y() < scroll.viewportBottom()) {
             for (Hit hit : List.copyOf(hits)) {
                 if (hit.contains(click.x(), click.y())) {
@@ -495,13 +493,11 @@ public class AssistantScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractRenderState(context, mouseX, mouseY, delta);
-        context.centeredText(this.font, this.title, this.width / 2, 8, GuiTheme.TEXT);
         hits.clear();
         if (needsNotice()) {
             drawNotice(context);
         } else {
             drawStatus(context);
-            context.fill(activeTabX + 2, TOP + TAB_HEIGHT, activeTabX + activeTabWidth - 2, TOP + TAB_HEIGHT + 2, GuiTheme.ACCENT);
             int left = left();
             int top = scroll.viewportTop();
             int bottom = scroll.viewportBottom();
@@ -524,7 +520,7 @@ public class AssistantScreen extends Screen {
             if (tab == Tab.ASK) {
                 int footerY = inputY() + 23;
                 for (FormattedCharSequence line : disclaimerLines()) {
-                    context.centeredText(this.font, line, this.width / 2, footerY, DISCLAIMER_RED);
+                    context.centeredText(this.font, line, window.centreX(), footerY, DISCLAIMER_RED);
                     footerY += 10;
                 }
             }
@@ -543,10 +539,11 @@ public class AssistantScreen extends Screen {
     @Override
     public void extractBackground(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         super.extractBackground(context, mouseX, mouseY, delta);
+        window.draw(context, this.font, mouseX, mouseY);
         if (ready()) {
-            // A shade under the chat and the lists, so text reads over a bright sky too.
+            // A card under the chat and the lists.
             int left = left();
-            context.fill(left - 4, listTop() - 3, left + contentWidth() + 4, listBottom() + 3, 0x70000000);
+            GuiTheme.panel(context, left - 3, listTop() - 3, contentWidth() + 6, listBottom() - listTop() + 6);
         }
         if (needsNotice()) {
             int panelWidth = Math.min(340, this.width - 40);
@@ -573,9 +570,11 @@ public class AssistantScreen extends Screen {
         } else {
             status = Component.empty();
         }
-        int right = left() + contentWidth();
-        int x = Math.max(this.width / 2 + this.font.width(this.title) / 2 + 8, right - this.font.width(status));
-        context.text(this.font, status, x, 8, color);
+        // In the header, by the close button, where there is room for it beside the title.
+        if (!status.getString().isEmpty()
+                && window.headerRight() - this.font.width(status) - 12 >= window.titleEnd(this.font) + 8) {
+            window.headerChip(context, this.font, status, window.headerRight(), color);
+        }
     }
 
     private void drawNotice(GuiGraphicsExtractor context) {

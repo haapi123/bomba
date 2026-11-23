@@ -35,7 +35,7 @@ import java.util.function.Supplier;
  * scroll under its header with the mouse wheel or the bar beside them. The skins are drawn by the
  * game outside the canvas transform, so their boxes are worked out in screen coordinates by hand.
  */
-public abstract class DuelScreen extends Screen {
+public abstract class DuelScreen extends Screen implements LokaStyled {
     protected static final int W = 600;
     protected static final int H = 336;
     protected static final int PANEL_W = 234;
