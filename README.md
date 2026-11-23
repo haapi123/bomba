@@ -655,8 +655,14 @@ Several things are done deliberately in the HTTP layer, all measured against the
 
 ![Loka Helper](docs/helper.png)
 
-The sections close up to fit the screen; when even that is not enough (a GUI scale that leaves only
-240 pixels of height, as 1440p does at its largest), the list scrolls with the mouse wheel.
+Loka Helper is a window of its own, in BetterLoka's navy and gold: its sections down the left —
+**Waypoints**, **HUD & View**, **Shortcuts**, **Duels** and **Shulkers** — and on each one every
+setting on a card that says what it does, with a switch that slides, arrows for a number and a box
+for a key. Cards with more to say have a **?** beside their name. On a small screen the sidebar
+shrinks to its icons and the cards scroll with the mouse wheel; **↑** and **↓** move between the
+sections, and the window remembers the one you left it on.
+
+![HUD & View](docs/helper-display.png)
 
 - **GUI scale** — an inventory big enough to hit a slot without aiming, and a hotbar that stays the
   size it was.
@@ -665,18 +671,24 @@ The sections close up to fit the screen; when even that is not enough (a GUI sca
   box is dragged wherever it should go — it snaps to the edges and the middle — or nudged with the
   arrow keys; the buttons there switch it on or off and make it **smaller or bigger** (50–150 %, also
   with the mouse wheel over the box or the minus and plus keys). P is rebindable under Options →
-  Controls → BetterLoka; vanilla's Social Interactions is on P as well, and this takes precedence.
+  Controls → BetterLoka or on Loka Helper's **Shortcuts**; vanilla's Social Interactions is on P as
+  well, and this takes precedence.
 - **Clear lava** — in lava you see what a spectator sees instead of an arm's length of orange fog.
   Off until you turn it on.
 - **/tl on a key** — press the key and `/tl` is sent, once per press and only with no menu open. Off,
-  and with no key, until you set both: **Key:** waits for the next key you press, Esc clears it.
+  and with no key, until you set both: on **Shortcuts**, click the key box and press the key; Esc
+  clears it.
 - **Important Waypoints** — a marker with a picture over each place that matters, on the continent
   you are standing on and only there: each continent's **docks**, **resource island** and **boss**
   (Kalros' Witch Hunter, Balak's Warden, Garama's Golem), and at spawn, Aladra, the **Town Portal, Loka Market, End
   Portal, Zyre Portal, Gambling, Nether Portal, Balak & Reins Teleports, Rivi Portal and the
-  Continent Portals**. Each continent has its own switch and **every one starts off**. The switches
-  are right on the Loka Helper screen, one button per continent — green when on, click to flip it;
-  **…** opens the list of what each continent marks. The picture says what the place is — a boat, a
+  Continent Portals**. Each continent has its own switch and **every one starts off**. They are on
+  the **Waypoints** page, where the continents lie as **islands on a sea** round Aladra — their real
+  outlines from Loka's map, each territory in its biome's colour, so Kalros comes out snowy, Garama
+  sandy and Balak with its volcano. An island lifts under the pointer; a click on it opens the panel
+  beside the sea with what it marks, its switch, **Open on Loka Map** and **All off**, and a click on
+  a place there copies its coordinates. A dot by each name says whether its markers are on, and a
+  gold pin stands over the island you are on. The picture says what the place is — a boat, a
   diamond pickaxe, the boss's egg (witch, warden, iron golem), a house, a market stall, a roulette
   wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
   crosshair. The same places are pinned on **Loka Map**.
@@ -1012,6 +1024,11 @@ not painted: `docs/logo/gen.py` writes it as SVG and `docs/logo/render.js` rende
 Playwright's Chromium, at 128 px for the mod's icon, at the exact pixel size of every GUI scale for
 the menu, and for the README. The same script makes the Discord avatar (the hex on a dark
 background, inside the circle Discord crops to) and banner.
+
+Loka Helper's islands are drawn too: `docs/islands/islands.py` takes each territory's outline from
+Loka's map and its biome from Loka's API, colours it, and adds the beach and the shallows round the
+coast; Aladra, on neither, is drawn as a ring of hexes round its portal. Run it again when the
+continents change.
 
 ## Building
 

@@ -927,6 +927,9 @@ public final class DevDiagnostics {
         if (parts.contains("discord")) {
             videoDiscord();
         }
+        if (parts.contains("helperui")) {
+            videoHelperUi();
+        }
         mark("end");
         step(20, () -> {
             BetterLoka.LOGGER.info("DIAG video done");
@@ -1492,6 +1495,71 @@ public final class DevDiagnostics {
             client().resizeGui();
         });
         shot(20, "discord-menu-4");
+    }
+
+    /** The new Loka Helper: the islands hovered and picked, then every section, at two scales. */
+    private void videoHelperUi() {
+        int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
+        step(1, () -> {
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region,
+                        region == com.betterloka.helper.ImportantPlaces.Region.KALROS
+                                || region == com.betterloka.helper.ImportantPlaces.Region.ALADRA);
+            }
+        });
+        enter("Loka Helper");
+        mark("helperui");
+        step(20, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
+                helper.devPage("waypoints");
+            }
+        });
+        shot(20, "helperui-waypoints");
+        for (var region : new com.betterloka.helper.ImportantPlaces.Region[] {
+                com.betterloka.helper.ImportantPlaces.Region.GARAMA, com.betterloka.helper.ImportantPlaces.Region.BALAK,
+                com.betterloka.helper.ImportantPlaces.Region.ALADRA}) {
+            glide(() -> client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h ? h.devIslandCentre(region) : null, 12);
+            shot(8, "helperui-hover-" + region.id());
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                    realClickAt(h.devIslandCentre(region), left);
+                }
+            });
+            shot(14, "helperui-picked-" + region.id());
+        }
+        for (String page : new String[] {"display", "keys", "duels", "shulkers"}) {
+            step(2, () -> {
+                cursorAway();
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                    h.devPage(page);
+                }
+            });
+            shot(16, "helperui-" + page);
+        }
+        step(2, () -> {
+            client().options.guiScale().set(2);
+            client().resizeGui();
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                h.devPage("waypoints");
+            }
+        });
+        shot(16, "helperui-scale2");
+        step(2, () -> {
+            client().options.guiScale().set(4);
+            client().resizeGui();
+        });
+        shot(16, "helperui-scale4");
+        step(2, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                h.devPage("duels");
+            }
+        });
+        shot(16, "helperui-duels-scale4");
+        step(2, () -> {
+            client().options.guiScale().set(3);
+            client().resizeGui();
+        });
+        mark("helperui-end");
     }
 
     private void videoAssistant() {

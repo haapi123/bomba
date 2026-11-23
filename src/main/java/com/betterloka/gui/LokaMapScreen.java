@@ -240,6 +240,12 @@ public class LokaMapScreen extends Screen {
         this.parent = parent;
     }
 
+    /** The map, opened on {@code continent} rather than the one last looked at. */
+    public static LokaMapScreen on(Screen parent, Continent continent) {
+        lastContinent = continent;
+        return new LokaMapScreen(parent);
+    }
+
     private int contentWidth() {
         return Math.min(this.width - 20, MAX_CONTENT_WIDTH);
     }
