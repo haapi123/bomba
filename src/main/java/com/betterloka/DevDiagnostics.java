@@ -1007,6 +1007,18 @@ public final class DevDiagnostics {
             }
         });
         step(90, () -> { });
+        mark("finder-nameplates");
+        for (String label : new String[] {"K/D:", "ELO:", "Ping:"}) {
+            glide(() -> buttonCentre(label), 10);
+            step(4, () -> realClick(label, com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
+            step(14, () -> { });
+        }
+        step(40, () -> { });
+        step(1, () -> {
+            BetterLokaClient.config().setShowNameplateKd(false);
+            BetterLokaClient.config().setShowNameplateElo(false);
+            BetterLokaClient.config().setShowNameplatePing(false);
+        });
         mark("finder-end");
     }
 
@@ -1147,6 +1159,9 @@ public final class DevDiagnostics {
         step(50, () -> { });
         glide(() -> mapScreen().devPointAt(t -> t.owner() == null), 16);
         step(50, () -> { });
+        mark("map-vuln");
+        glide(() -> mapScreen().devPointAt(t -> t.alliance() != null && !t.neutral() && !t.seat()), 16);
+        step(80, () -> { });
         glide(() -> mapScreen().devZoomInButton(), 12);
         for (int i = 0; i < 3; i++) {
             step(10, () -> realClickAt(mapScreen().devZoomInButton(), left));
@@ -1287,7 +1302,12 @@ public final class DevDiagnostics {
         step(30, () -> { });
         mark("shrines-on");
         step(2, () -> server(nether + "1040 179 1192 60 14"));
-        step(60, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
+        // What the run brought home, picked up before the purge: counted ten seconds after it.
+        step(40, () -> {
+            server("give @a minecraft:ghast_tear 6");
+            server("give @a minecraft:gunpowder 21");
+        });
+        step(20, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
         step(60, () -> { });
         enter("Loka Grinder");
         step(10, () -> { });
@@ -1302,6 +1322,28 @@ public final class DevDiagnostics {
         glide(() -> buttonCentre(tr("betterloka.grind.tab.shulker")), 12);
         step(6, () -> realClick(tr("betterloka.grind.tab.shulker"), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT));
         step(60, () -> { });
+        mark("grinder-stats");
+        step(2, () -> {
+            cursorAway();
+            com.betterloka.grind.Shrine shrine = com.betterloka.grind.Shrines.at(1040, 1192);
+            if (shrine != null) {
+                client().gui.setScreen(new com.betterloka.gui.ShrineStatsScreen(
+                        new com.betterloka.gui.LokaGrinderScreen(null), shrine));
+            }
+        });
+        step(100, () -> { });
+        mark("grinder-hud");
+        step(2, () -> {
+            client().gui.setScreen(null);
+            BetterLokaClient.grindTimers().shulker().start();
+            BetterLokaClient.grindTimers().glowstone().start();
+            server(nether + "1075 181 1172 60 14");
+        });
+        step(110, () -> { });
+        step(1, () -> {
+            BetterLokaClient.grindTimers().shulker().stop();
+            BetterLokaClient.grindTimers().glowstone().stop();
+        });
         mark("grinder-end");
     }
 
@@ -1314,18 +1356,61 @@ public final class DevDiagnostics {
             server("time set 6000");
         });
         step(60, () -> { });
+        step(1, () -> {
+            for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
+                BetterLokaClient.config().setImportantRegionEnabled(region, false);
+            }
+            BetterLokaClient.config().setDuelAutoAccept(false);
+        });
         enter("Loka Helper");
+        step(4, () -> {
+            if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                h.devPage("waypoints");
+            }
+        });
         mark("helper");
-        step(40, () -> { });
-        for (String label : new String[] {"On screen", "See through lava", "Kalros", "Auto-join"}) {
-            glide(() -> buttonCentre(label), 12);
-            step(20, () -> { });
+        step(30, () -> { });
+        // The islands: one hovered, then picked and switched on.
+        for (var region : new com.betterloka.helper.ImportantPlaces.Region[] {
+                com.betterloka.helper.ImportantPlaces.Region.KALROS, com.betterloka.helper.ImportantPlaces.Region.ALADRA}) {
+            glide(() -> client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h ? h.devIslandCentre(region) : null, 14);
+            step(14, () -> { });
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                    realClickAt(h.devIslandCentre(region), com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+                }
+            });
+            step(30, () -> BetterLokaClient.config().setImportantRegionEnabled(region, true));
+            step(30, () -> { });
         }
-        glide(() -> new int[] {client().gui.screen().width / 2, client().gui.screen().height / 2}, 10);
-        for (int i = 0; i < 10; i++) {
-            step(4, () -> client().gui.screen().mouseScrolled(client().gui.screen().width / 2.0, client().gui.screen().height / 2.0, 0, -1));
+        mark("helper-pages");
+        for (String page : new String[] {"display", "keys", "duels"}) {
+            step(2, () -> {
+                cursorAway();
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                    h.devPage(page);
+                }
+            });
+            step(40, () -> { });
+            if (page.equals("display")) {
+                step(2, () -> {
+                    BetterLokaClient.config().setCoordsHudEnabled(true);
+                    BetterLokaClient.config().setClearLava(true);
+                });
+                step(30, () -> { });
+            } else if (page.equals("keys")) {
+                step(2, () -> {
+                    if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                        h.devBindTl(com.mojang.blaze3d.platform.InputConstants.KEY_K);
+                        h.devSet(true, true, true);
+                    }
+                });
+                step(30, () -> { });
+            } else {
+                step(2, () -> BetterLokaClient.config().setDuelAutoAccept(true));
+                step(40, () -> { });
+            }
         }
-        step(60, () -> { });
         mark("helper-coords");
         step(2, () -> {
             if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
@@ -2494,7 +2579,9 @@ public final class DevDiagnostics {
         });
         // The arena's scoreboard names the opponent, as Loka's does; "Match Ready!" itself does not.
         step(2, () -> {
-            BetterLokaClient.config().setDuelAutoAccept(false);
+            // Filmed, auto-join is on and says so in chat; there is no /join here to send.
+            BetterLokaClient.config().setDuelAutoAccept(FILMED);
+            com.betterloka.duel.DuelTracker.devDryJoin = FILMED;
             BetterLokaClient.config().setDuelScreen(true);
             server("scoreboard objectives add duel dummy \"Ranked Potion\"");
             server("scoreboard objectives setdisplay sidebar duel");
@@ -2506,6 +2593,10 @@ public final class DevDiagnostics {
         step(20, () -> {
             com.betterloka.duel.Duelists.DEV_PREVIOUS_NAMES.put("knucior", java.util.List.of(
                     "KnuciorPL", "xKnucior", "Knuc_", "PotGod2021", "Knucior_Old", "NotKnucior", "K_n_u_c"));
+            if (FILMED) {
+                // Shown as Loka shows it; the tracker hears it below, as it would from the server.
+                client().gui.hud.getChat().addClientSystemMessage(matchReady(null).copy().withStyle(net.minecraft.ChatFormatting.GOLD));
+            }
             com.betterloka.duel.DuelTracker.get().onMessage(matchReady(null));
             BetterLoka.LOGGER.info("DIAG duel after Match Ready, screen: {}", client().gui.screen());
         });

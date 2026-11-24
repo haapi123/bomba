@@ -738,11 +738,16 @@ public final class DuelTracker {
         return null;
     }
 
+    /** Development only: auto-join says it joins but sends nothing, for filming it on a server without /join. */
+    public static boolean devDryJoin;
+
     private void sendJoin(Minecraft client) {
         if (client.player == null || joinCommand == null) {
             return;
         }
-        client.player.connection.sendCommand(joinCommand);
+        if (!devDryJoin) {
+            client.player.connection.sendCommand(joinCommand);
+        }
         chat(client, Component.translatable("betterloka.duel.joining", "/" + joinCommand)
                 .withStyle(ChatFormatting.GRAY));
         BetterLoka.LOGGER.info("[betterloka] duel found, sent /{}", joinCommand);
