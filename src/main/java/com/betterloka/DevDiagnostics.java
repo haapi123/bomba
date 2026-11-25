@@ -117,11 +117,6 @@ public final class DevDiagnostics {
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
             return;
         }
-        if ("shulker".equals(System.getenv("BETTERLOKA_DIAG"))) {
-            shulkerInput();
-            ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
-            return;
-        }
         if ("duel".equals(System.getenv("BETTERLOKA_DIAG"))) {
             duelInput();
             ClientTickEvents.END_CLIENT_TICK.register(ignored -> tick());
@@ -1302,12 +1297,12 @@ public final class DevDiagnostics {
         step(30, () -> { });
         mark("shrines-on");
         step(2, () -> server(nether + "1040 179 1192 60 14"));
-        // What the run brought home, picked up before the purge: counted ten seconds after it.
+        // What the run brought home, picked up before Start is pressed: counted ten seconds after it.
         step(40, () -> {
             server("give @a minecraft:ghast_tear 6");
             server("give @a minecraft:gunpowder 21");
         });
-        step(20, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
+        step(20, () -> BetterLokaClient.shrines().start(com.betterloka.grind.Shrines.byId("ghast-1")));
         step(60, () -> { });
         enter("Loka Grinder");
         step(10, () -> { });
@@ -1360,7 +1355,6 @@ public final class DevDiagnostics {
             for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
                 BetterLokaClient.config().setImportantRegionEnabled(region, false);
             }
-            BetterLokaClient.config().setDuelAutoAccept(false);
         });
         enter("Loka Helper");
         step(4, () -> {
@@ -1384,7 +1378,7 @@ public final class DevDiagnostics {
             step(30, () -> { });
         }
         mark("helper-pages");
-        for (String page : new String[] {"display", "keys", "duels"}) {
+        for (String page : new String[] {"display", "duels"}) {
             step(2, () -> {
                 cursorAway();
                 if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
@@ -1393,47 +1387,22 @@ public final class DevDiagnostics {
             });
             step(40, () -> { });
             if (page.equals("display")) {
-                step(2, () -> {
-                    BetterLokaClient.config().setCoordsHudEnabled(true);
-                    BetterLokaClient.config().setClearLava(true);
-                });
-                step(30, () -> { });
-            } else if (page.equals("keys")) {
-                step(2, () -> {
-                    if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
-                        h.devBindTl(com.mojang.blaze3d.platform.InputConstants.KEY_K);
-                        h.devSet(true, true, true);
-                    }
-                });
+                step(2, () -> BetterLokaClient.config().setCoordsHudEnabled(true));
                 step(30, () -> { });
             } else {
-                step(2, () -> BetterLokaClient.config().setDuelAutoAccept(true));
                 step(40, () -> { });
             }
         }
         mark("helper-coords");
         step(2, () -> {
             if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
-                helper.devSet(true, true, false);
+                helper.devSet(true);
             }
             BetterLokaClient.config().setCoordsHudScale(200);
             cursorAway();
         });
         step(10, () -> client().gui.setScreen(null));
         step(80, () -> { });
-        // Into lava, with fire resistance, looking along the ground: clear, then as it really looks.
-        step(2, () -> {
-            server("gamemode survival @a");
-            server("effect give @a minecraft:fire_resistance 600 0 true");
-            server("execute at @a run fill ~-12 ~-1 ~-12 ~12 ~4 ~12 minecraft:lava");
-            server("execute at @a run fill ~-2 ~-2 ~6 ~2 ~6 ~8 minecraft:gold_block");
-            server("execute as @a at @s run tp @s ~ ~ ~ 180 10");
-        });
-        step(40, () -> { });
-        mark("helper-lava");
-        step(80, () -> BetterLokaClient.config().setClearLava(false));
-        step(70, () -> BetterLokaClient.config().setClearLava(true));
-        step(40, () -> { });
         mark("helper-important");
         step(2, () -> {
             server("execute at @a run fill ~-13 ~-2 ~-13 ~13 ~5 ~13 minecraft:air");
@@ -1450,24 +1419,8 @@ public final class DevDiagnostics {
             step(2, () -> server("tp @a -120 80 60 " + at + " 0"));
         }
         step(40, () -> { });
-        mark("helper-shulker");
-        step(2, () -> {
-            BetterLokaClient.config().setShulkerScanner(true);
-            server("clear @a");
-            String heal = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
-            String drink = "{id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
-            String weak = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:healing\"}}}";
-            String steak = "{id:\"minecraft:cooked_beef\",count:32}";
-            server("gamemode survival @a");
-            server("item replace entity @a container.9 with " + shulker("lime_shulker_box", heal, 20, null, 0));
-            server("item replace entity @a container.10 with " + shulker("shulker_box", heal, 16, null, 0));
-            server("item replace entity @a container.11 with " + shulker("shulker_box", heal, 15, null, 0));
-            server("item replace entity @a container.12 with " + shulker("blue_shulker_box", heal, 5, steak, 3));
-            server("item replace entity @a container.13 with minecraft:shulker_box");
-            server("item replace entity @a container.14 with " + shulker("purple_shulker_box", drink, 10, weak, 10));
-            server("item replace entity @a hotbar.0 with " + shulker("shulker_box", heal, 27, null, 0));
-            server("item replace entity @a hotbar.1 with minecraft:diamond_sword");
-        });
+        mark("helper-gui-scale");
+        step(2, () -> server("gamemode survival @a"));
         step(20, () -> {
             server("effect clear @a");
             BetterLokaClient.config().setGuiScaleEnabled(true);
@@ -1479,17 +1432,12 @@ public final class DevDiagnostics {
         });
         step(5, () -> client().gui.toastManager().clear());
         step(20, () -> { });
-        // Over a full box, a box with a few, and one with none.
-        for (int slot : new int[] {9, 11, 14}) {
-            glide(() -> slotCentre(slot), 12);
-            step(26, () -> { });
-        }
+        step(60, () -> { });
         step(2, () -> {
             client().gui.setScreen(null);
             BetterLokaClient.config().setGuiScaleEnabled(false);
             BetterLokaClient.config().setCoordsHudScale(100);
             BetterLokaClient.config().setCoordsHudEnabled(false);
-            BetterLokaClient.config().setClearLava(false);
             for (com.betterloka.helper.ImportantPlaces.Region region : com.betterloka.helper.ImportantPlaces.Region.values()) {
                 BetterLokaClient.config().setImportantRegionEnabled(region, false);
             }
@@ -1717,7 +1665,20 @@ public final class DevDiagnostics {
         }
         if (only.contains("helper")) {
             step(1, () -> client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(menu.get())));
+            step(2, () -> {
+                if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                    h.devPage("waypoints");
+                }
+            });
             shot(30, tag + "helper");
+            for (String page : new String[] {"display", "duels"}) {
+                step(2, () -> {
+                    if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen h) {
+                        h.devPage(page);
+                    }
+                });
+                shot(20, tag + "helper-" + page);
+            }
         }
         if (only.contains("calculator")) {
             step(1, () -> {
@@ -2113,28 +2074,20 @@ public final class DevDiagnostics {
         step(2, () -> server(nether + "1040 180 1192 60 8"));
         step(10, () -> shrineState("on Ghast Shrine 1's ground"));
         shot(2, "shrines-activated");
-        // The fight's drops, as the inventory sees them, then the server's purge line.
+        // The fight's drops, as the inventory sees them.
         step(2, () -> {
             server("give @a minecraft:ghast_tear 3");
             server("give @a minecraft:gunpowder 7");
             server("give @a minecraft:cobblestone 5");
         });
+        // The server's purge line on its own starts nothing: only the player's Start does.
         step(40, () -> server("tellraw @a {\"text\":\"Ghast Shrine was purged!\",\"color\":\"gold\"}"));
-        step(5, () -> shrineState("'Ghast Shrine was purged!' while on Ghast Shrine 1"));
-        shot(2, "shrines-purged");
+        step(5, () -> shrineState("'Ghast Shrine was purged!' on Ghast Shrine 1 -> still Ready, still activated"));
+        step(2, () -> BetterLokaClient.shrines().start(com.betterloka.grind.Shrines.byId("ghast-1")));
+        step(5, () -> shrineState("Start pressed for Ghast Shrine 1"));
+        shot(2, "shrines-started");
         step(2, () -> server("give @a minecraft:ghast_tear 1"));
-        step(260, () -> shrineState("13 s after the purge: the run should be counted"));
-        step(2, () -> server("tellraw @a \"Magma Cube Shrine 2 was purged!\""));
-        step(5, () -> shrineState("'Magma Cube Shrine 2 was purged!' while on Ghast Shrine 1"));
-        step(2, () -> server(nether + "760 150 1050 0 0"));
-        step(1300, () -> server("tellraw @a \"Infernal Altar was purged!\""));
-        step(5, () -> shrineState("'Infernal Altar' far from any shrine, a minute after leaving one"));
-        step(2, () -> server(nether + "352 175 1174 0 0"));
-        step(20, () -> server("tellraw @a \"Infernal Altar was purged!\""));
-        step(5, () -> shrineState("'Infernal Altar' on Blaze Shrine 3 -> learned"));
-        step(2, () -> server(nether + "760 150 1050 0 0"));
-        step(1300, () -> server("tellraw @a \"Infernal Altar was purged!\""));
-        step(5, () -> shrineState("'Infernal Altar' again, far away -> the learned shrine"));
+        step(260, () -> shrineState("13 s after Start: the run should be counted"));
         step(2, () -> server(nether + "1075 183 1172 60 8"));
         step(60, () -> BetterLokaClient.config().setShrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST, false));
         shot(5, "shrines-no-ghasts");
@@ -2148,7 +2101,7 @@ public final class DevDiagnostics {
         step(10, () -> BetterLoka.LOGGER.info("DIAG shrines statistics screen: {}",
                 client().gui.screen() == null ? "none" : client().gui.screen().getClass().getSimpleName()));
         shot(5, "shrines-stats");
-        step(2, () -> realClick("Back", left));
+        step(2, () -> client().gui.screen().onClose());
         // A one minute timer, started by hand on Ghast Shrine 2, and the notice in the overworld.
         step(5, () -> {
             BetterLokaClient.config().setShrineCooldownMinutes(1);
@@ -2228,7 +2181,7 @@ public final class DevDiagnostics {
         step(20, () -> BetterLoka.LOGGER.info("DIAG translator checks done"));
     }
 
-    // --- Loka Helper: coordinates, clear lava, the /tl key, and the warmed-up screens ---
+    // --- Loka Helper: coordinates, and the warmed-up screens ---
 
     private void helperInput() {
         int left = com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT;
@@ -2240,8 +2193,7 @@ public final class DevDiagnostics {
         shot(10, "helper-default");
         step(2, () -> {
             if (client().gui.screen() instanceof com.betterloka.gui.LokaHelperScreen helper) {
-                helper.devSet(true, true, true);
-                helper.devBindTl(com.mojang.blaze3d.platform.InputConstants.KEY_K);
+                helper.devSet(true);
             }
         });
         shot(5, "helper-on");
@@ -2269,28 +2221,7 @@ public final class DevDiagnostics {
         step(5, () -> BetterLoka.LOGGER.info("DIAG coords saved at {}, {}", BetterLokaClient.config().coordsHudX(),
                 BetterLokaClient.config().coordsHudY()));
         shot(5, "coords-moved");
-        // Into lava, with fire resistance, looking along the ground.
-        step(2, () -> {
-            server("gamemode survival @a");
-            server("effect give @a minecraft:fire_resistance 600 0 true");
-            server("execute at @a run fill ~-12 ~-1 ~-12 ~12 ~4 ~12 minecraft:lava");
-            server("execute at @a run fill ~-2 ~-2 ~6 ~2 ~6 ~8 minecraft:gold_block");
-            server("execute as @a at @s run tp @s ~ ~ ~ 180 10");
-        });
-        step(60, () -> BetterLoka.LOGGER.info("DIAG in lava: clearLava={}", BetterLokaClient.config().clearLava()));
-        shot(5, "lava-clear");
-        step(2, () -> BetterLokaClient.config().setClearLava(false));
-        shot(10, "lava-fog");
-        // The /tl key: K was bound above, and the option is on.
-        step(2, () -> net.minecraft.client.KeyMapping.click(com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD.getOrCreate(com.mojang.blaze3d.platform.InputConstants.KEY_K)));
-        step(20, () -> BetterLoka.LOGGER.info("DIAG pressed the /tl key"));
-        shot(5, "tl-sent");
-        step(2, () -> {
-            BetterLokaClient.config().setTlKeyEnabled(false);
-            BetterLokaClient.tlKey().setKey(com.mojang.blaze3d.platform.InputConstants.UNKNOWN);
-            net.minecraft.client.KeyMapping.resetMapping();
-            BetterLokaClient.config().setCoordsHudPosition(0, 0);
-        });
+        step(2, () -> BetterLokaClient.config().setCoordsHudPosition(0, 0));
         // The market and ranked ladders, warmed up behind the game: how long before they are ready.
         step(400, () -> {
             var market = BetterLokaClient.market();
@@ -2543,15 +2474,10 @@ public final class DevDiagnostics {
             client().options.guiScale().set(scale);
             client().resizeGui();
             client().gui.toastManager().clear();
-            BetterLokaClient.config().setDuelAutoAccept(false);
             BetterLokaClient.config().setDuelStats(true);
             client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
         });
         shot(10, "duel-helper");
-        step(2, () -> {
-            BetterLokaClient.config().setDuelAutoAccept(true);
-            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
-        });
         step(2, () -> client().gui.screen().mouseScrolled(10, 100, 0, -10));
         shot(3, "duel-helper-scrolled");
         step(2, () -> {
@@ -2579,9 +2505,6 @@ public final class DevDiagnostics {
         });
         // The arena's scoreboard names the opponent, as Loka's does; "Match Ready!" itself does not.
         step(2, () -> {
-            // Filmed, auto-join is on and says so in chat; there is no /join here to send.
-            BetterLokaClient.config().setDuelAutoAccept(FILMED);
-            com.betterloka.duel.DuelTracker.devDryJoin = FILMED;
             BetterLokaClient.config().setDuelScreen(true);
             server("scoreboard objectives add duel dummy \"Ranked Potion\"");
             server("scoreboard objectives setdisplay sidebar duel");
@@ -2817,74 +2740,6 @@ public final class DevDiagnostics {
      * 0.48: Loka Helper's continent switches, its places pinned on Loka Map, and the Brewer
      * Calculator both ways round. {@code BETTERLOKA_SCALE} sets the GUI scale (3 by default).
      */
-    /**
-     * Shulker Scanner: its switch and legend in Loka Helper, then six shulkers in the inventory — 20,
-     * 16 and 15 splash Instant Health II, 5 among other things, none at all, and only the wrong kinds
-     * (drinkable Heal II, splash Heal I) — tinted green, green, yellow, yellow, red, red.
-     */
-    private void shulkerInput() {
-        int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
-        step(2, () -> {
-            client().options.guiScale().set(scale);
-            client().resizeGui();
-            client().gui.toastManager().clear();
-            BetterLokaClient.config().setShulkerScanner(true);
-            client().gui.setScreen(new com.betterloka.gui.LokaHelperScreen(null));
-        });
-        step(4, () -> client().gui.screen().mouseScrolled(10, 100, 0, -20));
-        shot(6, "shulker-helper");
-        step(2, () -> {
-            client().gui.setScreen(null);
-            server("gamemode survival @a");
-            server("clear @a");
-            String heal = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
-            String drink = "{id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:strong_healing\"}}}";
-            String weak = "{id:\"minecraft:splash_potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:healing\"}}}";
-            String steak = "{id:\"minecraft:cooked_beef\",count:32}";
-            server("item replace entity @a container.9 with " + shulker("lime_shulker_box", heal, 20, null, 0));
-            server("item replace entity @a container.10 with " + shulker("shulker_box", heal, 16, null, 0));
-            server("item replace entity @a container.11 with " + shulker("shulker_box", heal, 15, null, 0));
-            server("item replace entity @a container.12 with " + shulker("blue_shulker_box", heal, 5, steak, 3));
-            server("item replace entity @a container.13 with minecraft:shulker_box");
-            server("item replace entity @a container.14 with " + shulker("purple_shulker_box", drink, 10, weak, 10));
-            server("item replace entity @a hotbar.0 with " + shulker("shulker_box", heal, 27, null, 0));
-            server("item replace entity @a hotbar.1 with minecraft:diamond_sword");
-        });
-        step(20, () -> client().gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(client().player)));
-        step(5, () -> {
-            var screen = client().gui.screen();
-            if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container) {
-                for (var slot : container.getMenu().slots) {
-                    var stack = slot.getItem();
-                    if (com.betterloka.helper.ShulkerScanner.isShulker(stack)) {
-                        int heals = com.betterloka.helper.ShulkerScanner.heals(stack);
-                        BetterLoka.LOGGER.info("DIAG shulker slot {}: {} heals -> {}", slot.index, heals,
-                                com.betterloka.helper.ShulkerScan.level(heals));
-                    }
-                }
-            }
-        });
-        shot(5, "shulker-inventory");
-        step(2, () -> {
-            BetterLokaClient.config().setShulkerScanner(false);
-        });
-        shot(5, "shulker-inventory-off");
-        step(2, () -> client().stop());
-    }
-
-    /** A shulker box item with {@code count} of {@code item} and {@code extraCount} of {@code extra}, a slot each. */
-    private static String shulker(String box, String item, int count, String extra, int extraCount) {
-        StringBuilder slots = new StringBuilder();
-        int slot = 0;
-        for (int i = 0; i < count; i++, slot++) {
-            slots.append(slots.isEmpty() ? "" : ",").append("{slot:").append(slot).append(",item:").append(item).append('}');
-        }
-        for (int i = 0; i < extraCount; i++, slot++) {
-            slots.append(",{slot:").append(slot).append(",item:").append(extra).append('}');
-        }
-        return "minecraft:" + box + "[minecraft:container=[" + slots + "]]";
-    }
-
     private void v48Input() {
         int scale = Integer.parseInt(System.getenv().getOrDefault("BETTERLOKA_SCALE", "3"));
         step(2, () -> {
@@ -3484,11 +3339,11 @@ public final class DevDiagnostics {
         var stats = shrines.timers().stats(ghast1);
         BetterLoka.LOGGER.info("DIAG shrines {}: activated={} ghast-1 runs={} totals={}", label,
                 shrines.activated() == null ? null : shrines.activated().label(), stats.runs(), stats.totals());
-        BetterLoka.LOGGER.info("DIAG shrines {}: nether={} at={} inside={} timers:{} learned={} shown(all={} ghast={} blaze={} magma={})",
+        BetterLoka.LOGGER.info("DIAG shrines {}: nether={} at={} inside={} timers:{} shown(all={} ghast={} blaze={} magma={})",
                 label, com.betterloka.grind.ShrineTracker.inNether(client()),
                 player == null ? "-" : String.format(java.util.Locale.ROOT, "%.0f,%.0f,%.0f",
                         player.getX(), player.getY(), player.getZ()),
-                shrines.inside() == null ? null : shrines.inside().label(), timers, shrines.timers().learned(),
+                shrines.inside() == null ? null : shrines.inside().label(), timers,
                 config.shrineWaypointsEnabled(),
                 config.shrineKindEnabled(com.betterloka.grind.ShrineKind.GHAST),
                 config.shrineKindEnabled(com.betterloka.grind.ShrineKind.BLAZE),

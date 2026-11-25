@@ -22,8 +22,8 @@ import java.util.Map;
  * What one shrine has given: every item gained over the runs counted, brewing ingredients first.
  *
  * <p>A run is counted from the inventory when the player walked onto the shrine's ground to the
- * inventory ten seconds after its purge, so the list is what the player actually came away with —
- * see {@link ShrineLoot}.
+ * inventory ten seconds after they pressed the shrine's Start, so the list is what the player
+ * actually came away with — see {@link ShrineLoot}.
  */
 public class ShrineStatsScreen extends Screen implements LokaStyled {
     private static final int MAX_CONTENT_WIDTH = 400;

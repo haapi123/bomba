@@ -16,7 +16,6 @@ import com.betterloka.grind.ShrineIcons;
 import com.betterloka.grind.ShrineTimers;
 import com.betterloka.grind.ShrineTracker;
 import com.betterloka.grind.ShrineWaypoints;
-import com.betterloka.grind.ShulkerWatcher;
 import com.betterloka.gui.BetterLokaMenuScreen;
 import com.betterloka.helper.GuiScaleController;
 import com.betterloka.map.Continent;
@@ -70,7 +69,6 @@ public class BetterLokaClient implements ClientModInitializer {
     private static KeyMapping shulkerTimerKey;
     private static KeyMapping glowstoneTimerKey;
     private static KeyMapping coordsPositionKey;
-    private static KeyMapping tlKey;
     private static HttpTransport transport;
     private static LokaApi loka;
     private static EldritchApi eldritch;
@@ -210,10 +208,9 @@ public class BetterLokaClient implements ClientModInitializer {
         new TownInfoReader(townActivity).register();
         grindTimers = new GrindTimers();
         grindTimers.glowstone().setDurationMillis(config.glowstoneMinutes() * 60_000L);
-        new ShulkerWatcher(grindTimers, config).register();
         new GrindHud(grindTimers, config).register();
-        // The Nether shrines: markers over each, the ground around each, and a twenty minute
-        // timer started by the server's own "was purged!" line.
+        // The Nether shrines: markers over each, the ground around each, and a timer per shrine
+        // that the player starts by hand.
         shrines = new ShrineTracker(new ShrineTimers(configDir().resolve("shrines.json"),
                 () -> config.shrineCooldownMinutes() * 60_000L), config);
         shrines.register();
@@ -245,11 +242,9 @@ public class BetterLokaClient implements ClientModInitializer {
         // its screen after, so the coordinates win. Rebindable from Options -> Controls.
         coordsPositionKey = KeyMappingHelper.registerKeyMapping(
                 new KeyMapping("key.betterloka.coords_position", InputConstants.KEY_P, KEY_CATEGORY));
-        // No key until the player picks one, and it does nothing until they also turn it on.
-        tlKey = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.betterloka.tl", InputConstants.UNKNOWN.getValue(), KEY_CATEGORY));
         new com.betterloka.helper.CoordsHud(config).register();
-        // Duels: /join when one is found (off until switched on), and the hit statistics afterwards.
+        // Duels: the VS screen when one is found, and the hit statistics afterwards. Nothing is sent
+        // to the server.
         com.betterloka.duel.DuelTracker duels = new com.betterloka.duel.DuelTracker(config, BetterLokaClient::duelists,
                 BetterLokaClient::duelLog, BetterLokaClient::lokaApi);
         duels.register();
@@ -276,19 +271,12 @@ public class BetterLokaClient implements ClientModInitializer {
                     client.gui.setScreen(new com.betterloka.gui.CoordsHudPositionScreen(null));
                 }
             }
-            while (tlKey.consumeClick()) {
-                // One press, one /tl, sent as if typed — and only with the option on and the game in
-                // view, never from a menu.
-                if (config.tlKeyEnabled() && client.gui.screen() == null && client.player != null) {
-                    client.player.connection.sendCommand("tl");
-                }
-            }
         });
 
         if ("1".equals(System.getenv("BETTERLOKA_SHOTS"))) {
             DevShots.register();
         }
-        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43", "v46", "v48", "logo", "duel", "zoomspam", "shulker", "video").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
+        if (java.util.Set.of("1", "map", "waypoints", "shrines", "translator", "market", "fights", "helper", "finder", "v41", "v42", "v43", "v46", "v48", "logo", "duel", "zoomspam", "video").contains(String.valueOf(System.getenv("BETTERLOKA_DIAG")))) {
             DevDiagnostics.register();
         }
 
@@ -429,16 +417,6 @@ public class BetterLokaClient implements ClientModInitializer {
     /** The key that opens the coordinates' position screen. */
     public static KeyMapping coordsPositionKey() {
         return coordsPositionKey;
-    }
-
-    /** The key that sends /tl. */
-    public static KeyMapping tlKey() {
-        return tlKey;
-    }
-
-    /** Whether lava should be seen through; read from the fog code on the render thread. */
-    public static boolean isClearLavaEnabled() {
-        return config != null && config.clearLava();
     }
 
     public static KeyMapping shulkerTimerKey() {

@@ -85,8 +85,8 @@ public final class ShrineWaypoints {
         int width = context.guiWidth();
         int height = context.guiHeight();
 
-        // While a shrine is activated it is the only one that matters: the rest step aside until it
-        // is purged or left, and come back by themselves.
+        // While a shrine is activated it is the only one that matters: the rest step aside until its
+        // timer is started or the player leaves, and come back then.
         Shrine activated = tracker.activated();
         List<Marker> markers = new ArrayList<>();
         for (Shrine shrine : Shrines.ALL) {

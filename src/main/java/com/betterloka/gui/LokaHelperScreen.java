@@ -7,7 +7,6 @@ import com.betterloka.helper.GuiScaleController;
 import com.betterloka.helper.ImportantPlaces;
 import com.betterloka.helper.ImportantWaypointsHud;
 import com.betterloka.helper.PlaceIcons;
-import com.betterloka.helper.ShulkerScan;
 import com.betterloka.map.Continent;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.cursor.CursorTypes;
@@ -39,12 +38,13 @@ import java.util.Map;
  *   <li><b>Waypoints</b> — Loka's continents as islands on a sea, drawn from Loka's own map. Pick one
  *       to see what it marks (its docks, resource island, boss; everything at spawn on Aladra) and to
  *       switch its markers on or off. Every continent starts off.</li>
- *   <li><b>HUD &amp; view</b> — coordinates on screen, see-through lava, and a separate GUI scale for
- *       containers.</li>
- *   <li><b>Shortcuts</b> — {@code /tl} on a key, and the key that moves the coordinates.</li>
- *   <li><b>Duels</b> — joining by itself, the screens before and after, the shared statistics.</li>
- *   <li><b>Shulkers</b> — the Shulker Scanner, with what its colours mean.</li>
+ *   <li><b>HUD &amp; view</b> — coordinates on screen, the key that moves them, and a separate GUI
+ *       scale for containers.</li>
+ *   <li><b>Duels</b> — the screens before and after a duel, and the shared statistics.</li>
  * </ul>
+ *
+ * <p>Nothing here sends anything to the server or changes what the world looks like: no key sends a
+ * command, and the game's own fog and inventory are drawn as they are.
  *
  * <p>Everything is drawn here, not built from the game's buttons: hover, clicks and the cursor are
  * worked out against what was drawn in the frame, which is what lets the islands be pictures and the
@@ -67,9 +67,7 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
     private enum Page {
         WAYPOINTS("waypoints", Items.FILLED_MAP),
         DISPLAY("display", Items.SPYGLASS),
-        KEYS("keys", Items.TRIPWIRE_HOOK),
-        DUELS("duels", Items.DIAMOND_SWORD),
-        SHULKERS("shulkers", Items.SHULKER_BOX);
+        DUELS("duels", Items.DIAMOND_SWORD);
 
         final String id;
         final ItemStack icon;
@@ -105,9 +103,6 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
             new Island(ImportantPlaces.Region.BALAK, "balak", 360, 319, 0.81f, 0.63f, 0.28f),
             new Island(ImportantPlaces.Region.GARAMA, "garama", 360, 325, 0.52f, 0.82f, 0.31f));
 
-    /** Which key is being chosen, if any. */
-    private enum Listening { TL, COORDS }
-
     private record Hit(int x, int y, int w, int h, Runnable action) {
         boolean contains(double mx, double my) {
             return mx >= x && mx < x + w && my >= y && my < y + h;
@@ -120,7 +115,8 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
     private final Screen parent;
     private Page page = lastPage;
     private ImportantPlaces.Region selected;
-    private Listening listening;
+    /** Waiting for the key that opens the coordinates' position screen. */
+    private boolean listening;
 
     // The window, worked out in init.
     private int wx, wy, ww, wh, navWidth;
@@ -278,7 +274,7 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
         if (page != target) {
             page = target;
             lastPage = target;
-            listening = null;
+            listening = false;
         }
     }
 
@@ -550,9 +546,7 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
         int top = y - scroll;
         int end = switch (page) {
             case DISPLAY -> drawDisplay(context, x, top, cardW);
-            case KEYS -> drawKeys(context, x, top, cardW);
             case DUELS -> drawDuels(context, x, top, cardW);
-            case SHULKERS -> drawShulkers(context, x, top, cardW);
             default -> top;
         };
         context.disableScissor();
@@ -577,9 +571,10 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
                 () -> this.minecraft.gui.setScreen(new CoordsHudPositionScreen(this)));
         y += h + GAP;
 
-        h = card(context, x, y, w, new ItemStack(Items.LAVA_BUCKET), Component.translatable("betterloka.helper.lava"),
-                Component.translatable("betterloka.helper.lava_desc"), null, SWITCH_W, false);
-        toggleRight(context, x, y, w, h, "lava", config().clearLava(), () -> config().setClearLava(!config().clearLava()));
+        int keyW = listening ? 82 : 64;
+        h = card(context, x, y, w, new ItemStack(Items.TRIPWIRE_HOOK), Component.translatable("betterloka.helper.coords_key_card"),
+                Component.translatable("betterloka.helper.coords_key_desc"), null, keyW, false);
+        keyBox(context, x + w - 8 - keyW, y + (h - CONTROL_H) / 2, keyW, BetterLokaClient.coordsPositionKey());
         y += h + GAP;
 
         boolean scaled = config().guiScaleEnabled();
@@ -606,29 +601,9 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
         return y + h;
     }
 
-    private int drawKeys(GuiGraphicsExtractor context, int x, int y, int w) {
-        y += pageHeader(context, x, y, w, Component.translatable("betterloka.helper.nav.keys"),
-                Component.translatable("betterloka.helper.page.keys"));
-        int keyW = listening != null ? 82 : 64;
-        int h = card(context, x, y, w, new ItemStack(Items.ENDER_PEARL), Component.translatable("betterloka.helper.tl"),
-                Component.translatable("betterloka.helper.tl_desc"), null, SWITCH_W + 6 + keyW, false);
-        toggleRight(context, x, y, w, h, "tl", config().tlKeyEnabled(), () -> config().setTlKeyEnabled(!config().tlKeyEnabled()));
-        keyBox(context, x + w - 8 - SWITCH_W - 6 - keyW, y + (h - CONTROL_H) / 2, keyW, BetterLokaClient.tlKey(),
-                Listening.TL);
-        y += h + GAP;
-
-        h = card(context, x, y, w, new ItemStack(Items.COMPASS), Component.translatable("betterloka.helper.coords_key_card"),
-                Component.translatable("betterloka.helper.coords_key_desc"), null, keyW, false);
-        keyBox(context, x + w - 8 - keyW, y + (h - CONTROL_H) / 2, keyW, BetterLokaClient.coordsPositionKey(),
-                Listening.COORDS);
-        return y + h;
-    }
-
     private int drawDuels(GuiGraphicsExtractor context, int x, int y, int w) {
         y += pageHeader(context, x, y, w, Component.translatable("betterloka.helper.nav.duels"),
                 Component.translatable("betterloka.helper.page.duels"));
-        y = duelCard(context, x, y, w, Items.BELL, "duel_accept", config().duelAutoAccept(),
-                () -> config().setDuelAutoAccept(!config().duelAutoAccept()));
         y = duelCard(context, x, y, w, Items.PLAYER_HEAD, "duel_screen", config().duelScreen(),
                 () -> config().setDuelScreen(!config().duelScreen()));
         y = duelCard(context, x, y, w, Items.WRITABLE_BOOK, "duel_stats", config().duelStats(),
@@ -645,51 +620,6 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
                 Component.translatable("betterloka.helper." + key + "_tip"), SWITCH_W, false);
         toggleRight(context, x, y, w, h, key, on, flip);
         return y + h + GAP;
-    }
-
-    private int drawShulkers(GuiGraphicsExtractor context, int x, int y, int w) {
-        y += pageHeader(context, x, y, w, Component.translatable("betterloka.helper.nav.shulkers"),
-                Component.translatable("betterloka.helper.page.shulkers"));
-        boolean on = config().shulkerScanner();
-        int h = card(context, x, y, w, new ItemStack(Items.SHULKER_BOX), Component.translatable("betterloka.helper.shulker_card"),
-                Component.translatable("betterloka.helper.shulker_desc"), Component.translatable("betterloka.helper.shulker_tip"),
-                SWITCH_W, false);
-        toggleRight(context, x, y, w, h, "shulker", on, () -> config().setShulkerScanner(!config().shulkerScanner()));
-        y += h + GAP;
-
-        // What the colours mean: three slots as the scanner tints them, with a box in each.
-        int legendH = 54;
-        HelperUi.framed(context, x, y, w, legendH, 4, HelperUi.CARD, HelperUi.CARD_EDGE);
-        context.text(this.font, Component.translatable("betterloka.helper.shulker_legend"), x + 10, y + 7, HelperUi.TEXT);
-        String[] keys = {"betterloka.helper.shulker_full", "betterloka.helper.shulker_low", "betterloka.helper.shulker_none"};
-        ShulkerScan.Level[] levels = ShulkerScan.Level.values();
-        int cell = Math.max(60, (w - 20) / 3);
-        ItemStack box = new ItemStack(Items.SHULKER_BOX);
-        for (int i = 0; i < keys.length; i++) {
-            int sx = x + 10 + i * cell;
-            int sy = y + 22;
-            slot(context, sx, sy, levels[i].rgb(), on);
-            context.item(box, sx + 1, sy + 1);
-            String text = this.font.plainSubstrByWidth(Component.translatable(keys[i]).getString(), cell - 26);
-            context.text(this.font, text, sx + 23, sy + 5, on ? HelperUi.TEXT : HelperUi.MUTED);
-        }
-        return y + legendH;
-    }
-
-    /** An inventory slot, tinted the way the Shulker Scanner tints it (or plain while it is off). */
-    private static void slot(GuiGraphicsExtractor context, int x, int y, int rgb, boolean tinted) {
-        context.fill(x, y, x + 18, y + 18, 0xFF8B8B8B);
-        context.fill(x, y, x + 17, y + 1, 0xFF373737);
-        context.fill(x, y, x + 1, y + 17, 0xFF373737);
-        context.fill(x + 1, y + 17, x + 18, y + 18, 0xFFFFFFFF);
-        context.fill(x + 17, y + 1, x + 18, y + 18, 0xFFFFFFFF);
-        if (tinted) {
-            context.fill(x + 1, y + 1, x + 17, y + 17, 0x70000000 | rgb);
-            context.fill(x + 1, y + 1, x + 17, y + 2, 0xFF000000 | rgb);
-            context.fill(x + 1, y + 16, x + 17, y + 17, 0xFF000000 | rgb);
-            context.fill(x + 1, y + 2, x + 2, y + 16, 0xFF000000 | rgb);
-            context.fill(x + 16, y + 2, x + 17, y + 16, 0xFF000000 | rgb);
-        }
     }
 
     /** A page's title and what it is for. */
@@ -796,8 +726,8 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
     }
 
     /** A key's name in a box; a click waits for the next key pressed, Esc clears it. */
-    private void keyBox(GuiGraphicsExtractor context, int x, int y, int w, KeyMapping key, Listening which) {
-        boolean waiting = listening == which;
+    private void keyBox(GuiGraphicsExtractor context, int x, int y, int w, KeyMapping key) {
+        boolean waiting = listening;
         boolean hover = hovered(x, y, w, CONTROL_H);
         float pulse = waiting ? 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 160.0) : 0;
         int edge = waiting ? HelperUi.mix(0xFF8A6A20, HelperUi.GOLD, pulse) : hover ? 0xFF40527A : 0xFF2C3A56;
@@ -808,14 +738,14 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
             text = Component.translatable("betterloka.helper.key_press").getString();
             color = HelperUi.GOLD_LIGHT;
         } else if (key == null || key.isUnbound()) {
-            text = Component.translatable("betterloka.helper.tl_unbound").getString();
+            text = Component.translatable("betterloka.helper.key_unbound").getString();
             color = HelperUi.FAINT;
         } else {
             text = key.getTranslatedKeyMessage().getString();
             color = 0xFF7FD8FF;
         }
         context.centeredText(this.font, this.font.plainSubstrByWidth(text, w - 6), x + w / 2, y + 4, color);
-        hit(x, y, w, CONTROL_H, () -> listening = waiting ? null : which);
+        hit(x, y, w, CONTROL_H, () -> listening = !waiting);
     }
 
     private void scrollbar(GuiGraphicsExtractor context, int x, int y, int view, int scroll, int total) {
@@ -895,17 +825,17 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
             for (int i = hits.size() - 1; i >= 0; i--) {
                 Hit hit = hits.get(i);
                 if (hit.contains(click.x(), click.y())) {
-                    Listening before = listening;
+                    boolean before = listening;
                     hit.action().run();
-                    // A click anywhere but a key box gives up waiting for a key.
-                    if (before != null && listening == before) {
-                        listening = null;
+                    // A click anywhere but the key box gives up waiting for a key.
+                    if (before && listening) {
+                        listening = false;
                     }
                     this.minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
                     return true;
                 }
             }
-            listening = null;
+            listening = false;
         }
         return super.mouseClicked(click, doubled);
     }
@@ -928,11 +858,11 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
 
     @Override
     public boolean keyPressed(KeyEvent input) {
-        if (listening != null) {
-            KeyMapping key = listening == Listening.TL ? BetterLokaClient.tlKey() : BetterLokaClient.coordsPositionKey();
-            listening = null;
+        if (listening) {
+            KeyMapping key = BetterLokaClient.coordsPositionKey();
+            listening = false;
             if (key != null) {
-                // Escape clears it: no key is how /tl starts, and how it can always be put back.
+                // Escape clears it; the screen can still be opened from its button.
                 key.setKey(input.key() == InputConstants.KEY_ESCAPE ? InputConstants.UNKNOWN : InputConstants.getKey(input));
                 KeyMapping.resetMapping();
                 this.minecraft.options.save();
@@ -951,26 +881,18 @@ public class LokaHelperScreen extends Screen implements LokaStyled {
 
     @Override
     public void onClose() {
-        listening = null;
+        listening = false;
         this.minecraft.gui.setScreen(parent);
     }
 
     // --- for the dev harness ---
 
-    /** Turns the options the harness is checking on or off, as their switches would. */
-    public void devSet(boolean coords, boolean lava, boolean tl) {
+    /** Turns the coordinates on or off, as their switch would. */
+    public void devSet(boolean coords) {
         config().setCoordsHudEnabled(coords);
-        config().setClearLava(lava);
-        config().setTlKeyEnabled(tl);
     }
 
-    /** Presses the /tl key box, then a key, as a player binding /tl would. */
-    public void devBindTl(int keyCode) {
-        listening = Listening.TL;
-        keyPressed(new KeyEvent(keyCode, 0, 0));
-    }
-
-    /** Opens a section by its id: waypoints, display, keys, duels, shulkers. */
+    /** Opens a section by its id: waypoints, display, duels. */
     public void devPage(String id) {
         for (Page p : Page.values()) {
             if (p.id.equals(id)) {

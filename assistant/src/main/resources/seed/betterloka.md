@@ -1,16 +1,16 @@
 # BetterLoka and places worth knowing
 
-BetterLoka is a free client-side Fabric mod for Loka made by players (not by Loka's staff). Open its menu in the game to reach its modules. It sends nothing to Loka's server on its own.
+BetterLoka is a free client-side Fabric mod for Loka made by players (not by Loka's staff). Open its menu in the game to reach its modules. It sends nothing to Loka's server: it runs no commands and plays nothing for you.
 
 ## BetterLoka modules
 - Player Finder: a player's stats (kills, deaths, K/D, conquest record, Conquest Elo from loka-elo.pages.dev, town, rank) on a stand with their 3D skin. Switches there show K/D, Elo or ping next to players' names.
 - Loka Map: the territories map with live fights; "Town info" opens a town's page (level, members, war window, territories).
 - Loka Market: every market offer, searchable by category, with each item's price history.
-- Loka Helper: coordinates on screen (off by default), Important Waypoints per continent, clear lava view, a key for /tl.
-- Loka Grinder: shrine timers and loot statistics in the Nether.
+- Loka Helper: coordinates on screen (off by default), Important Waypoints per continent, a separate GUI scale for inventories, and the duel screens (a VS screen before a duel, its statistics after). You join a duel yourself, with Loka's own button.
+- Loka Grinder: shulker, glowstone and shrine timers, which you start yourself (nothing starts them for you), and loot statistics for each Nether shrine.
 - Translator: translates chat.
 - Town Logger: notes when towns change.
-- Lore Creator: writes item lore in MiniMessage for Loka's lore editor, with a live preview.
+- Loka Calculator: conquest strength for a fight or several in a row, and the Brewer Calculator for potions.
 - Loka Assistant: this assistant.
 
 ## Important places (x y z)

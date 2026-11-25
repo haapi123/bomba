@@ -22,16 +22,6 @@ class DuelTest {
         assertFalse(DuelMessages.isMatchReady(null));
     }
 
-    @Test
-    void theButtonsOwnJoinIsUsedButNothingElseIs() {
-        assertEquals("join", DuelMessages.joinCommand(null));
-        assertEquals("join", DuelMessages.joinCommand("/join"));
-        assertEquals("join 7f3a", DuelMessages.joinCommand("/join 7f3a"));
-        assertEquals("join", DuelMessages.joinCommand("/pay Steve 1000000"), "a button that does anything else");
-        assertEquals("join", DuelMessages.joinCommand("/joinTown Evil"));
-        assertEquals("join", DuelMessages.joinCommand("/join x\nsay hi"));
-    }
-
     /** Ten swings, six hits of which two crits and one sweep; them eight swings, three hits, one crit. */
     private static DuelStats fight() {
         DuelStats duel = new DuelStats(ME, 0);

@@ -69,90 +69,15 @@ class ShrinesTest {
         assertEquals(2, pairs, "one overlapping pair, counted from each side");
     }
 
-    // --- reading the purge message ---
-
-    @Test
-    void theNameComesOutOfThePurgeLine() {
-        assertEquals("Ghast Shrine 1", Shrines.purgedName("Ghast Shrine 1 was purged!"));
-        assertEquals("Infernal Altar", Shrines.purgedName("§6Infernal Altar §ewas purged!"));
-        assertEquals("Blaze Shrine", Shrines.purgedName("[Loka] Blaze Shrine was purged!"));
-        assertEquals("Magma Shrine 3", Shrines.purgedName("Shrines » Magma Shrine 3 was purged! Back in 15m"));
-        assertEquals("The Ghast Spire", Shrines.purgedName("  The Ghast Spire has been purged  "));
-    }
-
-    @Test
-    void otherLinesAreNotPurges() {
-        assertNull(Shrines.purgedName("haapi: who purged the ghast shrine?"));
-        assertNull(Shrines.purgedName("was purged!"));
-        assertNull(Shrines.purgedName("Welcome to Loka"));
-        assertNull(Shrines.purgedName(null));
-    }
-
-    @Test
-    void aNameThatSaysTheMobAndNumberIsThatShrineWhereverThePlayerIs() {
-        assertEquals(shrine("ghast-2"), Shrines.resolve("Ghast Shrine 2", null, Map.of()));
-        assertEquals(shrine("magma_cube-3"), Shrines.resolve("Magma Cube Shrine #3", shrine("ghast-1"), Map.of()),
-                "what the line says beats where the player stands");
-        assertEquals(shrine("blaze-4"), Shrines.resolve("Blaze Shrine IV", null, Map.of()));
-        assertTrue(Shrines.explicit("Ghast Shrine 2"));
-        assertFalse(Shrines.explicit("Infernal Altar"));
-    }
-
-    @Test
-    void aNameThatDoesNotSayIsTheShrineThePlayerIsAt() {
-        assertEquals(shrine("blaze-1"), Shrines.resolve("Infernal Altar", shrine("blaze-1"), Map.of()));
-        assertEquals(shrine("blaze-1"), Shrines.resolve("Blaze Shrine", shrine("blaze-1"), Map.of()));
-        assertNull(Shrines.resolve("Ghast Shrine", shrine("blaze-1"), Map.of()),
-                "a Ghast shrine purged elsewhere is not the Blaze shrine the player stands at");
-        assertNull(Shrines.resolve("Infernal Altar", null, Map.of()), "with no clue, nothing is guessed");
-    }
-
-    @Test
-    void aNameLearnedAtAShrineIsKnownFromAnywhereAfterwards() {
-        Map<String, String> learned = Map.of(Shrines.key("Infernal Altar"), "magma_cube-2");
-        assertEquals(shrine("magma_cube-2"), Shrines.resolve("§cInfernal  altar", null, learned));
-    }
-
-    @Test
-    void standingAtAShrineBeatsALearnedName() {
-        // So a name the server uses for more than one shrine gets the chance to show it.
-        Map<String, String> learned = Map.of(Shrines.key("Infernal Altar"), "magma_cube-2");
-        assertEquals(shrine("ghast-1"), Shrines.resolve("Infernal Altar", shrine("ghast-1"), learned));
-    }
-
-    @Test
-    void onlyANameOfItsOwnIsLearned() {
-        assertTrue(Shrines.learnable("Infernal Altar"));
-        assertFalse(Shrines.learnable("Ghast Shrine"), "every Ghast shrine is probably called that");
-        assertFalse(Shrines.learnable("Ghast Shrine 2"), "says which it is already");
-        assertFalse(Shrines.learnable("Shrine 2"));
-        assertFalse(Shrines.learnable("§c"));
-    }
-
-    @Test
-    void aNameHeardAtTwoShrinesStopsBeingTrusted(@TempDir Path dir) {
-        ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
-        timers.learn("Shrine", shrine("blaze-1"));
-        assertEquals(shrine("blaze-1"), Shrines.resolve("Shrine", null, timers.learned()));
-        timers.learn("Shrine", shrine("blaze-1"));
-        assertEquals(shrine("blaze-1"), Shrines.resolve("Shrine", null, timers.learned()), "the same shrine again is fine");
-        timers.learn("Shrine", shrine("ghast-3"));
-        assertNull(Shrines.resolve("Shrine", null, timers.learned()), "a name for several shrines points at none");
-        timers.learn("Shrine", shrine("blaze-1"));
-        assertNull(Shrines.resolve("Shrine", null, timers.learned()), "and stays that way");
-        assertEquals(shrine("ghast-3"), Shrines.resolve("Shrine", shrine("ghast-3"), timers.learned()),
-                "while standing at a shrine still works");
-    }
-
     // --- the timers ---
 
     @Test
-    void aPurgeStartsTwentyMinutesThatSurviveARestart(@TempDir Path dir) {
+    void startingATimerCountsTwentyMinutesThatSurviveARestart(@TempDir Path dir) {
         Shrine ghast1 = shrine("ghast-1");
         ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
         assertEquals(ShrineTimers.State.UNKNOWN, timers.state(ghast1, 0));
 
-        timers.purged(ghast1, 1_000_000);
+        timers.start(ghast1, 1_000_000);
         assertEquals(ShrineTimers.State.COOLDOWN, timers.state(ghast1, 1_000_000));
         assertEquals(20 * 60 * 1000L, timers.remaining(ghast1, 1_000_000));
 
@@ -165,14 +90,22 @@ class ShrinesTest {
     }
 
     @Test
-    void clearingAndLearningAreKept(@TempDir Path dir) {
+    void clearingIsKept(@TempDir Path dir) {
         ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
-        timers.purged(shrine("blaze-3"), 0);
+        timers.start(shrine("blaze-3"), 0);
         timers.clear(shrine("blaze-3"));
-        timers.learn("Infernal Altar", shrine("magma_cube-1"));
         ShrineTimers reloaded = new ShrineTimers(dir.resolve("shrines.json"));
         assertEquals(ShrineTimers.State.UNKNOWN, reloaded.state(shrine("blaze-3"), 0));
-        assertEquals("magma_cube-1", reloaded.learned().get(Shrines.key("Infernal Altar")));
+    }
+
+    /** A file written before 0.65, with the names the purge line used to teach, still loads. */
+    @Test
+    void anOlderFileWithLearnedNamesStillLoads(@TempDir Path dir) throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("shrines.json"),
+                "{\"fetchedAt\":1000,\"value\":{\"purgedAt\":{\"ghast-1\":1000},"
+                        + "\"learned\":{\"infernal altar\":\"magma_cube-1\"},\"stats\":{}}}");
+        ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"));
+        assertEquals(1000 + Shrines.COOLDOWN_MILLIS, timers.endsAt(shrine("ghast-1")));
     }
 
     @Test
@@ -180,7 +113,7 @@ class ShrinesTest {
         long[] minutes = {15};
         ShrineTimers timers = new ShrineTimers(dir.resolve("shrines.json"), () -> minutes[0] * 60_000L);
         Shrine blaze1 = shrine("blaze-1");
-        timers.purged(blaze1, 0);
+        timers.start(blaze1, 0);
         assertEquals(15 * 60_000L, timers.remaining(blaze1, 0));
         minutes[0] = 20;
         assertEquals(20 * 60_000L, timers.remaining(blaze1, 0), "set to twenty, the running timer follows");

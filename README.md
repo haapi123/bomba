@@ -322,12 +322,17 @@ Countdowns for the things worth grinding. The timers live outside the screen, so
 with the menu shut — a twenty-minute countdown that only advanced while you watched it would be no
 use at all.
 
-- **Shulker Timer** — 20 minutes, started by the box in the corner of the card. With **auto-start**
-  on it also starts by itself when a shulker you hit dies — the first one, that is: killing more
-  while the countdown runs does not restart it, since the twenty minutes are counting down to the
-  next spawn and another kill does not move that moment. Once it reaches zero the next kill begins
-  a fresh cycle.
+- **Shulker Timer** — 20 minutes, started by the box in the corner of the card or by its key.
 - **Glowstone** — 3 hours, adjustable in five-minute steps with the `-` and `+` buttons.
+- **Shrines Grinder** — the Nether shrines, with their coordinates and how far each is. Their
+  waypoints show only in the Nether, with a switch for all of them and one per mob. Each shrine has
+  a 20-minute timer (adjustable) that you start with its **Start** button when you have cleared it,
+  and, if you want, a reminder in your own chat when it runs out. **Statistics** keeps what each
+  shrine has given you: the inventory when you walked onto its ground, against the inventory ten
+  seconds after you pressed Start.
+
+**Every timer is started by hand.** Nothing starts one for you: BetterLoka does not watch kills or
+read the server's purge messages to start a timer.
 
 Both have a **keybind** (`G` and `H` by default, rebindable in Options → Controls) that starts the
 timer without opening anything, which is the point of it while you are grinding. Pressing it again
@@ -341,11 +346,6 @@ is still running — and pressing it on a timer that has already run out clears 
 A running timer counts down in the **top right of the screen**: shulkers in purple, glowstone in
 gold. It draws nothing until a timer is started, disappears when the timer is cleared, and each one
 can be switched off from its own tab in the Loka Grinder screen.
-
-Auto-start is deliberately narrow. The client is never told who landed a killing blow, so it works
-from what it can see — which shulkers you swung at, and which of those then died. A shulker somebody
-else finishes off after you also hit it will start the timer, and one killed with a bow will not
-start it at all. The box stays the reliable way; auto-start only saves a click in the ordinary case.
 
 ## Loka Map
 
@@ -680,7 +680,7 @@ Several things are done deliberately in the HTTP layer, all measured against the
 ![Loka Helper](docs/helper.png)
 
 Loka Helper is a window of its own, in BetterLoka's navy and gold: its sections down the left —
-**Waypoints**, **HUD & View**, **Shortcuts**, **Duels** and **Shulkers** — and on each one every
+**Waypoints**, **HUD & View** and **Duels** — and on each one every
 setting on a card that says what it does, with a switch that slides, arrows for a number and a box
 for a key. Cards with more to say have a **?** beside their name. On a small screen the sidebar
 shrinks to its icons and the cards scroll with the mouse wheel; **↑** and **↓** move between the
@@ -695,13 +695,8 @@ sections, and the window remembers the one you left it on.
   box is dragged wherever it should go — it snaps to the edges and the middle — or nudged with the
   arrow keys; the buttons there switch it on or off and make it **smaller or bigger** (50–150 %, also
   with the mouse wheel over the box or the minus and plus keys). P is rebindable under Options →
-  Controls → BetterLoka or on Loka Helper's **Shortcuts**; vanilla's Social Interactions is on P as
-  well, and this takes precedence.
-- **Clear lava** — in lava you see what a spectator sees instead of an arm's length of orange fog.
-  Off until you turn it on.
-- **/tl on a key** — press the key and `/tl` is sent, once per press and only with no menu open. Off,
-  and with no key, until you set both: on **Shortcuts**, click the key box and press the key; Esc
-  clears it.
+  Controls → BetterLoka or on **HUD & View** (click the key box, then press the key); vanilla's
+  Social Interactions is on P as well, and this takes precedence.
 - **Important Waypoints** — a marker with a picture over each place that matters, on the continent
   you are standing on and only there: each continent's **docks**, **resource island** and **boss**
   (Kalros' Witch Hunter, Balak's Warden, Garama's Golem), and at spawn, Aladra, the **Town Portal, Loka Market, End
@@ -717,11 +712,8 @@ sections, and the window remembers the one you left it on.
   wheel, a Nether portal, crossed swords, a compass — and the name shows on the marker nearest the
   crosshair. The same places are pinned on **Loka Map**.
 
-- **Duels** — four switches.
-  - **Auto-join** (off until you turn it on): when Loka says `Match Ready! [Click to join]`, `/join`
-    is sent for you, a quarter of a second later, with a line in chat saying so. Only Loka's own line
-    counts — the same words typed by a player arrive as `Name: Match Ready!…` and do nothing — and
-    the command is `/join` whatever the line's button says, once per three seconds at most.
+- **Duels** — three switches. Joining a duel is always your own click on Loka's
+  `Match Ready! [Click to join]`: the mod never sends `/join`.
   - **VS screen** (on): at the arena, while you wait for the fight, a screen with you on the left
     and your opponent on the right, each on a stand with their skin turning. Under each player: their
     usual ping over the duels the mod has counted (not their ping now: the player list has it only
@@ -817,7 +809,8 @@ sections, and the window remembers the one you left it on.
   red flash — which the server plays the sound for but does not count as a hit — is not counted
   either. Your own swings are your left clicks at a player or at the air, with a weapon.
 
-  A duel starts with Loka's `Match Ready!` line (whether or not you joined automatically). Loka fights
+  A duel starts with Loka's `Match Ready!` line — only Loka's own: the same words typed by a player
+  arrive as `Name: Match Ready!…` and do nothing. Loka fights
   its duels on a server of its own, so being sent there is the way to the duel, not the end of it:
   the count carries on across the switch — when, for a moment, the game has no world and no player —
   and follows you under the new id the duel server gives you. It ends when one of you dies (then the
@@ -825,17 +818,7 @@ sections, and the window remembers the one you left it on.
   nobody has struck for twenty seconds. The summary is said **after you arrive** where you are sent
   next, a second and a half in, past the server's own welcome; with no move within eight seconds of
   the end, it is said where you are. The opponent is whoever you traded the most hits with. Nothing
-  is sent to the server but the `/join`; the ranked numbers only read Loka's public profile and
-  ladders.
-
-- **Shulker Scanner** (off until you turn it on) — in your inventory and in every chest, ender chest
-  or other container screen, each shulker box's slot is tinted by the **splash Instant Health II**
-  potions inside it: **green** over 15, **yellow** 1–15, **red** none (empty, or nothing but other
-  things). The legend sits beside the switch. Potions are told by their effect, not their name, so a
-  renamed one or one with the effect set by hand counts too, as do stronger ones; drinkable potions
-  and Instant Health I do not. Read from the shulker's own contents, which the game already has.
-
-  ![Shulker Scanner](docs/shulker-scanner.png)
+  is sent to the server; the ranked numbers only read Loka's public profile and ladders.
 
 ![Important Waypoints](docs/helper-important.png)
 
@@ -848,8 +831,6 @@ blocks), and Aladra's is near the middle of the world. When it cannot be told, n
 and the screen says so.
 
 ![Coordinates, placed and sized](docs/helper-coords.png)
-
-![Clear lava](docs/helper-clear-lava.png)
 
 ## Loka Calculator
 

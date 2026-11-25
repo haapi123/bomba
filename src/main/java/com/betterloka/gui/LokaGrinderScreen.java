@@ -110,8 +110,13 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
 
     @Override
     protected void init() {
-        // The timers need less room than the list of shrines; the width stays, so the tabs do not move.
-        window.content(SHRINES_MAX_WIDTH, tab == Tab.SHRINES ? 290 : 148);
+        // The timers need less room than the list of shrines, and the shulker one has one row of
+        // buttons where glowstone has two; the width stays, so the tabs do not move.
+        window.content(SHRINES_MAX_WIDTH, switch (tab) {
+            case SHRINES -> 290;
+            case GLOWSTONE -> 148;
+            case SHULKER -> 148 - TAB_ROW_HEIGHT - 4;
+        });
         window.layout(this.width, this.height);
         int left = contentLeft();
         int width = contentWidth();
@@ -132,14 +137,8 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
         }
 
         int controlY = viewportTop() + CARD_PADDING * 2 + ROW_HEIGHT * 6 + CARD_GAP;
-        if (tab == Tab.SHULKER) {
-            addRenderableWidget(Button.builder(autoStartLabel(), button -> {
-                        BetterLokaClient.config().setShulkerAutoStart(
-                                !BetterLokaClient.config().shulkerAutoStart());
-                        button.setMessage(autoStartLabel());
-                    })
-                    .bounds(left, controlY, width, TAB_ROW_HEIGHT).build());
-        } else {
+        int hudY = controlY;
+        if (tab == Tab.GLOWSTONE) {
             int third = (width - 8) / 3;
             addRenderableWidget(Button.builder(Component.literal("-" + GLOWSTONE_STEP + "m"),
                             button -> changeGlowstone(-GLOWSTONE_STEP))
@@ -151,6 +150,7 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
                             button -> glowstone().stop())
                     .bounds(left + (third + 4) * 2, controlY, width - (third + 4) * 2,
                             TAB_ROW_HEIGHT).build());
+            hudY += TAB_ROW_HEIGHT + 4;
         }
 
         // The on-screen countdown is per-timer, so it is switched from the tab it belongs to.
@@ -163,7 +163,7 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
                     }
                     button.setMessage(hudLabel());
                 })
-                .bounds(left, controlY + TAB_ROW_HEIGHT + 4, width, TAB_ROW_HEIGHT).build());
+                .bounds(left, hudY, width, TAB_ROW_HEIGHT).build());
     }
 
     /**
@@ -193,7 +193,7 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
             x += quarter + 4;
         }
 
-        // Second row: the chat notice when a shrine restarts, and how long the cooldown is.
+        // Second row: the chat notice when a shrine's timer runs out, and how long the timer is.
         int rowY = viewportTop() + TAB_ROW_HEIGHT + 4;
         int half = (width - 4) / 2;
         addRenderableWidget(Button.builder(shrineNotifyLabel(), button -> {
@@ -242,13 +242,6 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
         return Component.translatable("betterloka.shrine.toggle.kind",
                         Component.translatable("betterloka.shrine.kind." + kind.id()))
                 .append(onOff(BetterLokaClient.config().shrineKindEnabled(kind)));
-    }
-
-    private static Component autoStartLabel() {
-        boolean on = BetterLokaClient.config().shulkerAutoStart();
-        return Component.translatable("betterloka.grind.shulker.auto")
-                .append(Component.translatable(on ? "betterloka.on" : "betterloka.off")
-                        .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED));
     }
 
     private Component hudLabel() {
@@ -528,7 +521,7 @@ public class LokaGrinderScreen extends Screen implements LokaStyled {
                 if (running) {
                     shrines().timers().clear(shrine);
                 } else {
-                    shrines().timers().purged(shrine, System.currentTimeMillis());
+                    shrines().start(shrine);
                 }
             }));
         }

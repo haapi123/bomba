@@ -39,23 +39,18 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * Loka Helper's duels: {@code /join} sent by itself when a duel is found (off until switched on), or
- * else the VS screen with both duelists and a Join button (on); and when it ends, one line in chat
- * that opens the duel's statistics (on), the duel kept in the {@link DuelLog}.
+ * Loka Helper's duels: the VS screen with both duelists once a duel is found (on); and when it ends,
+ * one line in chat that opens the duel's statistics (on), the duel kept in the {@link DuelLog}.
  *
  * <p>A duel starts with Loka's {@code Match Ready! [Click to join]} line, whoever answers it, and ends
  * when one of the two dies, when the player is sent to another server or world after fighting, or
  * when nobody has struck for twenty seconds. Loka fights its duels on a server of their own, so the
  * summary is said once the player has arrived where they are sent afterwards — see
  * {@link DuelSession}. The numbers come from {@link DuelStats}; this class only feeds them from the
- * game and says what they came to. Nothing is sent to the server except the one
- * {@code /join}, and only with the option on.
+ * game and says what they came to. Nothing is sent to the server: joining the duel is the
+ * player's own click on Loka's line.
  */
 public final class DuelTracker {
-    /** Ticks between the line and the command: the server has the match ready by then. */
-    private static final int JOIN_DELAY_TICKS = 5;
-    /** One automatic join per this long, however many times the line comes. */
-    private static final long JOIN_COOLDOWN_MILLIS = 3000;
     /** How far another player's swing may be and still be at this player. */
     private static final double SWING_RANGE = 8;
     /** How far from the sweep sound its attacker can be: the sound is played where they stand. */
@@ -159,9 +154,6 @@ public final class DuelTracker {
     private net.minecraft.client.player.LocalPlayer seenPlayer;
     private ClientLevel seenLevel;
     private Vec3 lastPosition;
-    private int joinIn = -1;
-    private String joinCommand;
-    private long lastJoinAt;
 
     /**
      * @param duelists the duelists' ranked records, for the duel screens; may give {@code null}
@@ -221,17 +213,11 @@ public final class DuelTracker {
             session.forget();
         }
         List<String> texts = texts(message);
-        String command = DuelMessages.joinCommand(clickCommand(message));
         String opponent = DuelMessages.opponentIn(texts, client.player.getName().getString());
         // What exactly the line carries, for working out what Loka puts in it.
-        BetterLoka.LOGGER.info("[betterloka] Match Ready line: texts={} command=/{} opponent={}", texts, command, opponent);
+        BetterLoka.LOGGER.info("[betterloka] Match Ready line: texts={} opponent={}", texts, opponent);
         hinted = opponent;
         arena = null;
-        if (config.duelAutoAccept() && now - lastJoinAt > JOIN_COOLDOWN_MILLIS) {
-            lastJoinAt = now;
-            joinCommand = command;
-            joinIn = JOIN_DELAY_TICKS;
-        }
     }
 
     /** A title, subtitle or action bar: at the arena, maybe the countdown to the fight. */
@@ -279,13 +265,6 @@ public final class DuelTracker {
             return Optional.empty();
         }, Style.EMPTY);
         return texts;
-    }
-
-    /** The command the line's own button runs, if it has one. */
-    private static String clickCommand(Component message) {
-        Optional<String> found = message.visit((style, text) -> style.getClickEvent() instanceof ClickEvent.RunCommand run
-                ? Optional.of(run.command()) : Optional.empty(), Style.EMPTY);
-        return found.orElse(null);
     }
 
     // ---- what the server shows (from DuelPacketsMixin and DuelSwingMixin) ----
@@ -408,7 +387,7 @@ public final class DuelTracker {
             return;
         }
         tracker.thrown.remove(entityId);
-        if (com.betterloka.helper.ShulkerScanner.isHealPot(item) && tracker.session.duel() != null) {
+        if (HealPots.isHealPot(item) && tracker.session.duel() != null) {
             tracker.session.duel().pot((int) held[0]);
         }
     }
@@ -489,9 +468,6 @@ public final class DuelTracker {
             // Whatever never said what it was in two seconds is let go.
             long now = System.currentTimeMillis();
             thrown.values().removeIf(held -> now - held[1] > 2000);
-        }
-        if (joinIn >= 0 && joinIn-- == 0) {
-            sendJoin(client);
         }
         long now = System.currentTimeMillis();
         var player = client.player;
@@ -736,22 +712,6 @@ public final class DuelTracker {
             }
         }
         return null;
-    }
-
-    /** Development only: auto-join says it joins but sends nothing, for filming it on a server without /join. */
-    public static boolean devDryJoin;
-
-    private void sendJoin(Minecraft client) {
-        if (client.player == null || joinCommand == null) {
-            return;
-        }
-        if (!devDryJoin) {
-            client.player.connection.sendCommand(joinCommand);
-        }
-        chat(client, Component.translatable("betterloka.duel.joining", "/" + joinCommand)
-                .withStyle(ChatFormatting.GRAY));
-        BetterLoka.LOGGER.info("[betterloka] duel found, sent /{}", joinCommand);
-        joinCommand = null;
     }
 
     /**

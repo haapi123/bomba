@@ -4,12 +4,10 @@
   "package": "com.betterloka.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "ClearLavaMixin",
     "PlayerNameplateKdMixin",
     "DuelPacketsMixin",
     "DuelSwingMixin",
     "DuelChatClickMixin",
-    "ShulkerSlotMixin",
     "DuelHudTitleMixin",
     "LokaButtonMixin",
     "LokaEditBoxMixin"

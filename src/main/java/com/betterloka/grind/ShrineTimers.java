@@ -12,21 +12,23 @@ import java.util.Map;
 import java.util.function.LongSupplier;
 
 /**
- * When each shrine was last purged, what each has given, and the names the server has been seen to
- * use for them.
+ * When the player started each shrine's timer, and what each shrine has given them.
+ *
+ * <p>A timer only ever starts from the player's own click on the shrine's Start button: nothing the
+ * server says starts one.
  *
  * <p>Kept on disk as wall-clock times, so a timer started before logging off is still right after
- * logging back in: a shrine purged at 20:00 is back at 20:20 whether or not the game was running.
+ * logging back in: one started at 20:00 is done at 20:20 whether or not the game was running.
  *
- * <p>What is kept is when a shrine was purged, not when it comes back: the cooldown is the player's
+ * <p>What is kept is when a timer was started, not when it ends: the cooldown is the player's
  * setting, and changing it — to the right number, once they know it — moves the timers already
  * running along with it.
  */
 public final class ShrineTimers {
     public enum State {
-        /** Never seen purged, so nothing is known about it. */
+        /** No timer started, so nothing is known about it. */
         UNKNOWN,
-        /** Purged and counting down. */
+        /** Started and counting down. */
         COOLDOWN,
         /** Its cooldown has run out. */
         READY
@@ -34,10 +36,9 @@ public final class ShrineTimers {
 
     /**
      * What goes in the file. {@code endsAt} is what an earlier version kept, read once and turned
-     * into a purge time.
+     * into a start time; {@code purgedAt} keeps its old name so files from before 0.65 still load.
      */
-    private record Saved(Map<String, Long> endsAt, Map<String, Long> purgedAt, Map<String, String> learned,
-                         Map<String, ShrineLoot.Stats> stats) {
+    private record Saved(Map<String, Long> endsAt, Map<String, Long> purgedAt, Map<String, ShrineLoot.Stats> stats) {
     }
 
     private static final Type SAVED = new TypeToken<Saved>() { }.getType();
@@ -45,7 +46,6 @@ public final class ShrineTimers {
     private final JsonStore<Saved> store;
     private final LongSupplier cooldown;
     private final Map<String, Long> purgedAt = new HashMap<>();
-    private final Map<String, String> learned = new HashMap<>();
     private final Map<String, ShrineLoot.Stats> stats = new HashMap<>();
 
     /** With the default twenty minute cooldown. */
@@ -65,9 +65,6 @@ public final class ShrineTimers {
             if (saved.purgedAt() != null) {
                 purgedAt.putAll(saved.purgedAt());
             }
-            if (saved.learned() != null) {
-                learned.putAll(saved.learned());
-            }
             if (saved.stats() != null) {
                 stats.putAll(saved.stats());
             }
@@ -79,8 +76,8 @@ public final class ShrineTimers {
         return Math.max(1000, cooldown.getAsLong());
     }
 
-    /** Starts the shrine's cooldown from now: it was just purged. */
-    public synchronized void purged(Shrine shrine, long now) {
+    /** Starts the shrine's timer from now, as the player asked. */
+    public synchronized void start(Shrine shrine, long now) {
         purgedAt.put(shrine.id(), now);
         save();
     }
@@ -128,24 +125,6 @@ public final class ShrineTimers {
         }
     }
 
-    /**
-     * Remembers which shrine a name the server used belongs to. A name already tied to a different
-     * shrine is one the server uses for several, and is marked as such rather than moved.
-     */
-    public synchronized void learn(String name, Shrine shrine) {
-        String key = Shrines.key(name);
-        String before = learned.get(key);
-        String after = before == null || before.equals(shrine.id()) ? shrine.id() : Shrines.SEVERAL;
-        if (!after.equals(before)) {
-            learned.put(key, after);
-            save();
-        }
-    }
-
-    public synchronized Map<String, String> learned() {
-        return Map.copyOf(learned);
-    }
-
     /** {@code 12:31}, or {@code 0:05}: minutes and seconds, which is all a twenty minute wait needs. */
     public static String clock(long millis) {
         long seconds = Math.max(0, (millis + 999) / 1000);
@@ -154,7 +133,7 @@ public final class ShrineTimers {
 
     private void save() {
         try {
-            store.write(new Saved(null, Map.copyOf(purgedAt), Map.copyOf(learned), Map.copyOf(stats)));
+            store.write(new Saved(null, Map.copyOf(purgedAt), Map.copyOf(stats)));
         } catch (RuntimeException e) {
             BetterLoka.LOGGER.warn("Could not save the shrine timers", e);
         }

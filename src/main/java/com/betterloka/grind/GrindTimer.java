@@ -45,23 +45,6 @@ public final class GrindTimer {
         return running() ? Cycle.RUNNING : Cycle.IDLE;
     }
 
-    /**
-     * Begins a cycle only if one is not already under way.
-     *
-     * <p>What an automatic trigger calls. A shulker killed while the countdown is running is not a
-     * reason to start it over — the twenty minutes are counting down to when the next one spawns,
-     * and killing another shulker in the meantime does not move that moment.
-     *
-     * @return true if this call began a new cycle
-     */
-    public boolean startIfIdle() {
-        if (cycle() == Cycle.RUNNING) {
-            return false;
-        }
-        start();
-        return true;
-    }
-
     public void stop() {
         endsAt = 0;
     }

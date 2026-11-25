@@ -7,10 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The cycle rule the shulker timer turns on.
- *
- * <p>Auto-start used to call {@code start()} on every kill, so a good run of shulkers kept pushing
- * the end time forward and the countdown never reached zero for anybody grinding properly.
+ * The grinding timers, which only ever start from the player's own click or key: nothing in the game
+ * starts one by itself.
  */
 class GrindTimerTest {
     @Test
@@ -21,63 +19,49 @@ class GrindTimerTest {
 
     @Test
     void aFreshTimerIsIdle() {
-        assertEquals(GrindTimer.Cycle.IDLE, new GrindTimer(60_000).cycle());
-    }
-
-    @Test
-    void theFirstKillBeginsACycle() {
         GrindTimer timer = new GrindTimer(60_000);
-
-        assertTrue(timer.startIfIdle(), "the first kill starts the countdown");
-        assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
+        assertEquals(GrindTimer.Cycle.IDLE, timer.cycle());
+        assertFalse(timer.running());
+        assertFalse(timer.finished());
     }
 
-    /** The fault this replaces: every kill pushed the end time forward. */
     @Test
-    void furtherKillsDuringACycleDoNotRestartIt() throws Exception {
+    void startingByHandBeginsACycle() {
         GrindTimer timer = new GrindTimer(60_000);
-        timer.startIfIdle();
-        long afterFirst = timer.remainingMillis();
-
-        Thread.sleep(30);
-        assertFalse(timer.startIfIdle(), "a kill mid-cycle must not begin a new one");
-        assertTrue(timer.remainingMillis() < afterFirst,
-                "the countdown must have kept counting down, not been reset");
+        timer.start();
         assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
+        assertTrue(timer.running());
     }
 
     @Test
-    void aKillAfterTheCountdownRunsOutStartsAFreshCycle() throws Exception {
+    void aTimerThatRunsOutIsFinishedUntilStartedAgain() throws Exception {
         GrindTimer timer = new GrindTimer(1000);
-        timer.setDurationMillis(1000);
-        timer.startIfIdle();
-
+        timer.start();
         Thread.sleep(1100);
         assertEquals(GrindTimer.Cycle.IDLE, timer.cycle(), "a timer that has run out is idle again");
         assertTrue(timer.finished());
 
-        assertTrue(timer.startIfIdle(), "the next kill begins a new cycle");
+        timer.start();
         assertEquals(GrindTimer.Cycle.RUNNING, timer.cycle());
+        assertFalse(timer.finished());
     }
 
     @Test
-    void aStoppedTimerIsIdleAndCanStartAgain() {
+    void aStoppedTimerIsIdle() {
         GrindTimer timer = new GrindTimer(60_000);
-        timer.startIfIdle();
+        timer.start();
         timer.stop();
-
         assertEquals(GrindTimer.Cycle.IDLE, timer.cycle());
-        assertTrue(timer.startIfIdle());
+        assertFalse(timer.finished());
     }
 
-    /** The keybind is a deliberate press, so it still restarts a running countdown. */
+    /** The keybind is a deliberate press, so it restarts a running countdown. */
     @Test
-    void startingByHandStillRestartsARunningTimer() throws Exception {
+    void startingByHandRestartsARunningTimer() throws Exception {
         GrindTimer timer = new GrindTimer(60_000);
         timer.start();
         Thread.sleep(30);
         long beforeRestart = timer.remainingMillis();
-
         timer.start();
 
         assertTrue(timer.remainingMillis() > beforeRestart, "a keybind press restarts the count");

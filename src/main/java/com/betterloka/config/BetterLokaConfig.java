@@ -58,9 +58,6 @@ public final class BetterLokaConfig {
      */
     private int mapRefreshSeconds = 45;
 
-    /** Start the shulker timer by itself when a shulker the player hit dies. */
-    private boolean shulkerAutoStart = true;
-
     /** How long the glowstone timer counts, in minutes. Three hours, adjustable from the screen. */
     private int glowstoneMinutes = 180;
 
@@ -85,7 +82,7 @@ public final class BetterLokaConfig {
     private boolean shrineBlazeEnabled = true;
     private boolean shrineMagmaCubeEnabled = true;
 
-    /** Say in chat, in any world, when a shrine's cooldown has run out. */
+    /** Say in chat, in any world, when a shrine timer the player started has run out. */
     private boolean shrineNotifications = true;
 
     // --- Loka Helper ---
@@ -101,30 +98,22 @@ public final class BetterLokaConfig {
      */
     private double coordsHudX = 0.0;
     private double coordsHudY = 0.0;
-    /** Lava seen through rather than as a wall of orange fog. Off unless the player turns it on. */
-    private boolean clearLava = false;
-    /** Whether the /tl key does anything; off, and with no key, until the player sets both. */
-    private boolean tlKeyEnabled = false;
-    /** Whether "Match Ready!" is answered with /join by itself. Off unless the player turns it on. */
-    private boolean duelAutoAccept = false;
     /** Whether each duel ends with its hit statistics in chat. On: it only ever writes to the player. */
     private boolean duelStats = true;
-    /** Whether "Match Ready!" opens the screen with both duelists and the Join button. On. */
+    /** Whether "Match Ready!" opens the screen with both duelists. On. */
     private boolean duelScreen = true;
     /**
      * Whether each duel's numbers go to the BetterLoka server's duel statistics, which the duel
      * screens show averages from. On; the switch is in Loka Helper.
      */
     private boolean duelShare = true;
-    /** Whether shulker boxes' slots are tinted by the splash Instant Health II inside. Off until turned on. */
-    private boolean shulkerScanner = false;
     /**
      * The continents whose important places are marked, by id. Empty until the player switches one
      * on: every continent starts off.
      */
     private java.util.List<String> importantRegions = new java.util.ArrayList<>();
 
-    /** How long a purged shrine takes to come back, in minutes. */
+    /** How long a shrine's timer counts, in minutes: how long Loka takes to bring one back. */
     private int shrineCooldownMinutes = 20;
 
     /**
@@ -307,33 +296,6 @@ public final class BetterLokaConfig {
         return Double.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
     }
 
-    public boolean clearLava() {
-        return clearLava;
-    }
-
-    public void setClearLava(boolean clearLava) {
-        this.clearLava = clearLava;
-        save();
-    }
-
-    public boolean tlKeyEnabled() {
-        return tlKeyEnabled;
-    }
-
-    public void setTlKeyEnabled(boolean tlKeyEnabled) {
-        this.tlKeyEnabled = tlKeyEnabled;
-        save();
-    }
-
-    public boolean duelAutoAccept() {
-        return duelAutoAccept;
-    }
-
-    public void setDuelAutoAccept(boolean duelAutoAccept) {
-        this.duelAutoAccept = duelAutoAccept;
-        save();
-    }
-
     public boolean duelStats() {
         return duelStats;
     }
@@ -358,15 +320,6 @@ public final class BetterLokaConfig {
 
     public void setDuelScreen(boolean duelScreen) {
         this.duelScreen = duelScreen;
-        save();
-    }
-
-    public boolean shulkerScanner() {
-        return shulkerScanner;
-    }
-
-    public void setShulkerScanner(boolean shulkerScanner) {
-        this.shulkerScanner = shulkerScanner;
         save();
     }
 
@@ -490,15 +443,6 @@ public final class BetterLokaConfig {
 
     public void setMapRefreshSeconds(int seconds) {
         this.mapRefreshSeconds = Math.max(15, seconds);
-    }
-
-    public boolean shulkerAutoStart() {
-        return shulkerAutoStart;
-    }
-
-    public void setShulkerAutoStart(boolean shulkerAutoStart) {
-        this.shulkerAutoStart = shulkerAutoStart;
-        save();
     }
 
     /** Clamped to something a person would actually set, so a bad edit cannot make it useless. */

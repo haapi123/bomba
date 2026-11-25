@@ -11,7 +11,7 @@ import java.util.Map;
  *
  * <p>The client is never told what a kill dropped or who picked it up, but it always knows what is
  * in the player's own inventory. So a run is counted as the inventory when the player walked onto
- * the shrine's ground against the inventory just after it was purged: whatever there is more of is
+ * the shrine's ground against the inventory just after they started its timer: whatever there is more of is
  * what the shrine gave. Only gains count — potions drunk and blocks placed during the fight are not
  * losses to the shrine.
  *
